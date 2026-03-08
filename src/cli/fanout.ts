@@ -2,18 +2,8 @@ import { readFileSync, writeFileSync, mkdirSync } from "fs";
 import { join } from "path";
 import { parseStoryCard } from "../format/story-card";
 import { generateFanout } from "../fanout/generator";
-import { resolveProvider } from "../models/resolve";
-import { createAnthropicClient } from "../models/anthropic";
-import { createOpenAIClient } from "../models/openai";
-import type { LLMClient } from "../models/provider";
+import { createClient } from "../models/resolve";
 import type { ModelConfig } from "../types";
-
-function createClient(model: string): LLMClient {
-  const provider = resolveProvider(model);
-  return provider === "anthropic"
-    ? createAnthropicClient(model)
-    : createOpenAIClient(model);
-}
 
 export async function fanout(
   scenarioPath: string,
