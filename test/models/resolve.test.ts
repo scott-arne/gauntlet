@@ -11,6 +11,7 @@ describe("resolveProvider", () => {
   test("returns openai for gpt/o-series models", () => {
     expect(resolveProvider("gpt-4o")).toBe("openai");
     expect(resolveProvider("gpt-4o-mini")).toBe("openai");
+    expect(resolveProvider("gpt-5-mini")).toBe("openai");
     expect(resolveProvider("o3")).toBe("openai");
     expect(resolveProvider("o1-preview")).toBe("openai");
   });
