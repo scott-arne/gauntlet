@@ -114,18 +114,11 @@ export class TUIAdapter implements Adapter {
   async close(): Promise<void> {
     if (!this._sessionName) return;
 
-    const result = Bun.spawnSync([
-      "tmux",
-      "kill-session",
-      "-t",
-      this._sessionName,
-    ]);
-
-    if (result.exitCode !== 0) {
-      const stderr = new TextDecoder().decode(result.stderr);
-      throw new Error(`Failed to kill session: ${stderr}`);
+    try {
+      Bun.spawnSync(["tmux", "kill-session", "-t", this._sessionName]);
+    } catch {
+      // session may already be dead
     }
-
     this._sessionName = null;
   }
 
@@ -155,7 +148,7 @@ export class TUIAdapter implements Adapter {
       },
       {
         name: "read_screen",
-        description: "Read the current terminal screen contents",
+        description: "Read the current terminal screen contents. Returns the fully rendered screen (TUI escape codes are interpreted).",
         parameters: {
           type: "object",
           properties: {},

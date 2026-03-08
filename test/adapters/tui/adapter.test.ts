@@ -1,5 +1,9 @@
 import { describe, test, expect, afterEach } from "bun:test";
 import { TUIAdapter } from "../../../src/adapters/tui/adapter";
+import { EvidenceLogger } from "../../../src/evidence/logger";
+import { mkdtempSync, readFileSync } from "fs";
+import { join } from "path";
+import { tmpdir } from "os";
 
 const tmuxAvailable = (() => {
   try {
@@ -51,6 +55,28 @@ describe.skipIf(!tmuxAvailable)("TUIAdapter", () => {
     const result = Bun.spawnSync(["tmux", "has-session", "-t", sessionName]);
     expect(result.exitCode).not.toBe(0);
     adapter = null; // already closed
+  });
+
+  test("executeTool dispatches correctly and logs actions", async () => {
+    adapter = new TUIAdapter();
+    const logDir = mkdtempSync(join(tmpdir(), "vet-tui-exec-"));
+    const logger = new EvidenceLogger(logDir);
+
+    await adapter.start("bc -q");
+    await new Promise((r) => setTimeout(r, 300));
+
+    await adapter.executeTool("type", { text: "4*5" }, logger);
+    await adapter.executeTool("press", { key: "Enter" }, logger);
+    await new Promise((r) => setTimeout(r, 300));
+
+    const result = await adapter.executeTool("read_screen", {}, logger);
+    expect(result.text).toContain("20");
+
+    // Verify logger recorded actions
+    const logContent = readFileSync(join(logDir, "run.jsonl"), "utf-8");
+    expect(logContent).toContain('"action":"type"');
+    expect(logContent).toContain('"action":"press"');
+    expect(logContent).toContain('"action":"read_screen"');
   });
 
   test("exposes tool definitions for the agent", () => {
