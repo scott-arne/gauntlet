@@ -1,6 +1,7 @@
 import { readFileSync } from "fs";
 import { parseStoryCard } from "../format/story-card";
 import { EvidenceLogger } from "../evidence/logger";
+import { writeResultFiles } from "../evidence/writer";
 import { runAgent } from "../agent/agent";
 import { resolveProvider } from "../models/resolve";
 import { createAnthropicClient } from "../models/anthropic";
@@ -47,6 +48,7 @@ export async function run(
 
   try {
     const result = await runAgent(card, adapter, client, logger);
+    writeResultFiles(outDir, result);
     console.log(JSON.stringify(result, null, 2));
   } finally {
     await adapter.close();
