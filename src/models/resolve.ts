@@ -38,7 +38,6 @@ export function parseModelFlags(flags: string[]): ModelConfig {
   return {
     agent:
       config.agent || process.env.VET_AGENT_MODEL || DEFAULT_AGENT_MODEL,
-    judge: config.judge || process.env.VET_JUDGE_MODEL,
     fanout: config.fanout || process.env.VET_FANOUT_MODEL,
   };
 }

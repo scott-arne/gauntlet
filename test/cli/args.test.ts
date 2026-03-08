@@ -21,9 +21,9 @@ describe("parseArgs", () => {
   });
 
   test("parses model flags", () => {
-    const args = parseArgs(["bun", "index.ts", "run", "story.md", "--target", "url", "--model", "agent=gpt-4o", "--model", "judge=claude-opus-4-6"]);
+    const args = parseArgs(["bun", "index.ts", "run", "story.md", "--target", "url", "--model", "agent=gpt-4o", "--model", "fanout=claude-sonnet-4-6"]);
     expect(args.models.agent).toBe("gpt-4o");
-    expect(args.models.judge).toBe("claude-opus-4-6");
+    expect(args.models.fanout).toBe("claude-sonnet-4-6");
   });
 
   test("throws on missing target", () => {

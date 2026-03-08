@@ -23,9 +23,9 @@ describe("resolveProvider", () => {
 
 describe("parseModelFlags", () => {
   test("parses role=model pairs", () => {
-    const config = parseModelFlags(["agent=gpt-4o", "judge=claude-opus-4-6"]);
+    const config = parseModelFlags(["agent=gpt-4o", "fanout=claude-sonnet-4-6"]);
     expect(config.agent).toBe("gpt-4o");
-    expect(config.judge).toBe("claude-opus-4-6");
+    expect(config.fanout).toBe("claude-sonnet-4-6");
   });
 
   test("uses defaults when not specified", () => {

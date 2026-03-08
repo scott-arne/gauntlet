@@ -34,6 +34,5 @@ export interface VetResult {
 
 export interface ModelConfig {
   agent: string;
-  judge?: string;
   fanout?: string;
 }
