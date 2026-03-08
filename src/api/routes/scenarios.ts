@@ -1,10 +1,11 @@
 import { Hono } from "hono";
-import { readdirSync, readFileSync, writeFileSync } from "fs";
+import { readdirSync, readFileSync, writeFileSync, existsSync } from "fs";
 import { join } from "path";
 import { parseStoryCard, serializeStoryCard } from "../../format/story-card";
 import type { StoryCard } from "../../format/story-card";
 
 function loadAllCards(storiesDir: string): { card: StoryCard; filename: string }[] {
+  if (!existsSync(storiesDir)) return [];
   const files = readdirSync(storiesDir)
     .filter((f) => f.endsWith(".md"))
     .sort();

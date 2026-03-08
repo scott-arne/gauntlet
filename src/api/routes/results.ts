@@ -11,16 +11,18 @@ export function resultRoutes(resultsDir: string) {
     }
 
     const entries = readdirSync(resultsDir, { withFileTypes: true });
-    const results = entries
-      .filter((e) => e.isDirectory())
-      .filter((e) => existsSync(join(resultsDir, e.name, "result.json")))
-      .map((e) => {
-        const content = readFileSync(
-          join(resultsDir, e.name, "result.json"),
-          "utf-8"
-        );
-        return JSON.parse(content);
-      });
+    const results: unknown[] = [];
+    for (const e of entries) {
+      if (!e.isDirectory()) continue;
+      const path = join(resultsDir, e.name, "result.json");
+      if (!existsSync(path)) continue;
+      try {
+        const content = readFileSync(path, "utf-8");
+        results.push(JSON.parse(content));
+      } catch {
+        // Skip malformed result files
+      }
+    }
 
     return c.json(results);
   });
@@ -33,8 +35,12 @@ export function resultRoutes(resultsDir: string) {
       return c.json({ error: "not found" }, 404);
     }
 
-    const content = readFileSync(resultPath, "utf-8");
-    return c.json(JSON.parse(content));
+    try {
+      const content = readFileSync(resultPath, "utf-8");
+      return c.json(JSON.parse(content));
+    } catch {
+      return c.json({ error: "malformed result file" }, 500);
+    }
   });
 
   return router;

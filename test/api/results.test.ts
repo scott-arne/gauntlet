@@ -76,6 +76,35 @@ describe("Results API", () => {
     expect(res.status).toBe(404);
   });
 
+  test("GET /results handles malformed result.json gracefully", async () => {
+    const badDir = mkdtempSync(join(tmpdir(), "vet-bad-json-"));
+    mkdirSync(join(badDir, "stories"), { recursive: true });
+    const resultsDir = join(badDir, "results");
+    mkdirSync(join(resultsDir, "bad-001"), { recursive: true });
+    writeFileSync(join(resultsDir, "bad-001", "result.json"), "not valid json{{{");
+
+    const badApp = createApp(badDir);
+    const res = await badApp.request("/results");
+    expect(res.status).toBe(200);
+    const body = await res.json();
+    // Malformed entries should be skipped, not crash the server
+    expect(body).toEqual([]);
+    rmSync(badDir, { recursive: true, force: true });
+  });
+
+  test("GET /results/:scenario returns 500 for malformed result.json", async () => {
+    const badDir = mkdtempSync(join(tmpdir(), "vet-bad-json2-"));
+    mkdirSync(join(badDir, "stories"), { recursive: true });
+    const resultsDir = join(badDir, "results");
+    mkdirSync(join(resultsDir, "bad-002"), { recursive: true });
+    writeFileSync(join(resultsDir, "bad-002", "result.json"), "not json");
+
+    const badApp = createApp(badDir);
+    const res = await badApp.request("/results/bad-002");
+    expect(res.status).toBe(500);
+    rmSync(badDir, { recursive: true, force: true });
+  });
+
   test("GET /results returns empty array when no results dir", async () => {
     const emptyDir = mkdtempSync(join(tmpdir(), "vet-empty-"));
     mkdirSync(join(emptyDir, "stories"), { recursive: true });

@@ -68,6 +68,16 @@ describe("Scenarios API", () => {
     expect(getBody.status).toBe("ready");
   });
 
+  test("GET /scenarios returns empty array when stories dir doesn't exist", async () => {
+    const emptyDir = mkdtempSync(join(tmpdir(), "vet-no-stories-"));
+    const emptyApp = createApp(emptyDir);
+    const res = await emptyApp.request("/scenarios");
+    expect(res.status).toBe(200);
+    const body = await res.json();
+    expect(body).toEqual([]);
+    rmSync(emptyDir, { recursive: true, force: true });
+  });
+
   test("POST /scenarios/:id/approve sets status to ready", async () => {
     const res = await app.request("/scenarios/story-001/approve", {
       method: "POST",
