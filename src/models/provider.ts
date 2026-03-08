@@ -1,17 +1,5 @@
 export type Provider = "anthropic" | "openai";
 
-export interface Message {
-  role: "user" | "assistant";
-  content: string | MessageContent[];
-}
-
-export interface MessageContent {
-  type: "text" | "image";
-  text?: string;
-  data?: string; // base64 for images
-  mediaType?: string;
-}
-
 export interface ToolDefinition {
   name: string;
   description: string;
@@ -19,6 +7,7 @@ export interface ToolDefinition {
 }
 
 export interface ToolCall {
+  id: string;
   name: string;
   arguments: Record<string, unknown>;
 }
@@ -27,12 +16,17 @@ export interface AgentResponse {
   text: string;
   toolCalls: ToolCall[];
   stopReason: "end_turn" | "tool_use" | "max_tokens";
+  rawAssistantMessage: unknown;
 }
 
 export interface LLMClient {
   chat(
-    messages: Message[],
+    messages: unknown[],
     tools: ToolDefinition[],
     systemPrompt: string
   ): Promise<AgentResponse>;
+
+  userMessage(content: string): unknown;
+
+  toolResultMessages(calls: ToolCall[], results: string[]): unknown[];
 }

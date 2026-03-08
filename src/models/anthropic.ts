@@ -1,5 +1,5 @@
 import Anthropic from "@anthropic-ai/sdk";
-import type { LLMClient, Message, ToolDefinition, AgentResponse } from "./provider";
+import type { LLMClient, ToolDefinition, AgentResponse, ToolCall } from "./provider";
 
 export function createAnthropicClient(model: string): LLMClient {
   const client = new Anthropic();
@@ -10,34 +10,29 @@ export function createAnthropicClient(model: string): LLMClient {
         model,
         max_tokens: 4096,
         system: systemPrompt,
-        messages: messages.map(convertMessage),
+        messages: messages as Anthropic.MessageParam[],
         tools: tools.map(convertTool),
       });
 
       return convertResponse(response);
     },
-  };
-}
 
-function convertMessage(msg: Message): Anthropic.MessageParam {
-  if (typeof msg.content === "string") {
-    return { role: msg.role, content: msg.content };
-  }
-  return {
-    role: msg.role,
-    content: msg.content.map((c) => {
-      if (c.type === "image") {
-        return {
-          type: "image" as const,
-          source: {
-            type: "base64" as const,
-            media_type: (c.mediaType || "image/png") as "image/png",
-            data: c.data!,
-          },
-        };
-      }
-      return { type: "text" as const, text: c.text! };
-    }),
+    userMessage(content: string) {
+      return { role: "user", content };
+    },
+
+    toolResultMessages(calls: ToolCall[], results: string[]) {
+      return [
+        {
+          role: "user",
+          content: calls.map((call, i) => ({
+            type: "tool_result",
+            tool_use_id: call.id,
+            content: results[i],
+          })),
+        },
+      ];
+    },
   };
 }
 
@@ -58,6 +53,7 @@ function convertResponse(response: Anthropic.Message): AgentResponse {
   const toolCalls = response.content
     .filter((b): b is Anthropic.ToolUseBlock => b.type === "tool_use")
     .map((b) => ({
+      id: b.id,
       name: b.name,
       arguments: b.input as Record<string, unknown>,
     }));
@@ -65,5 +61,10 @@ function convertResponse(response: Anthropic.Message): AgentResponse {
   const stopReason =
     response.stop_reason === "tool_use" ? "tool_use" : "end_turn";
 
-  return { text, toolCalls, stopReason };
+  return {
+    text,
+    toolCalls,
+    stopReason,
+    rawAssistantMessage: { role: "assistant", content: response.content },
+  };
 }
