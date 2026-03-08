@@ -48,7 +48,7 @@ export async function run(
   }
 
   try {
-    const result = await runAgent(card, adapter, client, logger);
+    const result = await runAgent(card, adapter, client, logger, target);
     writeResultFiles(outDir, result);
     console.log(JSON.stringify(result, null, 2));
   } finally {

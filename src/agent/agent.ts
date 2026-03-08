@@ -58,15 +58,20 @@ export async function runAgent(
   card: StoryCard,
   adapter: Adapter,
   client: LLMClient,
-  logger: EvidenceLogger
+  logger: EvidenceLogger,
+  target?: string
 ): Promise<VetResult> {
   const startTime = Date.now();
   const systemPrompt = buildSystemPrompt(card);
   const tools = [...adapter.toolDefinitions(), REPORT_TOOL];
+
+  let initialMessage = "Begin testing. Use the available tools to interact with the application.";
+  if (target) {
+    initialMessage += `\n\nThe application is available at: ${target}`;
+  }
+
   const messages: unknown[] = [
-    client.userMessage(
-      "Begin testing. Use the available tools to interact with the application."
-    ),
+    client.userMessage(initialMessage),
   ];
 
   for (let turn = 0; turn < MAX_TURNS; turn++) {
