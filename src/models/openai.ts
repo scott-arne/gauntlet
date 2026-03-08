@@ -2,6 +2,12 @@ import OpenAI from "openai";
 import type { LLMClient, ToolDefinition, AgentResponse, ToolCall, ToolResult } from "./provider";
 
 export function createOpenAIClient(model: string): LLMClient {
+  if (!process.env.OPENAI_API_KEY) {
+    throw new Error(
+      "OPENAI_API_KEY environment variable is not set. " +
+      "Set it to your OpenAI API key to use GPT models."
+    );
+  }
   const client = new OpenAI();
 
   return {

@@ -2,6 +2,12 @@ import Anthropic from "@anthropic-ai/sdk";
 import type { LLMClient, ToolDefinition, AgentResponse, ToolCall, ToolResult } from "./provider";
 
 export function createAnthropicClient(model: string): LLMClient {
+  if (!process.env.ANTHROPIC_API_KEY) {
+    throw new Error(
+      "ANTHROPIC_API_KEY environment variable is not set. " +
+      "Set it to your Anthropic API key to use Claude models."
+    );
+  }
   const client = new Anthropic();
 
   return {
