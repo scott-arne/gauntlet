@@ -3,6 +3,9 @@
   "module": "index.ts",
   "type": "module",
   "private": true,
+  "bin": {
+    "vet": "src/index.ts"
+  },
   "devDependencies": {
     "@types/bun": "latest",
     "@types/node": "^25.3.5",
