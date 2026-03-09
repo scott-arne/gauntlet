@@ -113,7 +113,7 @@ function parseServeArgs(args: string[]): ServeArgs {
 
   return {
     command: "serve",
-    port: flags.port ? parseInt(flags.port, 10) : 3000,
+    port: flags.port ? parseInt(flags.port, 10) : parseInt(process.env.GAUNTLET_PORT || "4400", 10),
     dataDir: flags["data-dir"],
   };
 }
