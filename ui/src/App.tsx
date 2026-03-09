@@ -7,6 +7,7 @@ import { CardEditor } from "./components/CardEditor";
 import { NewCardForm } from "./components/NewCardForm";
 import { RunsList } from "./components/RunsList";
 import { RunDetail } from "./components/RunDetail";
+import { NewRunModal } from "./components/NewRunModal";
 import { api, type VetResult } from "./lib/api";
 import { useCards } from "./hooks/useCards";
 import { useCard } from "./hooks/useCard";
@@ -176,6 +177,7 @@ export default function App() {
   const activeTab = location.pathname.startsWith("/runs") ? "/runs" : "/cards";
   const { cards, loading, error, refresh: refreshCards } = useCards();
   const { results, loading: runsLoading, error: runsError, refresh: refreshResults } = useResults();
+  const [showRunModal, setShowRunModal] = useState(false);
 
   // Extract card ID from path like /cards/some-id (but not /cards/new)
   const cardIdMatch = location.pathname.match(/^\/cards\/(?!new$)(.+)/);
@@ -191,6 +193,7 @@ export default function App() {
   }
 
   return (
+    <>
     <AppShell
       sidebar={
         <Sidebar
@@ -207,8 +210,7 @@ export default function App() {
           ) : (
             <button
               className="btn-primary w-full"
-              disabled
-              title="Coming soon"
+              onClick={() => setShowRunModal(true)}
             >
               New Run
             </button>
@@ -248,5 +250,23 @@ export default function App() {
         <Route path="/runs/:id" element={<RunDetailPage onFanout={handleFanout} />} />
       </Routes>
     </AppShell>
+
+    {showRunModal && (
+      <NewRunModal
+        onClose={() => setShowRunModal(false)}
+        onStarted={async (scenarioId, config) => {
+          setShowRunModal(false);
+          try {
+            const result = await api.run.start(scenarioId, config);
+            refreshResults();
+            navigate(`/runs/${result.scenario}`);
+          } catch (e) {
+            // Run failed — still refresh to show whatever result was stored
+            refreshResults();
+          }
+        }}
+      />
+    )}
+    </>
   );
 }
