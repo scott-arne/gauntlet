@@ -105,6 +105,19 @@ describe("Results API", () => {
     rmSync(badDir, { recursive: true, force: true });
   });
 
+  test("GET /api/results/:scenario/screenshots/:name serves image", async () => {
+    const resultsDir = join(dataDir, "results");
+    writeFileSync(join(resultsDir, "test-001", "evidence.png"), "fake-png-data");
+    const res = await app.request("/api/results/test-001/screenshots/evidence.png");
+    expect(res.status).toBe(200);
+    expect(res.headers.get("Content-Type")).toBe("image/png");
+  });
+
+  test("GET /api/results/:scenario/screenshots/:name returns 404", async () => {
+    const res = await app.request("/api/results/test-001/screenshots/nope.png");
+    expect(res.status).toBe(404);
+  });
+
   test("GET /api/results returns empty array when no results dir", async () => {
     const emptyDir = mkdtempSync(join(tmpdir(), "vet-empty-"));
     mkdirSync(join(emptyDir, "stories"), { recursive: true });

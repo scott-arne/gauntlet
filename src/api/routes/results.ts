@@ -43,5 +43,27 @@ export function resultRoutes(resultsDir: string) {
     }
   });
 
+  router.get("/:scenario/screenshots/:name", (c) => {
+    const scenario = c.req.param("scenario");
+    const name = c.req.param("name");
+    const filePath = join(resultsDir, scenario, name);
+
+    if (!existsSync(filePath)) {
+      return c.json({ error: "not found" }, 404);
+    }
+
+    const content = readFileSync(filePath);
+    const ext = name.split(".").pop() || "png";
+    const mimeTypes: Record<string, string> = {
+      png: "image/png",
+      jpg: "image/jpeg",
+      jpeg: "image/jpeg",
+      webp: "image/webp",
+    };
+    return new Response(content, {
+      headers: { "Content-Type": mimeTypes[ext] || "application/octet-stream" },
+    });
+  });
+
   return router;
 }
