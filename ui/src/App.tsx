@@ -2,7 +2,9 @@ import { Routes, Route, Navigate, useNavigate, useLocation, useParams } from "re
 import { AppShell } from "./components/AppShell";
 import { Sidebar } from "./components/Sidebar";
 import { CardsList } from "./components/CardsList";
+import { CardEditor } from "./components/CardEditor";
 import { useCards } from "./hooks/useCards";
+import { useCard } from "./hooks/useCard";
 
 const TABS = [
   { label: "Cards", path: "/cards" },
@@ -13,17 +15,55 @@ function CardsPage() {
   return <div className="p-6 text-slate">Select a card from the sidebar</div>;
 }
 
-function CardDetailPage() {
+function CardDetailPage({ onRefreshList }: { onRefreshList: () => void }) {
   const { id } = useParams();
-  return <div className="p-6 text-slate">Card: {id}</div>;
+  const { card, loading, error, refresh } = useCard(id);
+  const navigate = useNavigate();
+
+  if (loading) {
+    return <div className="p-6 text-slate">Loading card...</div>;
+  }
+
+  if (error) {
+    return <div className="p-6 text-red-700">{error}</div>;
+  }
+
+  if (!card) {
+    return <div className="p-6 text-slate">Card not found</div>;
+  }
+
+  return (
+    <CardEditor
+      card={card}
+      onSave={() => {
+        refresh();
+        onRefreshList();
+      }}
+      onDelete={() => {
+        navigate("/cards");
+        onRefreshList();
+      }}
+    />
+  );
 }
 
 function RunsPage() {
   return <div className="p-6 text-slate">Select a run from the sidebar</div>;
 }
 
-function CardsSidebar({ selectedId }: { selectedId?: string }) {
-  const { cards, loading, error, refresh } = useCards();
+function CardsSidebar({
+  selectedId,
+  cards,
+  loading,
+  error,
+  onRetry,
+}: {
+  selectedId?: string;
+  cards: ReturnType<typeof useCards>["cards"];
+  loading: boolean;
+  error: string | null;
+  onRetry: () => void;
+}) {
   const navigate = useNavigate();
 
   if (loading) {
@@ -34,7 +74,7 @@ function CardsSidebar({ selectedId }: { selectedId?: string }) {
     return (
       <div className="p-3">
         <div className="text-sm text-red-700">{error}</div>
-        <button onClick={refresh} className="mt-2 text-xs text-teal hover:underline">
+        <button onClick={onRetry} className="mt-2 text-xs text-teal hover:underline">
           Retry
         </button>
       </div>
@@ -54,6 +94,7 @@ export default function App() {
   const navigate = useNavigate();
   const location = useLocation();
   const activeTab = location.pathname.startsWith("/runs") ? "/runs" : "/cards";
+  const { cards, loading, error, refresh: refreshCards } = useCards();
 
   // Extract card ID from path like /cards/some-id
   const cardIdMatch = location.pathname.match(/^\/cards\/(.+)/);
@@ -68,7 +109,13 @@ export default function App() {
           onTabChange={(path) => navigate(path)}
         >
           {activeTab === "/cards" ? (
-            <CardsSidebar selectedId={selectedCardId} />
+            <CardsSidebar
+              selectedId={selectedCardId}
+              cards={cards}
+              loading={loading}
+              error={error}
+              onRetry={refreshCards}
+            />
           ) : (
             <div className="p-3 text-sm text-slate">Loading runs...</div>
           )}
@@ -78,7 +125,7 @@ export default function App() {
       <Routes>
         <Route path="/" element={<Navigate to="/cards" replace />} />
         <Route path="/cards" element={<CardsPage />} />
-        <Route path="/cards/:id" element={<CardDetailPage />} />
+        <Route path="/cards/:id" element={<CardDetailPage onRefreshList={refreshCards} />} />
         <Route path="/runs/*" element={<RunsPage />} />
       </Routes>
     </AppShell>
