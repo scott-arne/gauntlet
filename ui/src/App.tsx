@@ -7,7 +7,7 @@ import { CardEditor } from "./components/CardEditor";
 import { NewCardForm } from "./components/NewCardForm";
 import { RunsList } from "./components/RunsList";
 import { RunDetail } from "./components/RunDetail";
-import { api } from "./lib/api";
+import { api, type VetResult } from "./lib/api";
 import { useCards } from "./hooks/useCards";
 import { useCard } from "./hooks/useCard";
 import { useResults } from "./hooks/useResults";
@@ -63,7 +63,7 @@ function RunsPage() {
 
 function RunDetailPage({ onFanout }: { onFanout: () => void }) {
   const { id } = useParams();
-  const [result, setResult] = useState<import("./lib/api").VetResult | null>(null);
+  const [result, setResult] = useState<VetResult | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
