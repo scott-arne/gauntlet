@@ -14,8 +14,10 @@ export function NewCardForm({ onCreated, onCancel }: NewCardFormProps) {
   const [criteria, setCriteria] = useState("");
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [attempted, setAttempted] = useState(false);
 
   async function handleSubmit() {
+    setAttempted(true);
     if (!id.trim() || !title.trim()) {
       setError("ID and Title are required");
       return;
@@ -54,7 +56,7 @@ export function NewCardForm({ onCreated, onCancel }: NewCardFormProps) {
         <div>
           <label className="section-label block mb-1">ID</label>
           <input
-            className="input-field"
+            className={`input-field ${attempted && !id.trim() ? "!border-red-400" : ""}`}
             value={id}
             onChange={(e) => setId(e.target.value)}
             placeholder="unique-card-id"
@@ -64,7 +66,7 @@ export function NewCardForm({ onCreated, onCancel }: NewCardFormProps) {
         <div>
           <label className="section-label block mb-1">Title</label>
           <input
-            className="input-field"
+            className={`input-field ${attempted && !title.trim() ? "!border-red-400" : ""}`}
             value={title}
             onChange={(e) => setTitle(e.target.value)}
           />

@@ -1,5 +1,7 @@
-import { useState, useEffect } from "react";
+import { useState, useEffect, useCallback } from "react";
+import { useBlocker } from "react-router-dom";
 import { api, type CardDetail } from "../lib/api";
+import { useToast, Toast, ConfirmModal } from "./shared";
 
 interface CardEditorProps {
   card: CardDetail;
@@ -17,6 +19,8 @@ export function CardEditor({ card, onSave, onDelete }: CardEditorProps) {
   const [saving, setSaving] = useState(false);
   const [fanning, setFanning] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [confirmDelete, setConfirmDelete] = useState(false);
+  const toast = useToast();
 
   useEffect(() => {
     setTitle(card.title);
@@ -27,6 +31,31 @@ export function CardEditor({ card, onSave, onDelete }: CardEditorProps) {
     setCriteria(card.acceptanceCriteria.join("\n"));
     setError(null);
   }, [card]);
+
+  const isDirty = useCallback(() => {
+    return (
+      title !== card.title ||
+      status !== card.status ||
+      tags !== card.tags.join(", ") ||
+      stakeholder !== (card.stakeholder ?? "") ||
+      description !== card.description ||
+      criteria !== card.acceptanceCriteria.join("\n")
+    );
+  }, [title, status, tags, stakeholder, description, criteria, card]);
+
+  // Warn on browser navigation (refresh, close tab) with unsaved changes
+  useEffect(() => {
+    function handleBeforeUnload(e: BeforeUnloadEvent) {
+      if (isDirty()) {
+        e.preventDefault();
+      }
+    }
+    window.addEventListener("beforeunload", handleBeforeUnload);
+    return () => window.removeEventListener("beforeunload", handleBeforeUnload);
+  }, [isDirty]);
+
+  // Warn on in-app navigation with unsaved changes
+  const blocker = useBlocker(isDirty);
 
   async function handleSave() {
     try {
@@ -41,6 +70,7 @@ export function CardEditor({ card, onSave, onDelete }: CardEditorProps) {
         acceptanceCriteria: criteria.split("\n").map((c) => c.trim()).filter(Boolean),
       });
       onSave();
+      toast.show("Saved");
     } catch (e) {
       setError(e instanceof Error ? e.message : "Failed to save");
     } finally {
@@ -54,6 +84,7 @@ export function CardEditor({ card, onSave, onDelete }: CardEditorProps) {
       setError(null);
       await api.cards.approve(card.id);
       onSave();
+      toast.show("Approved");
     } catch (e) {
       setError(e instanceof Error ? e.message : "Failed to approve");
     } finally {
@@ -62,7 +93,6 @@ export function CardEditor({ card, onSave, onDelete }: CardEditorProps) {
   }
 
   async function handleDelete() {
-    if (!confirm(`Delete card "${card.id}"? This cannot be undone.`)) return;
     try {
       setSaving(true);
       setError(null);
@@ -72,6 +102,7 @@ export function CardEditor({ card, onSave, onDelete }: CardEditorProps) {
       setError(e instanceof Error ? e.message : "Failed to delete");
     } finally {
       setSaving(false);
+      setConfirmDelete(false);
     }
   }
 
@@ -81,7 +112,7 @@ export function CardEditor({ card, onSave, onDelete }: CardEditorProps) {
       setError(null);
       const result = await api.fanout.generate(card.id);
       onSave();
-      alert(`Generated ${result.generated.length} variation(s)`);
+      toast.show(`Generated ${result.generated.length} variation(s)`);
     } catch (e) {
       setError(e instanceof Error ? e.message : "Failed to generate variations");
     } finally {
@@ -192,13 +223,37 @@ export function CardEditor({ card, onSave, onDelete }: CardEditorProps) {
           </button>
           <button
             className="btn-danger"
-            onClick={handleDelete}
+            onClick={() => setConfirmDelete(true)}
             disabled={saving}
           >
             Delete
           </button>
         </div>
       </div>
+
+      <Toast message={toast.message} />
+
+      {confirmDelete && (
+        <ConfirmModal
+          title="Delete card"
+          message={`Delete "${card.title}"? This cannot be undone.`}
+          confirmLabel="Delete"
+          danger
+          onConfirm={handleDelete}
+          onCancel={() => setConfirmDelete(false)}
+        />
+      )}
+
+      {blocker.state === "blocked" && (
+        <ConfirmModal
+          title="Unsaved changes"
+          message="You have unsaved changes. Discard them?"
+          confirmLabel="Discard"
+          danger
+          onConfirm={() => blocker.proceed()}
+          onCancel={() => blocker.reset()}
+        />
+      )}
     </div>
   );
 }

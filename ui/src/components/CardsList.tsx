@@ -23,11 +23,13 @@ export function CardsList({ cards, selectedId, onSelect }: CardsListProps) {
   }, [cards]);
 
   const filtered = useMemo(() => {
-    return cards.filter((card) => {
-      if (statusFilter !== "all" && card.status !== statusFilter) return false;
-      if (tagFilter !== "all" && !card.tags.includes(tagFilter)) return false;
-      return true;
-    });
+    return cards
+      .filter((card) => {
+        if (statusFilter !== "all" && card.status !== statusFilter) return false;
+        if (tagFilter !== "all" && !card.tags.includes(tagFilter)) return false;
+        return true;
+      })
+      .sort((a, b) => a.title.localeCompare(b.title));
   }, [cards, statusFilter, tagFilter]);
 
   return (
@@ -83,7 +85,7 @@ export function CardsList({ cards, selectedId, onSelect }: CardsListProps) {
                   {card.tags.map((tag) => (
                     <span
                       key={tag}
-                      className="text-xs text-slate"
+                      className="rounded bg-panel px-1.5 py-0.5 text-xs text-slate"
                     >
                       {tag}
                     </span>

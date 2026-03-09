@@ -1,6 +1,6 @@
 import { useState } from "react";
 import { api, type VetResult } from "../lib/api";
-import { StatusBadge, formatDuration } from "./shared";
+import { StatusBadge, formatDuration, useToast, Toast } from "./shared";
 
 interface RunDetailProps {
   result: VetResult;
@@ -10,13 +10,15 @@ interface RunDetailProps {
 export function RunDetail({ result, onFanout }: RunDetailProps) {
   const [acting, setActing] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const toast = useToast();
 
   async function handleFromObservations() {
     try {
       setActing(true);
       setError(null);
-      await api.fanout.fromObservations(result.scenario);
+      const res = await api.fanout.fromObservations(result.scenario);
       onFanout();
+      toast.show(`Generated ${res.generated.length} card(s) from observations`);
     } catch (e) {
       setError(e instanceof Error ? e.message : "Failed to generate from observations");
     } finally {
@@ -30,6 +32,7 @@ export function RunDetail({ result, onFanout }: RunDetailProps) {
       setError(null);
       await api.fanout.fromFailure(result.scenario);
       onFanout();
+      toast.show("Failure analysis complete");
     } catch (e) {
       setError(e instanceof Error ? e.message : "Failed to analyze failure");
     } finally {
@@ -140,6 +143,8 @@ export function RunDetail({ result, onFanout }: RunDetailProps) {
           )}
         </div>
       </div>
+
+      <Toast message={toast.message} />
     </div>
   );
 }
