@@ -32,15 +32,37 @@ async function main() {
     }
     case "serve": {
       const { createApp } = await import("./api/server");
+      const { RunBroadcaster } = await import("./api/ws");
       const { join } = await import("path");
       const dataDir = args.dataDir ?? ".";
       const uiDir = join(import.meta.dir, "..", "ui", "dist");
-      const app = createApp(dataDir, uiDir);
+      const broadcaster = new RunBroadcaster();
+      const app = createApp(dataDir, uiDir, broadcaster);
       const port = args.port;
       console.error(`vet server listening on port ${port}`);
       Bun.serve({
         port,
-        fetch: app.fetch,
+        fetch(req, server) {
+          const url = new URL(req.url);
+          if (url.pathname === "/api/ws") {
+            const runId = url.searchParams.get("run") || "";
+            const upgraded = server.upgrade(req, { data: { runId } });
+            if (upgraded) return undefined;
+            return new Response("WebSocket upgrade failed", { status: 400 });
+          }
+          return app.fetch(req);
+        },
+        websocket: {
+          open(ws) {
+            const runId = (ws.data as any).runId;
+            if (runId) broadcaster.addClient(runId, ws as any);
+          },
+          close(ws) {
+            const runId = (ws.data as any).runId;
+            if (runId) broadcaster.removeClient(runId, ws as any);
+          },
+          message() {},
+        },
       });
       break;
     }

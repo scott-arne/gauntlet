@@ -6,6 +6,7 @@ import { EvidenceLogger } from "../../evidence/logger";
 import { writeResultFiles } from "../../evidence/writer";
 import { runAgent } from "../../agent/agent";
 import type { Adapter } from "../../adapters/adapter";
+import type { RunBroadcaster } from "../ws";
 
 function createAdapter(type: string, chromeEndpoint?: string): Adapter {
   switch (type) {
@@ -26,7 +27,7 @@ function createAdapter(type: string, chromeEndpoint?: string): Adapter {
   }
 }
 
-export function runRoutes(dataDir: string) {
+export function runRoutes(dataDir: string, broadcaster?: RunBroadcaster) {
   const router = new Hono();
   const storiesDir = join(dataDir, "stories");
 

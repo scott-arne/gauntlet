@@ -5,15 +5,16 @@ import { scenarioRoutes } from "./routes/scenarios";
 import { resultRoutes } from "./routes/results";
 import { fanoutRoutes } from "./routes/fanout";
 import { runRoutes } from "./routes/run";
+import type { RunBroadcaster } from "./ws";
 
-export function createApp(dataDir: string, uiDir?: string) {
+export function createApp(dataDir: string, uiDir?: string, broadcaster?: RunBroadcaster) {
   const app = new Hono();
 
   const api = new Hono();
   api.route("/scenarios", scenarioRoutes(dataDir));
   api.route("/results", resultRoutes(join(dataDir, "results")));
   api.route("/fanout", fanoutRoutes(dataDir));
-  api.route("/run", runRoutes(dataDir));
+  api.route("/run", runRoutes(dataDir, broadcaster));
 
   app.route("/api", api);
 
