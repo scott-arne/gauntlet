@@ -9,7 +9,11 @@ interface RunsListProps {
 
 export function RunsList({ results, selectedId, onSelect }: RunsListProps) {
   if (results.length === 0) {
-    return <div className="p-3 text-sm text-slate">No runs yet</div>;
+    return (
+      <div className="p-3 text-sm text-slate">
+        No runs yet. Use the <span className="font-medium text-ink">New Run</span> button above to start one.
+      </div>
+    );
   }
 
   return (

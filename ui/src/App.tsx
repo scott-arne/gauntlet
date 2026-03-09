@@ -20,7 +20,11 @@ const TABS = [
 ];
 
 function CardsPage() {
-  return <div className="p-6 text-slate">Select a card from the sidebar</div>;
+  return (
+    <div className="p-6 text-slate">
+      <p>Select a card from the sidebar, or create a new one.</p>
+    </div>
+  );
 }
 
 function CardDetailPage({ onRefreshList }: { onRefreshList: () => void }) {
@@ -60,7 +64,11 @@ function NewCardPage({ onCreated, onCancel }: { onCreated: (id: string) => void;
 }
 
 function RunsPage() {
-  return <div className="p-6 text-slate">Select a run from the sidebar</div>;
+  return (
+    <div className="p-6 text-slate">
+      <p>Select a run from the sidebar, or start a new one.</p>
+    </div>
+  );
 }
 
 function RunDetailPage({ onFanout }: { onFanout: () => void }) {

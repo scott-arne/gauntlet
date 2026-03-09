@@ -91,7 +91,8 @@ export function CardEditor({ card, onSave, onDelete }: CardEditorProps) {
 
   return (
     <div className="p-6 max-w-3xl">
-      <h1 className="heading-display text-2xl mb-6">{card.id}</h1>
+      <h1 className="heading-display text-2xl mb-1">{card.title}</h1>
+      <p className="text-sm text-slate mb-6">{card.id}</p>
 
       {error && (
         <div className="mb-4 rounded-lg bg-red-50 px-4 py-3 text-sm text-red-700">
