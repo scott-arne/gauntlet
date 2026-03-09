@@ -1,25 +1,11 @@
 import { useState, useMemo } from "react";
 import type { CardSummary } from "../lib/api";
+import { StatusBadge } from "./shared";
 
 interface CardsListProps {
   cards: CardSummary[];
   selectedId?: string;
   onSelect: (id: string) => void;
-}
-
-function StatusBadge({ status }: { status: string }) {
-  const isReady = status === "ready";
-  return (
-    <span
-      className={`inline-block rounded px-1.5 py-0.5 text-xs font-medium ${
-        isReady
-          ? "bg-teal-wash text-teal-dark"
-          : "bg-panel text-slate"
-      }`}
-    >
-      {status}
-    </span>
-  );
 }
 
 export function CardsList({ cards, selectedId, onSelect }: CardsListProps) {
@@ -77,7 +63,9 @@ export function CardsList({ cards, selectedId, onSelect }: CardsListProps) {
             <button
               key={card.id}
               onClick={() => onSelect(card.id)}
-              className={`w-full text-left px-3 py-2.5 border-b border-edge-light transition-colors duration-150 ${
+              className={`w-full text-left border-b border-edge-light transition-colors duration-150 ${
+                card.parent ? "pl-6 pr-3" : "px-3"
+              } py-2.5 ${
                 selectedId === card.id
                   ? "bg-teal-wash"
                   : "hover:bg-panel"

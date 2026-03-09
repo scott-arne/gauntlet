@@ -1,4 +1,5 @@
 import { useState, useEffect, useRef } from "react";
+import type { VetResult } from "../lib/api";
 
 interface RunMessage {
   type: "frame" | "progress" | "complete";
@@ -7,13 +8,13 @@ interface RunMessage {
   height?: number;
   message?: string;
   status?: string;
-  result?: any;
+  result?: VetResult;
 }
 
 export function useRunStream(runId: string | null) {
   const [frame, setFrame] = useState<string | null>(null);
   const [messages, setMessages] = useState<string[]>([]);
-  const [result, setResult] = useState<any>(null);
+  const [result, setResult] = useState<VetResult | null>(null);
   const [connected, setConnected] = useState(false);
   const wsRef = useRef<WebSocket | null>(null);
 
@@ -26,9 +27,15 @@ export function useRunStream(runId: string | null) {
 
     ws.onopen = () => setConnected(true);
     ws.onclose = () => setConnected(false);
+    ws.onerror = () => setConnected(false);
 
     ws.onmessage = (event) => {
-      const msg: RunMessage = JSON.parse(event.data);
+      let msg: RunMessage;
+      try {
+        msg = JSON.parse(event.data);
+      } catch {
+        return;
+      }
       switch (msg.type) {
         case "frame":
           setFrame(`data:image/jpeg;base64,${msg.data}`);
@@ -37,7 +44,7 @@ export function useRunStream(runId: string | null) {
           setMessages((prev) => [...prev, msg.message || ""]);
           break;
         case "complete":
-          setResult(msg.result);
+          setResult(msg.result ?? null);
           break;
       }
     };

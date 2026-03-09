@@ -1,5 +1,5 @@
 import { Hono } from "hono";
-import { join } from "path";
+import { join, resolve } from "path";
 import { existsSync, readFileSync, statSync } from "fs";
 import { scenarioRoutes } from "./routes/scenarios";
 import { resultRoutes } from "./routes/results";
@@ -22,6 +22,11 @@ export function createApp(dataDir: string, uiDir?: string, broadcaster?: RunBroa
     app.get("*", (c) => {
       const urlPath = new URL(c.req.url).pathname;
       const filePath = join(uiDir, urlPath);
+      const resolvedUi = resolve(uiDir);
+
+      if (!resolve(filePath).startsWith(resolvedUi + "/") && resolve(filePath) !== resolvedUi) {
+        return c.notFound();
+      }
 
       if (existsSync(filePath) && statSync(filePath).isFile()) {
         const content = readFileSync(filePath);

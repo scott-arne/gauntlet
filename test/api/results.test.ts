@@ -118,6 +118,19 @@ describe("Results API", () => {
     expect(res.status).toBe(404);
   });
 
+  test("GET /api/results/:scenario rejects path traversal in scenario", async () => {
+    // Hono normalizes URLs, so we test via the route handler's path check
+    // by using URL-encoded traversal that survives normalization
+    const res = await app.request("/api/results/..%2F..%2Fetc");
+    // Should either 400 (path rejected) or 404 (not found), never serve outside resultsDir
+    expect([400, 404]).toContain(res.status);
+  });
+
+  test("GET /api/results/:scenario/screenshots/:name rejects traversal in name", async () => {
+    const res = await app.request("/api/results/test-001/screenshots/..%2F..%2Fresult.json");
+    expect([400, 404]).toContain(res.status);
+  });
+
   test("GET /api/results returns empty array when no results dir", async () => {
     const emptyDir = mkdtempSync(join(tmpdir(), "vet-empty-"));
     mkdirSync(join(emptyDir, "stories"), { recursive: true });

@@ -1,6 +1,12 @@
 import { Hono } from "hono";
-import { readdirSync, readFileSync, existsSync } from "fs";
-import { join } from "path";
+import { readdirSync, readFileSync, existsSync, realpathSync } from "fs";
+import { join, resolve } from "path";
+
+function isSafePath(base: string, target: string): boolean {
+  const resolvedBase = resolve(base);
+  const resolvedTarget = resolve(target);
+  return resolvedTarget.startsWith(resolvedBase + "/") || resolvedTarget === resolvedBase;
+}
 
 export function resultRoutes(resultsDir: string) {
   const router = new Hono();
@@ -31,6 +37,10 @@ export function resultRoutes(resultsDir: string) {
     const scenario = c.req.param("scenario");
     const resultPath = join(resultsDir, scenario, "result.json");
 
+    if (!isSafePath(resultsDir, resultPath)) {
+      return c.json({ error: "invalid path" }, 400);
+    }
+
     if (!existsSync(resultPath)) {
       return c.json({ error: "not found" }, 404);
     }
@@ -45,9 +55,14 @@ export function resultRoutes(resultsDir: string) {
 
   router.get("/:scenario/video", (c) => {
     const scenario = c.req.param("scenario");
+    const scenarioDir = join(resultsDir, scenario);
+
+    if (!isSafePath(resultsDir, scenarioDir)) {
+      return c.json({ error: "invalid path" }, 400);
+    }
 
     for (const ext of ["webm", "mp4"]) {
-      const videoPath = join(resultsDir, scenario, `video.${ext}`);
+      const videoPath = join(scenarioDir, `video.${ext}`);
       if (existsSync(videoPath)) {
         const content = readFileSync(videoPath);
         return new Response(content, {
@@ -63,6 +78,10 @@ export function resultRoutes(resultsDir: string) {
     const scenario = c.req.param("scenario");
     const name = c.req.param("name");
     const filePath = join(resultsDir, scenario, name);
+
+    if (!isSafePath(resultsDir, filePath)) {
+      return c.json({ error: "invalid path" }, 400);
+    }
 
     if (!existsSync(filePath)) {
       return c.json({ error: "not found" }, 404);

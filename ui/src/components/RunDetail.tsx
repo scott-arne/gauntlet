@@ -1,35 +1,10 @@
 import { useState } from "react";
 import { api, type VetResult } from "../lib/api";
+import { StatusBadge, formatDuration } from "./shared";
 
 interface RunDetailProps {
   result: VetResult;
   onFanout: () => void;
-}
-
-function StatusBadge({ status }: { status: string }) {
-  const colors: Record<string, string> = {
-    pass: "bg-green-100 text-green-800",
-    fail: "bg-red-100 text-red-800",
-    investigate: "bg-yellow-100 text-yellow-800",
-  };
-  return (
-    <span
-      className={`inline-block rounded px-2 py-1 text-sm font-medium ${
-        colors[status] || "bg-panel text-slate"
-      }`}
-    >
-      {status}
-    </span>
-  );
-}
-
-function formatDuration(ms: number): string {
-  if (ms < 1000) return `${ms}ms`;
-  const seconds = Math.round(ms / 1000);
-  if (seconds < 60) return `${seconds}s`;
-  const minutes = Math.floor(seconds / 60);
-  const remaining = seconds % 60;
-  return `${minutes}m ${remaining}s`;
 }
 
 export function RunDetail({ result, onFanout }: RunDetailProps) {
@@ -66,7 +41,7 @@ export function RunDetail({ result, onFanout }: RunDetailProps) {
     <div className="p-6 max-w-3xl">
       <div className="flex items-center gap-3 mb-6">
         <h1 className="heading-display text-2xl">{result.scenario}</h1>
-        <StatusBadge status={result.status} />
+        <StatusBadge status={result.status} size="md" />
       </div>
 
       {error && (

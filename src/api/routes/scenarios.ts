@@ -16,6 +16,7 @@ export function scenarioRoutes(dataDir: string) {
       title: card.title,
       status: card.status,
       tags: card.tags,
+      ...(card.parent ? { parent: card.parent } : {}),
     }));
     return c.json(summaries);
   });

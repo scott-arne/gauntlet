@@ -3,6 +3,7 @@ export interface CardSummary {
   title: string;
   status: string;
   tags: string[];
+  parent?: string;
 }
 
 export interface CardDetail {
