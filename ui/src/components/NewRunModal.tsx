@@ -51,7 +51,6 @@ export function NewRunModal({ onClose, onStarted }: NewRunModalProps) {
     >
       <div
         className="w-full max-w-lg bg-white border border-edge rounded-lg p-6"
-        style={{ borderRadius: "0.5rem" }}
         onClick={(e) => e.stopPropagation()}
       >
         <h2 className="heading-display text-xl mb-5">New Run</h2>
