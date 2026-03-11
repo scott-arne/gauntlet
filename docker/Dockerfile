@@ -39,4 +39,8 @@ RUN bun install --frozen-lockfile
 COPY src/ src/
 COPY tsconfig.json ./
 
+# Build UI
+COPY ui/ ui/
+RUN cd ui && bun install --frozen-lockfile && bun run build
+
 ENTRYPOINT ["bun", "run", "src/index.ts"]
