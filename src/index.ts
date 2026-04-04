@@ -39,6 +39,9 @@ async function main() {
       const broadcaster = new RunBroadcaster();
       const app = createApp(dataDir, uiDir, broadcaster);
       const port = args.port;
+      if (!process.env.GAUNTLET_AGENT_MODEL && !process.env.GAUNTLET_MODELS) {
+        console.error("WARNING: No model configured. Set GAUNTLET_AGENT_MODEL or GAUNTLET_MODELS environment variable.");
+      }
       console.error(`gauntlet server listening on port ${port}`);
       Bun.serve({
         port,

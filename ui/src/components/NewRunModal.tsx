@@ -12,6 +12,7 @@ export function NewRunModal({ onClose, onStarted }: NewRunModalProps) {
   const [loadingCards, setLoadingCards] = useState(true);
   const [cardError, setCardError] = useState<string | null>(null);
 
+  const [availableModels, setAvailableModels] = useState<string[]>([]);
   const [selectedCard, setSelectedCard] = useState("");
   const [target, setTarget] = useState("");
   const [model, setModel] = useState("");
@@ -26,6 +27,13 @@ export function NewRunModal({ onClose, onStarted }: NewRunModalProps) {
       })
       .catch((e) => setCardError(e instanceof Error ? e.message : "Failed to load cards"))
       .finally(() => setLoadingCards(false));
+
+    api.config.get()
+      .then((config) => {
+        setAvailableModels(config.models);
+        if (config.defaultModel) setModel(config.defaultModel);
+      })
+      .catch(() => { /* config fetch is best-effort */ });
   }, []);
 
   function handleStart() {
@@ -106,12 +114,29 @@ export function NewRunModal({ onClose, onStarted }: NewRunModalProps) {
 
           <div>
             <label className="section-label block mb-1">Model</label>
-            <input
-              className="input-field"
-              value={model}
-              onChange={(e) => setModel(e.target.value)}
-              placeholder="Optional — falls back to server env"
-            />
+            {availableModels.length > 0 ? (
+              <select
+                className="input-field"
+                value={model}
+                onChange={(e) => setModel(e.target.value)}
+              >
+                {availableModels.map((m) => (
+                  <option key={m} value={m}>{m}</option>
+                ))}
+              </select>
+            ) : (
+              <input
+                className="input-field"
+                value={model}
+                onChange={(e) => setModel(e.target.value)}
+                placeholder="e.g. claude-sonnet-4-6"
+              />
+            )}
+            {!model && availableModels.length === 0 && (
+              <p className="text-xs text-red-600 mt-1">
+                No model configured. Set GAUNTLET_MODELS or GAUNTLET_AGENT_MODEL on the server.
+              </p>
+            )}
           </div>
 
           <div>

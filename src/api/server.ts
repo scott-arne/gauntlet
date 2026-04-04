@@ -5,6 +5,7 @@ import { scenarioRoutes } from "./routes/scenarios";
 import { resultRoutes } from "./routes/results";
 import { fanoutRoutes } from "./routes/fanout";
 import { runRoutes } from "./routes/run";
+import { configRoutes } from "./routes/config";
 import { isSafePath } from "./safe-path";
 import { getMimeType } from "./mime-types";
 import type { RunBroadcaster } from "./ws";
@@ -17,6 +18,7 @@ export function createApp(dataDir: string, uiDir?: string, broadcaster?: RunBroa
   api.route("/results", resultRoutes(join(dataDir, "results")));
   api.route("/fanout", fanoutRoutes(dataDir));
   api.route("/run", runRoutes(dataDir, broadcaster));
+  api.route("/config", configRoutes());
 
   app.route("/api", api);
 

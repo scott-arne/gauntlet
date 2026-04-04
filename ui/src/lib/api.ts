@@ -48,7 +48,15 @@ async function request<T>(path: string, options?: RequestInit): Promise<T> {
   return res.json();
 }
 
+export interface ServerConfig {
+  models: string[];
+  defaultModel: string | null;
+}
+
 export const api = {
+  config: {
+    get: () => request<ServerConfig>("/config"),
+  },
   cards: {
     list: () => request<CardSummary[]>("/scenarios"),
     get: (id: string) => request<CardDetail>(`/scenarios/${id}`),
