@@ -7,6 +7,7 @@ import { createClient } from "../../models/resolve";
 import type { LLMClient } from "../../models/provider";
 import type { VetResult } from "../../types";
 import { findCard } from "./helpers";
+import type { ErrorLog } from "./errors";
 
 function resolveClient(clientFactory?: () => LLMClient): LLMClient | { error: string } {
   if (clientFactory) return clientFactory();
@@ -26,7 +27,7 @@ function writeCards(storiesDir: string, cardTexts: string[], prefix: string) {
   });
 }
 
-export function fanoutRoutes(dataDir: string, clientFactory?: () => LLMClient) {
+export function fanoutRoutes(dataDir: string, clientFactory?: () => LLMClient, errorLog?: ErrorLog) {
   const router = new Hono();
   const storiesDir = join(dataDir, "stories");
 
@@ -37,10 +38,15 @@ export function fanoutRoutes(dataDir: string, clientFactory?: () => LLMClient) {
     const clientOrError = resolveClient(clientFactory);
     if ("error" in clientOrError) return c.json({ error: clientOrError.error }, 400);
 
-    const cardTexts = await generateFanout(entry.card, clientOrError);
-    const generated = writeCards(storiesDir, cardTexts, entry.card.id);
-
-    return c.json({ parent: entry.card.id, generated });
+    try {
+      const cardTexts = await generateFanout(entry.card, clientOrError);
+      const generated = writeCards(storiesDir, cardTexts, entry.card.id);
+      return c.json({ parent: entry.card.id, generated });
+    } catch (err) {
+      const message = err instanceof Error ? err.message : String(err);
+      errorLog?.add("fanout", `${entry.card.id}: ${message}`);
+      return c.json({ error: message }, 500);
+    }
   });
 
   router.post("/:id/observations", async (c) => {
@@ -54,10 +60,15 @@ export function fanoutRoutes(dataDir: string, clientFactory?: () => LLMClient) {
     const clientOrError = resolveClient(clientFactory);
     if ("error" in clientOrError) return c.json({ error: clientOrError.error }, 400);
 
-    const cardTexts = await generateFromObservations(result, clientOrError);
-    const generated = writeCards(storiesDir, cardTexts, `${id}-obs`);
-
-    return c.json({ parent: id, generated });
+    try {
+      const cardTexts = await generateFromObservations(result, clientOrError);
+      const generated = writeCards(storiesDir, cardTexts, `${id}-obs`);
+      return c.json({ parent: id, generated });
+    } catch (err) {
+      const message = err instanceof Error ? err.message : String(err);
+      errorLog?.add("fanout", `observations for ${id}: ${message}`);
+      return c.json({ error: message }, 500);
+    }
   });
 
   router.post("/:id/failure", async (c) => {
@@ -71,10 +82,15 @@ export function fanoutRoutes(dataDir: string, clientFactory?: () => LLMClient) {
     const clientOrError = resolveClient(clientFactory);
     if ("error" in clientOrError) return c.json({ error: clientOrError.error }, 400);
 
-    const cardTexts = await generateFromFailure(result, clientOrError);
-    const generated = writeCards(storiesDir, cardTexts, `${id}-fail`);
-
-    return c.json({ parent: id, generated });
+    try {
+      const cardTexts = await generateFromFailure(result, clientOrError);
+      const generated = writeCards(storiesDir, cardTexts, `${id}-fail`);
+      return c.json({ parent: id, generated });
+    } catch (err) {
+      const message = err instanceof Error ? err.message : String(err);
+      errorLog?.add("fanout", `failure analysis for ${id}: ${message}`);
+      return c.json({ error: message }, 500);
+    }
   });
 
   return router;

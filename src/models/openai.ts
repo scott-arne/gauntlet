@@ -36,7 +36,7 @@ export function openaiToolResultMessages(calls: ToolCall[], results: ToolResult[
   const messages: unknown[] = calls.map((call, i) => ({
     role: "tool",
     tool_call_id: call.id,
-    content: results[i].text,
+    content: results[i].text ?? "",
   }));
 
   const imageParts: unknown[] = [];

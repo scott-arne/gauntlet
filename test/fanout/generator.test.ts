@@ -6,6 +6,7 @@ import {
   generateFromObservations,
   buildFailurePrompt,
   generateFromFailure,
+  splitAndValidateCards,
 } from "../../src/fanout/generator";
 import { parseStoryCard } from "../../src/format/story-card";
 import type { StoryCard } from "../../src/format/story-card";
@@ -159,6 +160,41 @@ test("generateFanout filters out invalid cards", async () => {
   }
   expect(cards[0]).toContain("story-001-a");
   expect(cards[1]).toContain("story-001-b");
+});
+
+// --- splitAndValidateCards ---
+
+describe("splitAndValidateCards", () => {
+  const validCard = `---\nid: story-001-a\ntitle: Variation A\nstatus: draft\nparent: story-001\n---\n\nDescription.\n\n## Acceptance Criteria\n\n- Works`;
+  const validCardB = `---\nid: story-001-b\ntitle: Variation B\nstatus: draft\nparent: story-001\n---\n\nDescription.\n\n## Acceptance Criteria\n\n- Works`;
+
+  test("strips markdown code fences wrapping cards", () => {
+    const fenced = "```yaml\n" + validCard + "\n```";
+    const cards = splitAndValidateCards(fenced);
+    expect(cards).toHaveLength(1);
+    expect(() => parseStoryCard(cards[0])).not.toThrow();
+  });
+
+  test("strips code fences from multiple cards with separator", () => {
+    const input = "```\n" + validCard + "\n```\n---CARD---\n```\n" + validCardB + "\n```";
+    const cards = splitAndValidateCards(input);
+    expect(cards).toHaveLength(2);
+  });
+
+  test("falls back to frontmatter splitting when no separator", () => {
+    const input = validCard + "\n\n" + validCardB;
+    const cards = splitAndValidateCards(input);
+    expect(cards).toHaveLength(2);
+    expect(cards[0]).toContain("story-001-a");
+    expect(cards[1]).toContain("story-001-b");
+  });
+
+  test("logs and filters invalid cards without crashing", () => {
+    const input = validCard + "\n---CARD---\nthis is not a valid card";
+    const cards = splitAndValidateCards(input);
+    expect(cards).toHaveLength(1);
+    expect(cards[0]).toContain("story-001-a");
+  });
 });
 
 // --- Task 2: Observation promotion ---

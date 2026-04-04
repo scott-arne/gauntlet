@@ -8,6 +8,7 @@ import { runAgent } from "../../agent/agent";
 import type { Adapter } from "../../adapters/adapter";
 import type { RunBroadcaster } from "../ws";
 import type { ScreencastStreamer as ScreencastStreamerType } from "../../streaming/screencast";
+import type { ErrorLog } from "./errors";
 
 function createAdapter(type: string, chromeEndpoint?: string): Adapter {
   switch (type) {
@@ -28,7 +29,7 @@ function createAdapter(type: string, chromeEndpoint?: string): Adapter {
   }
 }
 
-export function runRoutes(dataDir: string, broadcaster?: RunBroadcaster) {
+export function runRoutes(dataDir: string, broadcaster?: RunBroadcaster, errorLog?: ErrorLog) {
   const router = new Hono();
   const storiesDir = join(dataDir, "stories");
 
@@ -85,6 +86,10 @@ export function runRoutes(dataDir: string, broadcaster?: RunBroadcaster) {
       }
 
       return c.json(result);
+    } catch (err) {
+      const message = err instanceof Error ? err.message : String(err);
+      errorLog?.add("run", `${entry.card.id}: ${message}`);
+      throw err;
     } finally {
       if (streamer) await streamer.stop();
       await adapter.close();

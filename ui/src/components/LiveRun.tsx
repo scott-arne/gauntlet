@@ -4,10 +4,12 @@ import { useEffect, useRef } from "react";
 interface LiveRunProps {
   runId: string;
   cardTitle: string;
+  error?: string | null;
   onComplete: () => void;
+  onBack: () => void;
 }
 
-export function LiveRun({ runId, cardTitle, onComplete }: LiveRunProps) {
+export function LiveRun({ runId, cardTitle, error: startError, onComplete, onBack }: LiveRunProps) {
   const { frame, messages, result, connected } = useRunStream(runId);
   const logRef = useRef<HTMLDivElement>(null);
 
@@ -40,6 +42,19 @@ export function LiveRun({ runId, cardTitle, onComplete }: LiveRunProps) {
           </span>
         )}
       </div>
+
+      {startError && (
+        <div className="mx-4 mt-4 rounded-lg bg-red-50 border border-red-200 px-4 py-3">
+          <h3 className="text-sm font-medium text-red-800">Run failed to start</h3>
+          <p className="text-sm text-red-700 mt-1">{startError}</p>
+          <button
+            className="btn-secondary mt-3"
+            onClick={onBack}
+          >
+            Back to Runs
+          </button>
+        </div>
+      )}
 
       <div className="flex-1 flex flex-col overflow-hidden">
         {/* Browser viewport */}

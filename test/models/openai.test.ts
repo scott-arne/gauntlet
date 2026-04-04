@@ -80,6 +80,16 @@ describe("OpenAI message helpers", () => {
     expect(userMsg.content[2].image_url.url).toBe("data:image/png;base64,img2data");
   });
 
+  test("toolResultMessages handles undefined text gracefully", () => {
+    const calls = [{ id: "call_1", name: "eval", arguments: {} }];
+    const results = [{ text: undefined as unknown as string }];
+
+    const messages = openaiToolResultMessages(calls, results);
+
+    expect(messages).toHaveLength(1);
+    expect((messages[0] as any).content).toBe("");
+  });
+
   test("toolResultMessages with no images returns only tool messages", () => {
     const calls = [{ id: "call_1", name: "click", arguments: {} }];
     const results = [{ text: "clicked" }];

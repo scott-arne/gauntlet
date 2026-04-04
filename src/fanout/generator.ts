@@ -66,19 +66,31 @@ export async function generateFanout(
   return splitAndValidateCards(response.text);
 }
 
-function splitAndValidateCards(text: string): string[] {
-  return text
-    .split("---CARD---")
-    .map((s) => s.trim())
-    .filter(Boolean)
-    .filter((chunk) => {
-      try {
-        parseStoryCard(chunk);
-        return true;
-      } catch {
-        return false;
-      }
-    });
+export function splitAndValidateCards(text: string): string[] {
+  // Strip markdown code fences that LLMs sometimes wrap around output
+  const stripped = text
+    .replace(/^```\w*\s*\n/gm, "")
+    .replace(/\n```\s*$/gm, "")
+    .replace(/\n```\s*\n/gm, "\n");
+
+  // Try explicit separator first
+  let chunks = stripped.split("---CARD---").map((s) => s.trim()).filter(Boolean);
+
+  // If no separator found, try splitting on YAML frontmatter boundaries
+  if (chunks.length <= 1) {
+    chunks = stripped.split(/\n(?=---\nid:)/).map((s) => s.trim()).filter(Boolean);
+  }
+
+  return chunks.filter((chunk) => {
+    try {
+      parseStoryCard(chunk);
+      return true;
+    } catch (e) {
+      console.error(`Failed to parse generated card: ${e instanceof Error ? e.message : e}`);
+      console.error(`Card text: ${chunk.slice(0, 200)}...`);
+      return false;
+    }
+  });
 }
 
 // --- Observation promotion ---

@@ -264,7 +264,7 @@ export class WebAdapter implements Adapter {
       }
       case "eval": {
         const result = await chrome.evaluate(0, args.expression as string);
-        const text = typeof result === "string" ? result : JSON.stringify(result);
+        const text = result === undefined ? "undefined" : (typeof result === "string" ? result : JSON.stringify(result));
         return { text, image: await takeReturnScreenshot() };
       }
       case "wait_for": {

@@ -5,18 +5,23 @@ import { scenarioRoutes } from "./routes/scenarios";
 import { resultRoutes } from "./routes/results";
 import { fanoutRoutes } from "./routes/fanout";
 import { runRoutes } from "./routes/run";
+import { configRoutes } from "./routes/config";
+import { ErrorLog, errorRoutes } from "./routes/errors";
 import { isSafePath } from "./safe-path";
 import { getMimeType } from "./mime-types";
 import type { RunBroadcaster } from "./ws";
 
 export function createApp(dataDir: string, uiDir?: string, broadcaster?: RunBroadcaster) {
   const app = new Hono();
+  const errorLog = new ErrorLog();
 
   const api = new Hono();
   api.route("/scenarios", scenarioRoutes(dataDir));
   api.route("/results", resultRoutes(join(dataDir, "results")));
-  api.route("/fanout", fanoutRoutes(dataDir));
-  api.route("/run", runRoutes(dataDir, broadcaster));
+  api.route("/fanout", fanoutRoutes(dataDir, undefined, errorLog));
+  api.route("/run", runRoutes(dataDir, broadcaster, errorLog));
+  api.route("/config", configRoutes());
+  api.route("/errors", errorRoutes(errorLog));
 
   app.route("/api", api);
 

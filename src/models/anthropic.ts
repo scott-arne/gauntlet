@@ -51,39 +51,41 @@ export function createAnthropicClient(model: string): LLMClient {
       return { role: "user", content };
     },
 
-    toolResultMessages(calls: ToolCall[], results: ToolResult[]) {
-      return [
-        {
-          role: "user",
-          content: calls.map((call, i) => {
-            const result = results[i];
-            if (result.image) {
-              return {
-                type: "tool_result",
-                tool_use_id: call.id,
-                content: [
-                  {
-                    type: "image",
-                    source: {
-                      type: "base64",
-                      media_type: result.image.mediaType,
-                      data: result.image.data,
-                    },
-                  },
-                  { type: "text", text: result.text },
-                ],
-              };
-            }
-            return {
-              type: "tool_result",
-              tool_use_id: call.id,
-              content: result.text,
-            };
-          }),
-        },
-      ];
-    },
+    toolResultMessages: anthropicToolResultMessages,
   };
+}
+
+export function anthropicToolResultMessages(calls: ToolCall[], results: ToolResult[]): unknown[] {
+  return [
+    {
+      role: "user",
+      content: calls.map((call, i) => {
+        const result = results[i];
+        if (result.image) {
+          return {
+            type: "tool_result",
+            tool_use_id: call.id,
+            content: [
+              {
+                type: "image",
+                source: {
+                  type: "base64",
+                  media_type: result.image.mediaType,
+                  data: result.image.data,
+                },
+              },
+              { type: "text", text: result.text ?? "" },
+            ],
+          };
+        }
+        return {
+          type: "tool_result",
+          tool_use_id: call.id,
+          content: result.text ?? "",
+        };
+      }),
+    },
+  ];
 }
 
 function convertTool(tool: ToolDefinition): Anthropic.Tool {

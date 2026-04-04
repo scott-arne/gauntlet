@@ -1,6 +1,6 @@
 import { useState } from "react";
-import { api, type VetResult } from "../lib/api";
-import { StatusBadge, formatDuration, useToast, Toast } from "./shared";
+import { api, type VetResult, type FanoutResult } from "../lib/api";
+import { StatusBadge, formatDuration } from "./shared";
 
 interface RunDetailProps {
   result: VetResult;
@@ -10,15 +10,16 @@ interface RunDetailProps {
 export function RunDetail({ result, onFanout }: RunDetailProps) {
   const [acting, setActing] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const toast = useToast();
+  const [generated, setGenerated] = useState<FanoutResult["generated"] | null>(null);
 
   async function handleFromObservations() {
     try {
       setActing(true);
       setError(null);
+      setGenerated(null);
       const res = await api.fanout.fromObservations(result.scenario);
+      setGenerated(res.generated);
       onFanout();
-      toast.show(`Generated ${res.generated.length} card(s) from observations`);
     } catch (e) {
       setError(e instanceof Error ? e.message : "Failed to generate from observations");
     } finally {
@@ -30,9 +31,10 @@ export function RunDetail({ result, onFanout }: RunDetailProps) {
     try {
       setActing(true);
       setError(null);
-      await api.fanout.fromFailure(result.scenario);
+      setGenerated(null);
+      const res = await api.fanout.fromFailure(result.scenario);
+      setGenerated(res.generated);
       onFanout();
-      toast.show("Failure analysis complete");
     } catch (e) {
       setError(e instanceof Error ? e.message : "Failed to analyze failure");
     } finally {
@@ -48,8 +50,32 @@ export function RunDetail({ result, onFanout }: RunDetailProps) {
       </div>
 
       {error && (
-        <div className="mb-4 rounded-lg bg-red-50 px-4 py-3 text-sm text-red-700">
+        <div className="mb-4 rounded-lg bg-red-50 border border-red-200 px-4 py-3 text-sm text-red-700">
           {error}
+        </div>
+      )}
+
+      {generated && generated.length > 0 && (
+        <div className="mb-4 rounded-lg bg-green-50 border border-green-200 px-4 py-3">
+          <div className="flex items-center justify-between">
+            <h3 className="text-sm font-medium text-green-800">
+              Generated {generated.length} test card{generated.length !== 1 ? "s" : ""}
+            </h3>
+            <button
+              className="text-xs text-green-600 hover:text-green-800"
+              onClick={() => setGenerated(null)}
+            >
+              Dismiss
+            </button>
+          </div>
+          <ul className="mt-2 space-y-1">
+            {generated.map((card) => (
+              <li key={card.id} className="text-sm text-green-700">
+                <a href={`/cards/${card.id}`} className="hover:underline font-medium">{card.title}</a>
+                <span className="text-green-500 ml-1">({card.id})</span>
+              </li>
+            ))}
+          </ul>
         </div>
       )}
 
@@ -129,7 +155,7 @@ export function RunDetail({ result, onFanout }: RunDetailProps) {
               onClick={handleFromObservations}
               disabled={acting}
             >
-              {acting ? "Generating..." : "Generate from Observations"}
+              {acting ? "Generating..." : "Generate Test Cards from Observations"}
             </button>
           )}
           {result.status === "fail" && (
@@ -138,13 +164,11 @@ export function RunDetail({ result, onFanout }: RunDetailProps) {
               onClick={handleAnalyzeFailure}
               disabled={acting}
             >
-              {acting ? "Analyzing..." : "Analyze Failure"}
+              {acting ? "Generating..." : "Generate Test Cards from Failure"}
             </button>
           )}
         </div>
       </div>
-
-      <Toast message={toast.message} />
     </div>
   );
 }

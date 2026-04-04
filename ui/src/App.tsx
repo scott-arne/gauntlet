@@ -189,6 +189,7 @@ export default function App() {
   const { results, loading: runsLoading, error: runsError, refresh: refreshResults } = useResults();
   const [showRunModal, setShowRunModal] = useState(false);
   const [liveRun, setLiveRun] = useState<{ scenarioId: string; cardTitle: string } | null>(null);
+  const [liveRunError, setLiveRunError] = useState<string | null>(null);
 
   // Extract card ID from path like /cards/some-id (but not /cards/new)
   const cardIdMatch = location.pathname.match(/^\/cards\/(?!new$)(.+)/);
@@ -211,6 +212,10 @@ export default function App() {
           tabs={TABS}
           activeTab={activeTab}
           onTabChange={(path) => navigate(path)}
+          liveRun={liveRun && !liveRunError ? {
+            title: liveRun.cardTitle,
+            onClick: () => navigate("/runs/live"),
+          } : null}
           action={activeTab === "/cards" ? (
             <button
               className="btn-primary w-full"
@@ -263,11 +268,18 @@ export default function App() {
             <LiveRun
               runId={liveRun.scenarioId}
               cardTitle={liveRun.cardTitle}
+              error={liveRunError}
               onComplete={() => {
                 const id = liveRun.scenarioId;
                 setLiveRun(null);
+                setLiveRunError(null);
                 refreshResults();
                 navigate(`/runs/${id}`);
+              }}
+              onBack={() => {
+                setLiveRun(null);
+                setLiveRunError(null);
+                navigate("/runs");
               }}
             />
           ) : (
@@ -283,11 +295,12 @@ export default function App() {
         onClose={() => setShowRunModal(false)}
         onStarted={(scenarioId, config) => {
           setShowRunModal(false);
+          setLiveRunError(null);
           const card = cards.find((c) => c.id === scenarioId);
           setLiveRun({ scenarioId, cardTitle: card?.title || scenarioId });
           navigate("/runs/live");
-          // Fire-and-forget: result arrives via WebSocket
-          api.run.start(scenarioId, config).catch(() => {
+          api.run.start(scenarioId, config).catch((e) => {
+            setLiveRunError(e instanceof Error ? e.message : "Run failed to start");
             refreshResults();
           });
         }}
