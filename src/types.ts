@@ -28,6 +28,7 @@ export interface VetResult {
   evidence: {
     screenshots: string[];
     log: string;
+    video?: string;
   };
   duration_ms: number;
   usage?: {

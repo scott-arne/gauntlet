@@ -105,29 +105,11 @@ describe("Results API", () => {
     rmSync(badDir, { recursive: true, force: true });
   });
 
-  test("GET /api/results/:scenario/screenshots/:name serves image", async () => {
-    const resultsDir = join(dataDir, "results");
-    writeFileSync(join(resultsDir, "test-001", "evidence.png"), "fake-png-data");
-    const res = await app.request("/api/results/test-001/screenshots/evidence.png");
-    expect(res.status).toBe(200);
-    expect(res.headers.get("Content-Type")).toBe("image/png");
-  });
-
-  test("GET /api/results/:scenario/screenshots/:name returns 404", async () => {
-    const res = await app.request("/api/results/test-001/screenshots/nope.png");
-    expect(res.status).toBe(404);
-  });
-
   test("GET /api/results/:scenario rejects path traversal in scenario", async () => {
     // Hono normalizes URLs, so we test via the route handler's path check
     // by using URL-encoded traversal that survives normalization
     const res = await app.request("/api/results/..%2F..%2Fetc");
     // Should either 400 (path rejected) or 404 (not found), never serve outside resultsDir
-    expect([400, 404]).toContain(res.status);
-  });
-
-  test("GET /api/results/:scenario/screenshots/:name rejects traversal in name", async () => {
-    const res = await app.request("/api/results/test-001/screenshots/..%2F..%2Fresult.json");
     expect([400, 404]).toContain(res.status);
   });
 

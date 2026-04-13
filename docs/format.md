@@ -1,39 +1,26 @@
 # Gauntlet run format
 
-This document describes the on-disk format of a Gauntlet run. It is a stable
-public contract: CLI tools, ecosystem integrations, CI reporters, humans, and
-LLMs are all expected to read these files directly. The HTTP API is one
-consumer among several, not the primary contract.
+Each test run produces a self-contained directory on disk. This document
+describes what's in it and how to read it.
 
 ## Directory layout
 
-Every run produces a directory under `<data-dir>/results/<scenario-id>/`:
-
 ```
 <data-dir>/results/<scenario>/
-  result.json        Structured result + manifest of evidence
-  result.md          Human- and LLM-readable rendering of result.json
-  run.jsonl          Append-only action log, one JSON object per tool call
-  screenshots/       Agent-captured screenshots referenced in the manifest
-    001.png
-    002.png
-    ...
-  frames/            Passive screencast frames for playback (not yet in manifest)
-    frame-00000.jpg
-    ...
-  issues/            Per-observation markdown, derived from result.json
-    001-bug-...md
-    002-ux-...md
-    ...
+  result.json        The run's result, including a manifest of evidence files
+  result.md          Human-readable rendering of result.json
+  run.jsonl          Append-only action log (one JSON object per tool call)
+  screenshots/       Agent-captured screenshots
+  frames/            Passive screencast frames
+  issues/            Per-observation markdown (derived from observations)
 ```
 
-The run directory is self-contained. Copying it anywhere preserves the full
-record of the run.
+Copying a run directory preserves the full record of the run.
 
-## `result.json`: the manifest
+## `result.json`
 
-`result.json` is both the structured result and the evidence manifest for the
-run. Example (abbreviated):
+`result.json` is the manifest for the run. It records the verdict, the
+agent's reasoning, the observations, and pointers to the evidence files.
 
 ```json
 {
@@ -41,7 +28,7 @@ run. Example (abbreviated):
   "scenario": "login-001",
   "status": "pass",
   "summary": "User can log in with valid credentials.",
-  "reasoning": "Navigated to /login, entered valid credentials, ...",
+  "reasoning": "Navigated to /login, entered credentials, landed on dashboard.",
   "observations": [
     { "kind": "ux", "description": "Password field has no show/hide toggle." }
   ],
@@ -56,95 +43,45 @@ run. Example (abbreviated):
 
 ### Fields
 
-- `schemaVersion` (number) — The format version. Currently `1`. A reader that
-  does not recognize the version should fail loudly rather than guess.
-- `scenario` (string) — The id of the story card this run tested.
-- `status` (`"pass" | "fail" | "investigate"`) — The agent's verdict.
-- `summary` (string) — One- or two-sentence summary.
-- `reasoning` (string) — The agent's explanation of how it reached the verdict.
-- `observations` (array) — Incidental findings. Each has `kind` (`bug`, `ux`,
-  `typo`, `suggestion`, `a11y`, `performance`) and `description`.
-- `evidence` (object) — The manifest. See below.
-- `duration_ms` (number) — Total wall-clock time for the run.
-- `usage` (object, optional) — Token and turn counts from the LLM.
+- `schemaVersion` — format version. `1` today.
+- `scenario` — id of the story card that was tested.
+- `status` — `"pass"`, `"fail"`, or `"investigate"`.
+- `summary`, `reasoning` — the agent's write-up.
+- `observations` — incidental findings, each with `kind` (`bug`, `ux`, `typo`,
+  `suggestion`, `a11y`, `performance`) and `description`. An observation may
+  also carry an `evidence` array of paths pointing at supporting files.
+- `evidence` — pointers to files for this run:
+  - `screenshots`: relative paths to screenshots
+  - `log`: relative path to `run.jsonl`
+  - `video` (optional): relative path to a video file, if the run produced one
+- `duration_ms`, `usage` — timing and token counts.
 
-### The evidence manifest
+### Path references
 
-`evidence` is the manifest portion of `result.json`. It lists files that are
-part of the run's evidentiary record.
-
-```json
-"evidence": {
-  "screenshots": ["screenshots/001.png", "screenshots/002.png"],
-  "log": "run.jsonl"
-}
-```
-
-**The rule — and the only rule — a reader needs:** every string in the
-manifest is a **relative path from the run directory**. To locate the file,
-join it with the run directory root. No hidden mappings, no kind-to-subdir
-translation, no code required to interpret it.
-
-This property is what makes the manifest portable. You can read `result.json`
-from anywhere — a shell script, another language, an LLM — and resolve every
-entry without knowing Gauntlet's internals.
-
-### What is and isn't in the manifest
-
-The manifest lists **evidence**: files the writer considers part of the run's
-authoritative record. Currently:
-
-- `screenshots` — intentional agent captures.
-- `log` — the append-only action log (`run.jsonl`).
-
-Not (yet) in the manifest:
-
-- `frames/` — passive screencast frames for video playback. May be manifested
-  later if we decide they are evidence rather than a playback medium.
-- `issues/*.md` — per-observation markdown files. These are **derivations**
-  of `result.json` (the `observations` array), not independent evidence, and
-  can be regenerated from the manifest.
-- `result.md` — human-readable rendering of `result.json`. Also a derivation.
-- Any video file — video generation is not yet implemented.
-
-A derivation is a file that can be recomputed from the manifest. The manifest
-does not list derivations because listing them would create drift: if you
-change how they're rendered, you'd have to update the manifest too. Keep the
-manifest about source-of-truth evidence and let derivations be derived.
+Every path in `result.json` is a **relative path from the run directory**. To
+find the file, join the path with the run root. That's the whole rule — no
+subdir translation, no hidden mapping.
 
 ## HTTP access
 
-The Gauntlet server exposes run data through a small API under `/api/results`:
+The server exposes each run through a few endpoints under `/api/results`:
 
-- `GET /api/results` — list all runs (returns parsed `result.json` contents).
-- `GET /api/results/:scenario` — get one run's parsed `result.json`.
-- `GET /api/results/:scenario/file/:relativePath` — serve any file inside a run
-  directory, given its relative path from the run root. This matches the
-  manifest contract: whatever path you find in `evidence.screenshots[i]`, you
-  can request via this endpoint.
+- `GET /api/results` — list runs (returns parsed `result.json` contents).
+- `GET /api/results/:scenario` — one run's parsed `result.json`.
+- `GET /api/results/:scenario/file/:relativePath` — fetch a file inside a run
+  directory. **The file must be listed in that run's `result.json`**;
+  arbitrary files on disk are not accessible through the API. Path traversal
+  outside the run directory is blocked.
 
-Example: a screenshot listed in the manifest as `"screenshots/001.png"` is
-served by `GET /api/results/login-001/file/screenshots/001.png`. Path traversal
-outside the run directory is blocked.
-
-The HTTP API intentionally does not invent its own evidence schema. It is a
-thin controller that surfaces what the manifest already describes, plus the
-ability to fetch any named file. If you want presentation-layer data (URLs,
-captions, linked observations) beyond what the manifest provides, that is a
-separate view-model concern to be added on top — the manifest itself should
-stay stable and consumer-agnostic.
+A screenshot listed as `"screenshots/001.png"` in the manifest is served by
+`GET /api/results/login-001/file/screenshots/001.png`.
 
 ## Schema versioning
 
-`schemaVersion` is bumped when an incompatible change is made to `result.json`
-or the surrounding directory layout. Additive changes (new optional fields,
-new subdirectories that don't break existing readers) do not require a bump.
-Removing or renaming fields, changing the meaning of existing fields, or
-rearranging the directory layout does.
-
-When bumping, document the change here so downstream consumers can update.
+Bump `schemaVersion` when an incompatible change to `result.json` or the
+directory layout lands. Additive changes (new optional fields, new
+subdirectories) do not require a bump.
 
 ### Changelog
 
-- **v1** — Initial published format. Directory layout and `result.json` shape
-  as described above.
+- **v1** — Initial published format.

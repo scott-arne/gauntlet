@@ -24,7 +24,7 @@ export interface VetResult {
   summary: string;
   reasoning: string;
   observations: { kind: string; description: string; evidence?: string[] }[];
-  evidence: { screenshots: string[]; log: string };
+  evidence: { screenshots: string[]; log: string; video?: string };
   duration_ms: number;
   usage?: { inputTokens: number; outputTokens: number; turns: number };
 }

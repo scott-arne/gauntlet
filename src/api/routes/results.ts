@@ -49,17 +49,35 @@ export function resultRoutes(resultsDir: string) {
     }
   });
 
-  // Manifest-controlled file route: serves any file within a run directory by
-  // its relative path. The manifest entries in result.json already store
-  // relative paths (e.g. "screenshots/001.png"), so the client just passes
-  // the manifest string through. Path traversal is blocked via isSafePath.
-  // See docs/format.md for the contract.
+  // Manifest-gated file route: serves a file from a run directory only if
+  // the run's result.json lists it. The manifest is authoritative; arbitrary
+  // files on disk are not accessible through the API. See docs/format.md.
   router.get("/:scenario/file/:path{.+}", (c) => {
     const scenario = c.req.param("scenario");
     const relPath = c.req.param("path");
     const scenarioDir = join(resultsDir, scenario);
-    const filePath = join(scenarioDir, relPath);
+    const manifestPath = join(scenarioDir, "result.json");
 
+    if (!isSafePath(resultsDir, scenarioDir)) {
+      return c.json({ error: "invalid path" }, 400);
+    }
+
+    if (!existsSync(manifestPath)) {
+      return c.json({ error: "run not found" }, 404);
+    }
+
+    let manifest: unknown;
+    try {
+      manifest = JSON.parse(readFileSync(manifestPath, "utf-8"));
+    } catch {
+      return c.json({ error: "malformed result" }, 500);
+    }
+
+    if (!collectManifestPaths(manifest).has(relPath)) {
+      return c.json({ error: "not in manifest" }, 404);
+    }
+
+    const filePath = join(scenarioDir, relPath);
     if (!isSafePath(scenarioDir, filePath)) {
       return c.json({ error: "invalid path" }, 400);
     }
@@ -76,4 +94,34 @@ export function resultRoutes(resultsDir: string) {
   });
 
   return router;
+}
+
+// Extracts every path reference from a parsed result.json. The set returned
+// is the authoritative list of files the manifest claims belong to the run.
+function collectManifestPaths(manifest: unknown): Set<string> {
+  const paths = new Set<string>();
+  if (!manifest || typeof manifest !== "object") return paths;
+  const m = manifest as Record<string, unknown>;
+
+  const evidence = m.evidence;
+  if (evidence && typeof evidence === "object") {
+    const e = evidence as Record<string, unknown>;
+    if (Array.isArray(e.screenshots)) {
+      for (const s of e.screenshots) if (typeof s === "string") paths.add(s);
+    }
+    if (typeof e.log === "string") paths.add(e.log);
+    if (typeof e.video === "string") paths.add(e.video);
+  }
+
+  if (Array.isArray(m.observations)) {
+    for (const obs of m.observations) {
+      if (obs && typeof obs === "object" && Array.isArray((obs as { evidence?: unknown }).evidence)) {
+        for (const p of (obs as { evidence: unknown[] }).evidence) {
+          if (typeof p === "string") paths.add(p);
+        }
+      }
+    }
+  }
+
+  return paths;
 }
