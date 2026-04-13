@@ -50,7 +50,7 @@ Beyond single-scenario testing, Gauntlet can **generate test variations** ("fano
 
 ### Story cards
 
-Test scenarios are markdown files with YAML frontmatter:
+Test scenarios are markdown files (conventionally named `scenario.md`) with YAML-style frontmatter followed by a markdown body:
 
 ```markdown
 ---
@@ -70,7 +70,45 @@ Test the login flow for a registered user.
 - Error message is shown for an incorrect password
 ```
 
-Fields: `id` (required), `title` (required), `status` (draft/ready), `tags`, `parent` (for variations), `stakeholder`.
+**Frontmatter** (delimited by `---` lines, one `key: value` per line):
+
+| Field | Required | Description |
+|-------|----------|-------------|
+| `id` | yes | Stable identifier for the card (used in URLs and filenames) |
+| `title` | yes | One-line human-readable summary |
+| `status` | no | `draft` or `ready` (defaults to `draft`). Only `ready` cards are surfaced for routine runs |
+| `tags` | no | Comma-separated list (e.g. `auth, smoke`) |
+| `stakeholder` | no | Whose perspective the test takes (e.g. `end-user`, `admin`) |
+| `parent` | no | `id` of the parent card -- set automatically on fanout-generated variations to link back to the source |
+
+The frontmatter parser is intentionally minimal: it splits on the first `:` per line, so values are plain strings -- do not quote them and do not use nested YAML structures.
+
+**Body**: free-form markdown describing the scenario. Everything before the `## Acceptance Criteria` heading is treated as the description and passed to the agent as context. Lines under `## Acceptance Criteria` that begin with `- ` are parsed as individual criteria; the agent evaluates each one and the verdict reflects whether they all hold. The `## Acceptance Criteria` section is optional -- a description-only card is valid.
+
+You can validate a card's format with `gauntlet validate scenario.md`.
+
+Each file holds exactly one card: one frontmatter block, one description, one optional `## Acceptance Criteria` list. `gauntlet run` takes a single scenario path and executes it in one agent loop -- there is no built-in batch runner, so to run a suite you either script a shell loop over multiple files or drive `POST /api/run/:id` per card via the HTTP API.
+
+**Copy-paste template** -- a minimal card you can drop into a new `scenario.md` and edit:
+
+```markdown
+---
+id: my-card-001
+title: Short description of what this tests
+status: draft
+tags: smoke
+stakeholder: end-user
+---
+
+Describe the scenario here: what the tester should do, any setup or context
+they need, and what a successful run looks like.
+
+## Acceptance Criteria
+
+- First thing that must be true
+- Second thing that must be true
+- Third thing that must be true
+```
 
 ### The agent loop
 
@@ -191,6 +229,19 @@ The HTTP API (Hono) serves at `/api`:
 docker build -f docker/Dockerfile -t gauntlet .
 docker run -p 4400:4400 -e ANTHROPIC_API_KEY=sk-... gauntlet serve
 ```
+
+Run a scenario from the current directory against a target URL (mount the
+current directory into the container and point at `scenario.md`):
+
+```bash
+docker run --rm \
+  -e OPENAI_API_KEY=sk-... \
+  -e GAUNTLET_AGENT_MODEL=gpt-5.4-mini \
+  -v "$PWD:/work" -w /work \
+  gauntlet run scenario.md --target https://example.com
+```
+
+On macOS/Windows, use `--target http://host.docker.internal:3000` to reach a dev server running on the host.
 
 The Docker image includes Chrome, Bun, and the pre-built UI. It uses Debian bookworm-slim as the base.
 
