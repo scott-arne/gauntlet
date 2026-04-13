@@ -150,8 +150,8 @@ gauntlet fanout scenario.md --out ./stories
 # Generate follow-up scenarios from a previous result
 gauntlet fanout --from-result ./results/run-001 --out ./stories
 
-# Start the web server
-gauntlet serve --port 4400 --data-dir ./my-project
+# Start the web server — point --data-dir at a project's .gauntlet directory
+gauntlet serve --port 4400 --data-dir ../my-app/.gauntlet
 ```
 
 ### Web UI
@@ -187,12 +187,33 @@ The HTTP API (Hono) serves at `/api`:
 
 ## Docker
 
+The quickest way to run Gauntlet is with Docker Compose:
+
 ```bash
-docker build -f docker/Dockerfile -t gauntlet .
-docker run -p 4400:4400 -e ANTHROPIC_API_KEY=sk-... gauntlet serve
+cp .env.example .env    # then fill in your API keys
+docker compose up
 ```
 
-The Docker image includes Chrome, Bun, and the pre-built UI. It uses Debian bookworm-slim as the base.
+By default this mounts `./.gauntlet` (relative to `compose.yaml`) as the data directory, which is convenient for running Gauntlet against itself. Story cards live at `.gauntlet/stories/` and run artifacts (screenshots, videos, agent reasoning, `result.json`) at `.gauntlet/results/`. Story cards are meant to be committed with your repo; run results are gitignored by default.
+
+### Pointing Gauntlet at another project
+
+Set `TARGET_PROJECT` to the path of the project you want to test — either in `.env` or on the command line:
+
+```bash
+TARGET_PROJECT=/Users/you/Code/my-app docker compose up
+```
+
+Compose will mount `my-app/.gauntlet/` from the host, and story cards and run artifacts will live there instead. The path can be absolute or relative to `compose.yaml`.
+
+The Docker image includes Chrome, Bun, and the pre-built UI, on Debian bookworm-slim.
+
+### Running without Compose
+
+```bash
+docker build -f docker/Dockerfile -t gauntlet .
+docker run -p 4400:4400 --env-file .env -v "/path/to/my-app/.gauntlet:/data" gauntlet serve --data-dir /data
+```
 
 ## Environment variables
 
@@ -250,4 +271,7 @@ ui/
     lib/api.ts          HTTP client for the backend API
 docker/
   Dockerfile            Production image (Debian + Chrome + Bun)
+  Dockerfile.chrome     Standalone headless Chrome image (separate target)
+compose.yaml            Docker Compose entry point (mounts .gauntlet as data dir)
+.env.example            Template for API keys and optional env overrides
 ```
