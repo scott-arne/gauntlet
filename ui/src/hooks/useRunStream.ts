@@ -42,15 +42,17 @@ export function useRunStream(runId: string | null): UseRunStreamResult {
     setError(null);
     setGone(false);
 
+    let cancelled = false;
     const protocol = window.location.protocol === "https:" ? "wss:" : "ws:";
     const ws = new WebSocket(`${protocol}//${window.location.host}/api/ws?run=${runId}`);
     wsRef.current = ws;
 
-    ws.onopen = () => setConnected(true);
-    ws.onclose = () => setConnected(false);
-    ws.onerror = () => setConnected(false);
+    ws.onopen = () => { if (!cancelled) setConnected(true); };
+    ws.onclose = () => { if (!cancelled) setConnected(false); };
+    ws.onerror = () => { if (!cancelled) setConnected(false); };
 
     ws.onmessage = (event) => {
+      if (cancelled) return;
       let msg: RunMessage;
       try {
         msg = JSON.parse(event.data);
@@ -79,13 +81,17 @@ export function useRunStream(runId: string | null): UseRunStreamResult {
         case "gone":
           setGone(true);
           // If the run already finished on disk, fetch the result so the
-          // LiveRun screen can transition into RunDetail.
-          api.results.get(runId).then(setResult).catch(() => { /* fall through */ });
+          // LiveRun screen can transition into RunDetail. Guard against
+          // the promise resolving after unmount / runId change.
+          api.results.get(runId)
+            .then((r) => { if (!cancelled) setResult(r); })
+            .catch(() => { /* fall through */ });
           break;
       }
     };
 
     return () => {
+      cancelled = true;
       ws.close();
       wsRef.current = null;
     };
