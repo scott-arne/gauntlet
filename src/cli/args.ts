@@ -243,8 +243,42 @@ function usage(): string {
   return `Usage: gauntlet <command> [options]
 
 Commands:
-  run <scenario.md> --target <url>   Run a scenario
-  validate <scenario.md>             Validate a scenario file
-  fanout <scenario.md>               Fan out scenario into sub-scenarios
-  serve                              Start the API server`;
+  run <scenario.md>    Run a scenario
+    --target <url>       (required) Application under test
+    --model agent=<name> Model for the agent (default: claude-sonnet-4-6)
+    --chrome host:port   Chrome debugging endpoint (default: 127.0.0.1:9222)
+    --adapter <type>     web | cli | tui (default: web)
+    --out <dir>          Evidence output directory (default: ./evidence)
+    --data-dir <dir>     Project root with stories/, results/
+
+  validate <scenario.md>  Validate a scenario file
+
+  fanout <scenario.md>    Fan out scenario into sub-scenarios
+    --out <dir>             Output directory
+    --model fanout=<name>   Model for generation
+    --from-result <dir>     Generate from an existing result directory
+
+  serve                    Start the API server
+    --port <n>               Server port (default: 4400)
+    --data-dir <dir>         Project root with stories/, results/
+    --chrome host:port       Default Chrome endpoint for runs
+    --target <url>           Default target (hint only; UI still overrides)
+    --model agent=<name>     Default agent model
+
+  config                   Print effective configuration
+    --json                   Emit JSON instead of text (also accepts --json true)
+    (also accepts the same knobs as serve/run, for "what would happen if...")
+
+Environment:
+  GAUNTLET_PORT            Server port
+  GAUNTLET_DATA_DIR        Project root
+  GAUNTLET_CHROME          Default Chrome endpoint (host:port)
+  GAUNTLET_AGENT_MODEL     Default agent model
+  GAUNTLET_FANOUT_MODEL    Default fanout model
+  GAUNTLET_MODELS          Comma-separated model allow-list
+
+  ANTHROPIC_API_KEY        Read by the Anthropic SDK (if using Claude models)
+  OPENAI_API_KEY           Read by the OpenAI SDK (if using GPT models)
+
+Run 'gauntlet config' to see effective configuration at any time.`;
 }

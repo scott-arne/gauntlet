@@ -214,15 +214,106 @@ docker build -f docker/Dockerfile -t gauntlet .
 docker run -p 4400:4400 --env-file .env -v "/path/to/my-app/.gauntlet:/data" gauntlet serve --data-dir /data
 ```
 
+## Configuration
+
+Gauntlet loads its runtime configuration once at startup via `loadConfig(argv, env)`. The result is an `AppConfig` object that flows explicitly through every command, route factory, and adapter. There is exactly one place that reads `process.env` for Gauntlet-level config; everything else takes its inputs as arguments.
+
+### Precedence
+
+```
+defaults < environment variables < CLI flags < per-request body (web only)
+```
+
+The web `POST /api/run/:id` body is validated against an explicit allow-list. Unknown fields are rejected with HTTP 400. Every field exposed to the web is a conscious decision.
+
+### CLI flags per command
+
+| Command | Flag | Description |
+|---------|------|-------------|
+| `run` | `--target <url>` | (required) Application under test |
+| `run` | `--model agent=<name>` | Model for the agent |
+| `run` | `--chrome host:port` | Chrome debugging endpoint |
+| `run` | `--adapter web\|cli\|tui` | Adapter type (default: web) |
+| `run` | `--out <dir>` | Evidence output directory |
+| `run` | `--data-dir <dir>` | Project root |
+| `serve` | `--port <n>` | Server port |
+| `serve` | `--data-dir <dir>` | Project root |
+| `serve` | `--chrome host:port` | Default Chrome endpoint for runs |
+| `serve` | `--target <url>` | Default target hint for the UI |
+| `serve` | `--model agent=<name>` | Default agent model |
+| `config` | `--json` | Emit JSON instead of formatted text |
+| `fanout` | `--out <dir>` | Output directory |
+| `fanout` | `--model fanout=<name>` | Model for generation |
+| `fanout` | `--from-result <dir>` | Generate from an existing result |
+
+Unknown flags are now rejected loudly. If you mistype `--chrom` you will get an error, not silent fallthrough.
+
+### Environment variables
+
+Gauntlet-prefixed (consumed by `loadConfig`):
+
+| Variable | Description | Default |
+|----------|-------------|---------|
+| `GAUNTLET_PORT` | Server port | `4400` |
+| `GAUNTLET_DATA_DIR` | Project root | `.` |
+| `GAUNTLET_CHROME` | Default Chrome endpoint (`host:port`) | `127.0.0.1:9222` |
+| `GAUNTLET_AGENT_MODEL` | Default agent model | `claude-sonnet-4-6` |
+| `GAUNTLET_FANOUT_MODEL` | Default fanout model | -- |
+| `GAUNTLET_MODELS` | Comma-separated allow-list of models | `[agent]` |
+
+### SDK env pass-through policy
+
+Gauntlet does **not** read, wrap, or re-export the SDK-native environment variables. They flow directly to the Anthropic and OpenAI SDKs via the empty-constructor pattern (`new Anthropic()`, `new OpenAI()`).
+
+| Variable | Owned by |
+|----------|----------|
+| `ANTHROPIC_API_KEY`, `ANTHROPIC_BASE_URL`, `ANTHROPIC_LOG` | Anthropic SDK |
+| `OPENAI_API_KEY`, `OPENAI_BASE_URL`, `OPENAI_ORG_ID`, `OPENAI_PROJECT` | OpenAI SDK |
+| `HTTPS_PROXY`, `HTTP_PROXY`, `NO_PROXY` | Both SDKs (via Node) |
+
+If you want to point Gauntlet at a custom Anthropic endpoint, set `ANTHROPIC_BASE_URL=https://your-gateway.example.com` directly. Gauntlet will not touch it; the SDK will.
+
+`gauntlet config` records the *presence* of API keys in its output (`apiKeys.anthropic: set`) but never their values.
+
+### Inspecting effective config
+
+```bash
+gauntlet config              # formatted text with per-field source attribution
+gauntlet config --json       # machine-readable
+GAUNTLET_PORT=5500 gauntlet config --data-dir /tmp/x
+#   port:           5500  (env)
+#   dataDir:        /tmp/x  (flag)
+```
+
+The same payload is available over HTTP at `GET /api/config/effective` once the server is running.
+
+### Docker / compose pattern
+
+Use `GAUNTLET_CHROME` to point at a sidecar Chrome service:
+
+```yaml
+services:
+  gauntlet:
+    environment:
+      GAUNTLET_CHROME: chrome:9222
+      GAUNTLET_AGENT_MODEL: claude-sonnet-4-6
+      ANTHROPIC_API_KEY: ${ANTHROPIC_API_KEY}
+```
+
 ## Environment variables
+
+See the [Configuration](#configuration) section above for the full list. Quick reference:
 
 | Variable | Description | Default |
 |----------|-------------|---------|
 | `ANTHROPIC_API_KEY` | API key for Claude models | -- |
 | `OPENAI_API_KEY` | API key for OpenAI models | -- |
 | `GAUNTLET_PORT` | Server port | 4400 |
-| `GAUNTLET_AGENT_MODEL` | Default model for test execution | -- |
+| `GAUNTLET_DATA_DIR` | Project root | `.` |
+| `GAUNTLET_CHROME` | Default Chrome endpoint | `127.0.0.1:9222` |
+| `GAUNTLET_AGENT_MODEL` | Default model for test execution | `claude-sonnet-4-6` |
 | `GAUNTLET_FANOUT_MODEL` | Model for scenario generation | -- |
+| `GAUNTLET_MODELS` | Comma-separated model allow-list | `[agent]` |
 
 ## Project structure
 
