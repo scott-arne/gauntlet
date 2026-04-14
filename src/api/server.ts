@@ -6,6 +6,7 @@ import { resultRoutes } from "./routes/results";
 import { fanoutRoutes } from "./routes/fanout";
 import { runRoutes } from "./routes/run";
 import { configRoutes } from "./routes/config";
+import { configEffectiveRoutes } from "./routes/config-effective";
 import { ErrorLog, errorRoutes } from "./routes/errors";
 import { activeRunRoutes } from "./routes/active-runs";
 import { isSafePath } from "./safe-path";
@@ -30,6 +31,7 @@ export function createApp(
   api.route("/fanout", fanoutRoutes(dataDir, undefined, errorLog));
   api.route("/run", runRoutes(config, broadcaster, errorLog, registry));
   api.route("/config", configRoutes());
+  api.route("/config/effective", configEffectiveRoutes(config));
   api.route("/errors", errorRoutes(errorLog));
   if (registry) api.route("/runs/active", activeRunRoutes(registry));
 
