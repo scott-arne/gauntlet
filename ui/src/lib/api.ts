@@ -34,6 +34,20 @@ export interface FanoutResult {
   generated: { id: string; title: string; filename: string }[];
 }
 
+export interface ActiveRun {
+  id: string;
+  title: string;
+  target: string;
+  model: string;
+  startedAt: number;
+}
+
+export interface RunSnapshot {
+  info: ActiveRun;
+  lastFrame: { data: string; width: number; height: number } | null;
+  progressLog: string[];
+}
+
 async function request<T>(path: string, options?: RequestInit): Promise<T> {
   const res = await fetch(`/api${path}`, {
     ...options,
@@ -107,9 +121,14 @@ export const api = {
   },
   run: {
     start: (id: string, body: { target: string; model?: string; adapter?: string; chrome?: string }) =>
-      request<VetResult>(`/run/${id}`, {
+      request<{ id: string }>(`/run/${id}`, {
         method: "POST",
         body: JSON.stringify(body),
       }),
+  },
+  activeRuns: {
+    list: () => request<{ runs: ActiveRun[] }>("/runs/active").then((r) => r.runs),
+    snapshot: (id: string) =>
+      request<RunSnapshot>(`/runs/active/${encodeURIComponent(id)}/snapshot`),
   },
 };
