@@ -152,7 +152,13 @@ async function executeRun(opts: ExecuteRunOpts): Promise<void> {
     errorLog?.add("run", `${card.id}: ${message}`);
     broadcaster?.send(card.id, { type: "error", message });
   } finally {
-    if (streamer) await streamer.stop();
+    if (streamer) {
+      try {
+        await streamer.stop();
+      } catch {
+        /* ignore */
+      }
+    }
     try {
       await adapter.close();
     } catch {
