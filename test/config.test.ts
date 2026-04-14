@@ -1,5 +1,5 @@
 import { describe, test, expect } from "bun:test";
-import { loadConfig } from "../src/config";
+import { loadConfig, validateRunBody, mergeRunConfig } from "../src/config";
 
 describe("loadConfig", () => {
   const emptyEnv = {} as NodeJS.ProcessEnv;
@@ -74,5 +74,74 @@ describe("loadConfig", () => {
   test("apiKeys reflects both providers when both keys set", () => {
     const c = loadConfig({}, { ANTHROPIC_API_KEY: "sk-ant-xxx", OPENAI_API_KEY: "sk-xxx" } as NodeJS.ProcessEnv);
     expect(c.apiKeys).toEqual({ anthropic: true, openai: true });
+  });
+});
+
+describe("validateRunBody", () => {
+  test("accepts minimal body with just target", () => {
+    expect(validateRunBody({ target: "http://x" })).toEqual({
+      target: "http://x",
+      model: undefined,
+      chrome: undefined,
+      adapter: undefined,
+    });
+  });
+
+  test("accepts full allowed body", () => {
+    const b = validateRunBody({
+      target: "http://x",
+      model: "gpt-4o",
+      chrome: "localhost:9333",
+      adapter: "web",
+    });
+    expect(b.target).toBe("http://x");
+    expect(b.model).toBe("gpt-4o");
+    expect(b.chrome).toBe("localhost:9333");
+    expect(b.adapter).toBe("web");
+  });
+
+  test("rejects unknown field", () => {
+    expect(() => validateRunBody({ target: "http://x", screenshotQuality: 99 }))
+      .toThrow(/Unknown field.*screenshotQuality/);
+  });
+
+  test("rejects missing target", () => {
+    expect(() => validateRunBody({})).toThrow(/target/);
+  });
+
+  test("rejects non-string target", () => {
+    expect(() => validateRunBody({ target: 123 })).toThrow(/target/);
+  });
+
+  test("rejects non-object body", () => {
+    expect(() => validateRunBody(null)).toThrow(/object/);
+    expect(() => validateRunBody("string")).toThrow(/object/);
+  });
+});
+
+describe("mergeRunConfig", () => {
+  const app = loadConfig({}, { GAUNTLET_CHROME: "server-default:9000", GAUNTLET_AGENT_MODEL: "claude-sonnet-4-6" } as NodeJS.ProcessEnv);
+
+  test("falls through to server defaults when body has only target", () => {
+    const eff = mergeRunConfig(app, { target: "http://x" });
+    expect(eff.target).toBe("http://x");
+    expect(eff.model).toBe("claude-sonnet-4-6");
+    expect(eff.chrome).toEqual({ host: "server-default", port: 9000 });
+    expect(eff.adapter).toBe("web");
+  });
+
+  test("body chrome overrides server default", () => {
+    const eff = mergeRunConfig(app, { target: "http://x", chrome: "override:9333" });
+    expect(eff.chrome).toEqual({ host: "override", port: 9333 });
+  });
+
+  test("body model overrides server default", () => {
+    const eff = mergeRunConfig(app, { target: "http://x", model: "gpt-4o" });
+    expect(eff.model).toBe("gpt-4o");
+  });
+
+  test("invalid chrome format in body throws", () => {
+    expect(() => mergeRunConfig(app, { target: "http://x", chrome: "no-port" }))
+      .toThrow(/chrome/i);
   });
 });

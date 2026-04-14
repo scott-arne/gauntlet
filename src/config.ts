@@ -34,6 +34,58 @@ export interface CliArgsInput {
   models?: { agent?: string; fanout?: string };
 }
 
+export interface RunRequestBody {
+  target: string;
+  model?: string;
+  chrome?: string;
+  adapter?: "web" | "cli" | "tui";
+}
+
+export interface EffectiveRunConfig {
+  target: string;
+  model: string;
+  chrome: ChromeEndpoint;
+  adapter: "web" | "cli" | "tui";
+  dataDir: string;
+}
+
+const RUN_BODY_ALLOWED = new Set(["target", "model", "chrome", "adapter"]);
+
+export function validateRunBody(body: unknown): RunRequestBody {
+  if (!body || typeof body !== "object") {
+    throw new Error("run request body must be an object");
+  }
+  const bodyObj = body as Record<string, unknown>;
+  const unknown = Object.keys(bodyObj).filter((k) => !RUN_BODY_ALLOWED.has(k));
+  if (unknown.length > 0) {
+    throw new Error(
+      `Unknown field${unknown.length > 1 ? "s" : ""} in run request body: ${unknown.join(", ")}. Allowed: ${[...RUN_BODY_ALLOWED].join(", ")}`,
+    );
+  }
+  if (typeof bodyObj.target !== "string" || !bodyObj.target) {
+    throw new Error("run request body: target is required and must be a non-empty string");
+  }
+  return {
+    target: bodyObj.target,
+    model: typeof bodyObj.model === "string" ? bodyObj.model : undefined,
+    chrome: typeof bodyObj.chrome === "string" ? bodyObj.chrome : undefined,
+    adapter: bodyObj.adapter as EffectiveRunConfig["adapter"] | undefined,
+  };
+}
+
+export function mergeRunConfig(app: AppConfig, body: RunRequestBody): EffectiveRunConfig {
+  const chrome = body.chrome
+    ? parseChromeEndpoint(body.chrome, "body.chrome")
+    : app.defaultChrome;
+  return {
+    target: body.target,
+    model: body.model ?? app.models.agent,
+    chrome,
+    adapter: body.adapter ?? "web",
+    dataDir: app.dataDir,
+  };
+}
+
 const DEFAULT_DATA_DIR = ".";
 const DEFAULT_PORT = 4400;
 const DEFAULT_CHROME: ChromeEndpoint = { host: "127.0.0.1", port: 9222 };
