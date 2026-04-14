@@ -4,7 +4,9 @@ services:
       context: .
       dockerfile: docker/Dockerfile
     ports:
-      - "4400:4400"
+      - "${GAUNTLET_PORT:-4400}:${GAUNTLET_PORT:-4400}"
+    environment:
+      - GAUNTLET_PORT=${GAUNTLET_PORT:-4400}
     volumes:
       # Mounts <TARGET_PROJECT>/.gauntlet as the data dir inside the container.
       # Defaults to "." so `docker compose up` from the Gauntlet repo mounts
