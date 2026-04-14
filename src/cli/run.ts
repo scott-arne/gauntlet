@@ -5,20 +5,28 @@ import { writeResultFiles } from "../evidence/writer";
 import { runAgent } from "../agent/agent";
 import { createClient } from "../models/resolve";
 import { CLIAdapter } from "../adapters/cli/adapter";
-import type { ModelConfig } from "../types";
+import type { AppConfig } from "../config";
 
-export async function run(
-  scenarioPath: string,
-  target: string,
-  outDir: string,
-  adapterType: "web" | "cli" | "tui",
-  models: ModelConfig,
-  chromeEndpoint?: string
-): Promise<void> {
+export interface RunCommandOptions {
+  scenarioPath: string;
+  target: string;
+  outDir: string;
+  adapterType: "web" | "cli" | "tui";
+  config: AppConfig;
+}
+
+export async function run(opts: RunCommandOptions): Promise<void> {
+  const { scenarioPath, target, outDir, adapterType, config } = opts;
+
+  if (!config.apiKeys.anthropic && !config.apiKeys.openai) {
+    console.error("ERROR: No API key set. Set ANTHROPIC_API_KEY or OPENAI_API_KEY.");
+    process.exit(1);
+  }
+
   const content = readFileSync(scenarioPath, "utf-8");
   const card = parseStoryCard(content);
   const logger = new EvidenceLogger(outDir);
-  const client = createClient(models.agent);
+  const client = createClient(config.models.agent);
 
   let adapter;
   switch (adapterType) {
@@ -34,13 +42,7 @@ export async function run(
     }
     case "web": {
       const { WebAdapter } = await import("../adapters/web/adapter");
-      let chrome: { host: string; port: number } | undefined;
-      if (chromeEndpoint) {
-        const idx = chromeEndpoint.lastIndexOf(":");
-        if (idx === -1) throw new Error(`Invalid --chrome "${chromeEndpoint}": expected host:port`);
-        chrome = { host: chromeEndpoint.slice(0, idx), port: parseInt(chromeEndpoint.slice(idx + 1), 10) };
-      }
-      adapter = new WebAdapter({ chrome });
+      adapter = new WebAdapter({ chrome: config.defaultChrome });
       await adapter.start(target);
       break;
     }

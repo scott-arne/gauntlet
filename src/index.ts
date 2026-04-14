@@ -11,19 +11,18 @@ async function main() {
   }
 
   switch (args.command) {
-    case "run":
-      await run(
-        args.scenarioPath,
-        args.cli.target ?? "",
-        args.outDir,
-        args.adapter,
-        {
-          agent: args.cli.models?.agent || process.env.GAUNTLET_AGENT_MODEL || "claude-sonnet-4-6",
-          fanout: args.cli.models?.fanout || process.env.GAUNTLET_FANOUT_MODEL,
-        },
-        args.cli.chrome,
-      );
+    case "run": {
+      const { loadConfig } = await import("./config");
+      const config = loadConfig(args.cli, process.env);
+      await run({
+        scenarioPath: args.scenarioPath,
+        target: args.cli.target ?? "",
+        outDir: args.outDir,
+        adapterType: args.adapter,
+        config,
+      });
       break;
+    }
     case "validate": {
       const { validateScenario } = await import("./cli/validate");
       const result = validateScenario(args.scenarioPath);
