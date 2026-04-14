@@ -7,6 +7,7 @@ import { writeResultFiles } from "../../evidence/writer";
 import { runAgent } from "../../agent/agent";
 import type { Adapter } from "../../adapters/adapter";
 import type { RunBroadcaster } from "../ws";
+import type { ActiveRunRegistry } from "../active-runs";
 import type { ScreencastStreamer as ScreencastStreamerType } from "../../streaming/screencast";
 import type { ErrorLog } from "./errors";
 
@@ -29,7 +30,12 @@ function createAdapter(type: string, chromeEndpoint?: string): Adapter {
   }
 }
 
-export function runRoutes(dataDir: string, broadcaster?: RunBroadcaster, errorLog?: ErrorLog) {
+export function runRoutes(
+  dataDir: string,
+  broadcaster?: RunBroadcaster,
+  errorLog?: ErrorLog,
+  _registry?: ActiveRunRegistry,
+) {
   const router = new Hono();
   const storiesDir = join(dataDir, "stories");
 

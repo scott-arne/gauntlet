@@ -33,11 +33,13 @@ async function main() {
     case "serve": {
       const { createApp } = await import("./api/server");
       const { RunBroadcaster } = await import("./api/ws");
+      const { ActiveRunRegistry } = await import("./api/active-runs");
       const { join } = await import("path");
       const dataDir = args.dataDir ?? ".";
       const uiDir = join(import.meta.dir, "..", "ui", "dist");
       const broadcaster = new RunBroadcaster();
-      const app = createApp(dataDir, uiDir, broadcaster);
+      const registry = new ActiveRunRegistry();
+      const app = createApp(dataDir, uiDir, broadcaster, registry);
       const port = args.port;
       if (!process.env.GAUNTLET_AGENT_MODEL && !process.env.GAUNTLET_MODELS) {
         console.error("WARNING: No model configured. Set GAUNTLET_AGENT_MODEL or GAUNTLET_MODELS environment variable.");
