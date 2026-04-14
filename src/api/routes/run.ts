@@ -59,13 +59,14 @@ export function runRoutes(
     const adapter = createAdapter(adapterType, body.chrome);
     const outDir = join(dataDir, "results", entry.card.id);
 
+    const startedAt = Date.now();
     if (registry) {
       registry.register({
         id: entry.card.id,
         title: entry.card.title,
         target,
         model,
-        startedAt: Date.now(),
+        startedAt,
       });
     }
 
@@ -80,6 +81,7 @@ export function runRoutes(
       broadcaster,
       registry,
       errorLog,
+      startedAt,
     }).catch((err) => {
       const message = err instanceof Error ? err.message : String(err);
       errorLog?.add("run", `${entry.card.id}: ${message}`);
@@ -101,10 +103,12 @@ export interface ExecuteRunOpts {
   broadcaster?: RunBroadcaster;
   registry?: ActiveRunRegistry;
   errorLog?: ErrorLog;
+  /** Token used to guard against clobbering a fresh same-card run. */
+  startedAt?: number;
 }
 
 export async function executeRun(opts: ExecuteRunOpts): Promise<void> {
-  const { card, adapter, adapterType, client, target, outDir, broadcaster, registry, errorLog } = opts;
+  const { card, adapter, adapterType, client, target, outDir, broadcaster, registry, errorLog, startedAt } = opts;
   const logger = new EvidenceLogger(outDir);
 
   if (broadcaster || registry) {
@@ -166,7 +170,7 @@ export async function executeRun(opts: ExecuteRunOpts): Promise<void> {
     } catch {
       /* ignore */
     }
-    registry?.unregister(card.id);
+    registry?.unregister(card.id, startedAt);
     // Emit the terminal event AFTER unregister so a late-connecting
     // WebSocket sees an empty registry (and receives `gone`) instead of a
     // stale snapshot that would never get a follow-up event.

@@ -46,6 +46,39 @@ describe("ActiveRunRegistry", () => {
     expect(r.getSnapshot("a")).toBeNull();
   });
 
+  test("unregister with matching startedAt deletes entry", () => {
+    const r = new ActiveRunRegistry();
+    r.register(info("a", 100));
+    r.unregister("a", 100);
+    expect(r.has("a")).toBe(false);
+  });
+
+  test("unregister with mismatched startedAt does not delete entry", () => {
+    const r = new ActiveRunRegistry();
+    r.register(info("a", 100));
+    r.unregister("a", 999);
+    expect(r.has("a")).toBe(true);
+  });
+
+  test("unregister without startedAt still deletes (back-compat)", () => {
+    const r = new ActiveRunRegistry();
+    r.register(info("a", 100));
+    r.unregister("a");
+    expect(r.has("a")).toBe(false);
+  });
+
+  test("re-register + first run's unregister does not clobber second run", () => {
+    const r = new ActiveRunRegistry();
+    r.register(info("a", 100));
+    // Second run starts before first run's finally executes
+    r.register(info("a", 200));
+    // First run's finally fires
+    r.unregister("a", 100);
+    // Second run should still be tracked
+    expect(r.has("a")).toBe(true);
+    expect(r.getSnapshot("a")?.info.startedAt).toBe(200);
+  });
+
   test("recordFrame stores latest frame", () => {
     const r = new ActiveRunRegistry();
     r.register(info("a", 100));

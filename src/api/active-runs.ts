@@ -25,7 +25,16 @@ export class ActiveRunRegistry {
     });
   }
 
-  unregister(id: string): void {
+  /**
+   * Remove the entry for `id`. If `startedAt` is provided, only remove it
+   * when the current entry's `startedAt` matches — this prevents a slow
+   * finally block from clobbering a freshly-registered second run with
+   * the same cardId (last-run-wins).
+   */
+  unregister(id: string, startedAt?: number): void {
+    const snap = this.runs.get(id);
+    if (!snap) return;
+    if (startedAt !== undefined && snap.info.startedAt !== startedAt) return;
     this.runs.delete(id);
   }
 
