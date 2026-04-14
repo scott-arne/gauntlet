@@ -1,22 +1,20 @@
 import { Hono } from "hono";
+import type { AppConfig } from "../../config";
 
-export function configRoutes() {
+/**
+ * Lightweight model picker endpoint for the UI. Reads from the resolved
+ * AppConfig (which already merges flag > env > default) instead of
+ * peeking at process.env directly — otherwise `--model agent=...` on the
+ * CLI would not be reflected here.
+ */
+export function configRoutes(config: AppConfig) {
   const router = new Hono();
 
   router.get("/", (c) => {
-    const modelsList = process.env.GAUNTLET_MODELS;
-    const agentModel = process.env.GAUNTLET_AGENT_MODEL;
-
-    let models: string[] = [];
-    if (modelsList) {
-      models = modelsList.split(",").map((s) => s.trim()).filter(Boolean);
-    } else if (agentModel) {
-      models = [agentModel];
-    }
-
-    const defaultModel = agentModel || models[0] || null;
-
-    return c.json({ models, defaultModel });
+    return c.json({
+      models: config.models.available,
+      defaultModel: config.models.agent,
+    });
   });
 
   return router;

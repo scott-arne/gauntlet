@@ -30,7 +30,7 @@ export function createApp(
   api.route("/results", resultRoutes(join(dataDir, "results")));
   api.route("/fanout", fanoutRoutes(dataDir, undefined, errorLog));
   api.route("/run", runRoutes(config, broadcaster, errorLog, registry));
-  api.route("/config", configRoutes());
+  api.route("/config", configRoutes(config));
   api.route("/config/effective", configEffectiveRoutes(config));
   api.route("/errors", errorRoutes(errorLog));
   if (registry) api.route("/runs/active", activeRunRoutes(registry));
