@@ -61,7 +61,18 @@ async function main() {
         websocket: {
           open(ws) {
             const runId = (ws.data as any).runId;
-            if (runId) broadcaster.addClient(runId, ws as any);
+            if (!runId) return;
+            broadcaster.addClient(runId, ws as any);
+            const snap = registry.getSnapshot(runId);
+            if (snap) {
+              ws.send(JSON.stringify({
+                type: "snapshot",
+                lastFrame: snap.lastFrame,
+                progressLog: snap.progressLog,
+              }));
+            } else {
+              ws.send(JSON.stringify({ type: "gone" }));
+            }
           },
           close(ws) {
             const runId = (ws.data as any).runId;
