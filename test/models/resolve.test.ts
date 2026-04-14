@@ -22,21 +22,16 @@ describe("resolveProvider", () => {
 });
 
 describe("parseModelFlags", () => {
-  test("parses role=model pairs", () => {
-    const config = parseModelFlags(["agent=gpt-4o", "fanout=claude-sonnet-4-6"]);
-    expect(config.agent).toBe("gpt-4o");
-    expect(config.fanout).toBe("claude-sonnet-4-6");
+  test("returns empty object when no flags provided", () => {
+    const config = parseModelFlags([]);
+    expect(config).toEqual({});
   });
 
-  test("uses defaults when not specified", () => {
-    const config = parseModelFlags([]);
-    expect(config.agent).toBe("claude-sonnet-4-6");
+  test("parses agent flag", () => {
+    expect(parseModelFlags(["agent=claude-opus-4-6"])).toEqual({ agent: "claude-opus-4-6" });
   });
 
-  test("falls back to env vars", () => {
-    process.env.GAUNTLET_AGENT_MODEL = "gpt-4o";
-    const config = parseModelFlags([]);
-    expect(config.agent).toBe("gpt-4o");
-    delete process.env.GAUNTLET_AGENT_MODEL;
+  test("parses fanout flag", () => {
+    expect(parseModelFlags(["fanout=gpt-4o"])).toEqual({ fanout: "gpt-4o" });
   });
 });

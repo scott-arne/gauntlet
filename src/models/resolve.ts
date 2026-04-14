@@ -22,9 +22,7 @@ export function resolveProvider(model: string): Provider {
   );
 }
 
-const DEFAULT_AGENT_MODEL = "claude-sonnet-4-6";
-
-export function parseModelFlags(flags: string[]): ModelConfig {
+export function parseModelFlags(flags: string[]): Partial<ModelConfig> {
   const config: Partial<ModelConfig> = {};
 
   for (const flag of flags) {
@@ -35,9 +33,5 @@ export function parseModelFlags(flags: string[]): ModelConfig {
     config[role] = model;
   }
 
-  return {
-    agent:
-      config.agent || process.env.GAUNTLET_AGENT_MODEL || DEFAULT_AGENT_MODEL,
-    fanout: config.fanout || process.env.GAUNTLET_FANOUT_MODEL,
-  };
+  return config;
 }

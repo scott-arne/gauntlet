@@ -1,7 +1,8 @@
 import { parseModelFlags } from "../models/resolve";
 import type { ModelConfig } from "../types";
+import type { CliArgsInput } from "../config";
 
-const RUN_ALLOWED = new Set(["target", "out", "adapter", "model", "chrome"]);
+const RUN_ALLOWED = new Set(["target", "out", "adapter", "model", "chrome", "data-dir"]);
 const VALIDATE_ALLOWED = new Set<string>([]);
 const FANOUT_ALLOWED = new Set(["out", "model", "from-result"]);
 const SERVE_ALLOWED = new Set(["port", "data-dir", "chrome", "target", "model"]);
@@ -23,11 +24,9 @@ function rejectUnknownFlags(
 export interface RunArgs {
   command: "run";
   scenarioPath: string;
-  target: string;
   outDir: string;
   adapter: "web" | "cli" | "tui";
-  models: ModelConfig;
-  chrome?: string;
+  cli: CliArgsInput;
 }
 
 export interface ValidateArgs {
@@ -45,8 +44,7 @@ export interface FanoutArgs {
 
 export interface ServeArgs {
   command: "serve";
-  port: number;
-  dataDir?: string;
+  cli: CliArgsInput;
 }
 
 export type ParsedArgs = RunArgs | ValidateArgs | FanoutArgs | ServeArgs;
@@ -82,19 +80,21 @@ function parseRunArgs(args: string[]): RunArgs {
 
   const flags = parseFlags(args);
   rejectUnknownFlags(flags, RUN_ALLOWED, "run");
-  const target = flags.target;
-  if (!target) {
+  if (!flags.target) {
     throw new Error("Missing required flag: --target <url>");
   }
 
   return {
     command: "run",
     scenarioPath: positional,
-    target,
     outDir: flags.out ?? "./evidence",
     adapter: (flags.adapter as "web" | "cli" | "tui") ?? "web",
-    models: parseModelFlags(flags.model ?? []),
-    chrome: flags.chrome,
+    cli: {
+      dataDir: flags["data-dir"],
+      chrome: flags.chrome,
+      target: flags.target,
+      models: parseModelFlagArray(flags.model),
+    },
   };
 }
 
@@ -123,12 +123,18 @@ function parseFanoutArgs(args: string[]): FanoutArgs {
     throw new Error("Missing scenario path or --from-result\n\nUsage: gauntlet fanout <scenario.md> | --from-result <result-dir>");
   }
 
+  const parsed = parseModelFlags(flags.model ?? []);
+  const models: ModelConfig = {
+    agent: parsed.agent || process.env.GAUNTLET_AGENT_MODEL || "claude-sonnet-4-6",
+    fanout: parsed.fanout || process.env.GAUNTLET_FANOUT_MODEL,
+  };
+
   return {
     command: "fanout",
     scenarioPath: positional,
     resultDir,
     outDir: flags.out ?? "./",
-    models: parseModelFlags(flags.model ?? []),
+    models,
   };
 }
 
@@ -138,9 +144,28 @@ function parseServeArgs(args: string[]): ServeArgs {
 
   return {
     command: "serve",
-    port: flags.port ? parseInt(flags.port, 10) : parseInt(process.env.GAUNTLET_PORT || "4400", 10),
-    dataDir: flags["data-dir"],
+    cli: {
+      dataDir: flags["data-dir"],
+      port: flags.port ? parseInt(flags.port, 10) : undefined,
+      chrome: flags.chrome,
+      target: flags.target,
+      models: parseModelFlagArray(flags.model),
+    },
   };
+}
+
+function parseModelFlagArray(modelFlags: string[] | undefined): { agent?: string; fanout?: string } | undefined {
+  if (!modelFlags || modelFlags.length === 0) return undefined;
+  const out: { agent?: string; fanout?: string } = {};
+  for (const flag of modelFlags) {
+    const idx = flag.indexOf("=");
+    if (idx === -1) continue;
+    const role = flag.slice(0, idx);
+    const model = flag.slice(idx + 1);
+    if (role === "agent") out.agent = model;
+    else if (role === "fanout") out.fanout = model;
+  }
+  return out;
 }
 
 /** Extract the first positional argument (non-flag, not a flag value) */

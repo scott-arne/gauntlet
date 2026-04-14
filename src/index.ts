@@ -12,7 +12,17 @@ async function main() {
 
   switch (args.command) {
     case "run":
-      await run(args.scenarioPath, args.target, args.outDir, args.adapter, args.models, args.chrome);
+      await run(
+        args.scenarioPath,
+        args.cli.target ?? "",
+        args.outDir,
+        args.adapter,
+        {
+          agent: args.cli.models?.agent || process.env.GAUNTLET_AGENT_MODEL || "claude-sonnet-4-6",
+          fanout: args.cli.models?.fanout || process.env.GAUNTLET_FANOUT_MODEL,
+        },
+        args.cli.chrome,
+      );
       break;
     case "validate": {
       const { validateScenario } = await import("./cli/validate");
@@ -36,12 +46,12 @@ async function main() {
       const { ActiveRunRegistry } = await import("./api/active-runs");
       const { handleWsOpen } = await import("./api/ws-handlers");
       const { join } = await import("path");
-      const dataDir = args.dataDir ?? ".";
+      const dataDir = args.cli.dataDir ?? ".";
       const uiDir = join(import.meta.dir, "..", "ui", "dist");
       const broadcaster = new RunBroadcaster();
       const registry = new ActiveRunRegistry();
       const app = createApp(dataDir, uiDir, broadcaster, registry);
-      const port = args.port;
+      const port = args.cli.port ?? parseInt(process.env.GAUNTLET_PORT || "4400", 10);
       if (!process.env.GAUNTLET_AGENT_MODEL && !process.env.GAUNTLET_MODELS) {
         console.error("WARNING: No model configured. Set GAUNTLET_AGENT_MODEL or GAUNTLET_MODELS environment variable.");
       }

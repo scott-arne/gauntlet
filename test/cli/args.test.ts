@@ -5,30 +5,35 @@ describe("parseArgs", () => {
   test("parses run command with required args", () => {
     const args = parseArgs(["bun", "index.ts", "run", "story.md", "--target", "http://localhost:3000", "--out", "./evidence"]);
     expect(args.command).toBe("run");
+    if (args.command !== "run") throw new Error("unreachable");
     expect(args.scenarioPath).toBe("story.md");
-    expect(args.target).toBe("http://localhost:3000");
+    expect(args.cli.target).toBe("http://localhost:3000");
     expect(args.outDir).toBe("./evidence");
   });
 
   test("defaults adapter to web", () => {
     const args = parseArgs(["bun", "index.ts", "run", "story.md", "--target", "http://localhost:3000"]);
+    if (args.command !== "run") throw new Error("unreachable");
     expect(args.adapter).toBe("web");
   });
 
   test("parses cli adapter flag", () => {
     const args = parseArgs(["bun", "index.ts", "run", "story.md", "--target", "cmd", "--adapter", "cli"]);
+    if (args.command !== "run") throw new Error("unreachable");
     expect(args.adapter).toBe("cli");
   });
 
   test("parses tui adapter flag", () => {
     const args = parseArgs(["bun", "index.ts", "run", "story.md", "--target", "nano test.txt", "--adapter", "tui"]);
+    if (args.command !== "run") throw new Error("unreachable");
     expect(args.adapter).toBe("tui");
   });
 
   test("parses model flags", () => {
     const args = parseArgs(["bun", "index.ts", "run", "story.md", "--target", "url", "--model", "agent=gpt-4o", "--model", "fanout=claude-sonnet-4-6"]);
-    expect(args.models.agent).toBe("gpt-4o");
-    expect(args.models.fanout).toBe("claude-sonnet-4-6");
+    if (args.command !== "run") throw new Error("unreachable");
+    expect(args.cli.models?.agent).toBe("gpt-4o");
+    expect(args.cli.models?.fanout).toBe("claude-sonnet-4-6");
   });
 
   test("throws on missing target", () => {
@@ -41,7 +46,8 @@ describe("parseArgs", () => {
 
   test("parses chrome flag", () => {
     const args = parseArgs(["bun", "index.ts", "run", "story.md", "--target", "url", "--chrome", "localhost:9222"]);
-    expect(args.chrome).toBe("localhost:9222");
+    if (args.command !== "run") throw new Error("unreachable");
+    expect(args.cli.chrome).toBe("localhost:9222");
   });
 
   test("parses validate command", () => {
