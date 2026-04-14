@@ -19,7 +19,7 @@
 ## File Structure
 
 **New files:**
-- `src/config.ts` — `AppConfig` type, `loadConfig(argv, env)`, `mergeRunConfig(app, body)`, `validateRunBodyAllowList(body)`, `redactConfig(config)` helpers
+- `src/config.ts` — `AppConfig` type, `loadConfig(argv, env)`, `mergeRunConfig(app, body)`, `validateRunBodyAllowList(body)` helpers
 - `src/cli/config-command.ts` — `runConfigCommand()` for the `gauntlet config` CLI subcommand
 - `src/api/routes/config-effective.ts` — `GET /api/config/effective` route
 - `test/config.test.ts` — unit tests for `loadConfig` + `mergeRunConfig`
@@ -36,7 +36,7 @@
 - `src/adapters/web/adapter.ts` — constructor takes `{host, port}` explicitly, no `process.env` mutation, calls `chrome.setEndpoint(host, port)` once
 - `src/adapters/web/lib/host-override.js` — convert `CHROME_DEBUG_HOST`/`CHROME_DEBUG_PORT`/`WS_OVERRIDE_ENABLED` from `const`-at-module-load to mutable state with a `setDefaults(host, port)` setter
 - `src/adapters/web/lib/chrome-ws-lib.js` — add `setEndpoint(host, port)` that updates `activePort` and calls into host-override's setter; rewrite internals that read const captures to read current values via getters
-- `src/models/anthropic.ts` / `src/models/openai.ts` — remove the hand-rolled "missing env var" throw from `createAnthropicClient` / `createOpenAIClient` (moved to `loadConfig`); keep `new Anthropic()` / `new OpenAI()` empty-constructor pattern
+- `src/models/anthropic.ts` / `src/models/openai.ts` — unchanged; the hand-rolled API-key checks are intentionally retained as defense-in-depth alongside `requireLlmCapable` in `loadConfig`.
 - `src/models/resolve.ts` — keep `createClient` / `resolveProvider` as-is; `parseModelFlags` stays for backward compatibility of the `--model role=value` syntax but is now called from inside `loadConfig` instead of `parseArgs`
 - `src/cli/run.ts` (or wherever `parsedArgs.command === "run"` is handled in index.ts) — pass `AppConfig` into adapter construction
 - `README.md` — new "Configuration" section: precedence rule, flag table per command, env var table, SDK env pass-through policy, `gauntlet config` usage
