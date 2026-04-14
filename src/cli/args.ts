@@ -82,20 +82,14 @@ export function parseArgs(argv: string[]): ParsedArgs {
 }
 
 function parseConfigArgs(args: string[]): ConfigArgs {
-  // `--json` is acceptable as a bareword (no value) or as `--json true`.
-  // We detect bareword first so parseFlags does not consume the next positional.
-  const hasBarewordJson = args.some((a, i) => a === "--json" && (args[i + 1] === undefined || args[i + 1].startsWith("--")));
+  // `--json` works as a bareword (parseFlags maps it to "true") or as
+  // an explicit `--json true`. parseFlags now refuses to swallow a
+  // following `--flag` as the value, so no special-casing is needed.
   const flags = parseFlags(args);
   rejectUnknownFlags(flags, CONFIG_ALLOWED, "config");
-  const json = hasBarewordJson || flags.json === "true";
-  // If we picked up a positional value for --json, drop it from the dict so the cli
-  // input doesn't see a stray value.
-  if (flags.json && flags.json !== "true") {
-    // Treat anything else as bareword detection failure — leave json as-is.
-  }
   return {
     command: "config",
-    json,
+    json: flags.json === "true",
     cli: {
       dataDir: flags["data-dir"],
       port: flags.port ? parseInt(flags.port, 10) : undefined,
@@ -214,7 +208,13 @@ function extractPositional(args: string[]): string | undefined {
   return undefined;
 }
 
-/** Parse --flag value pairs. Repeatable flags (like --model) collect into arrays. */
+/** Parse --flag value pairs. Repeatable flags (like --model) collect into arrays.
+ *
+ * A flag whose "value" begins with `--` (or is missing entirely) is treated as
+ * a bareword flag — `flags[key] = "true"` — and the next token is left in
+ * place for the next iteration. This prevents `--json --data-dir /tmp` from
+ * silently eating the `--data-dir` token as the value of `--json`.
+ */
 function parseFlags(args: string[]): Record<string, string> & { model?: string[] } {
   const flags: Record<string, string> = {};
   const models: string[] = [];
@@ -226,11 +226,18 @@ function parseFlags(args: string[]): Record<string, string> & { model?: string[]
     const value = args[i + 1];
 
     if (key === "model") {
-      if (value) models.push(value);
-      i++;
+      if (value !== undefined && !value.startsWith("--")) {
+        models.push(value);
+        i++;
+      }
+      // bareword --model is meaningless, but don't swallow the next flag
     } else {
-      if (value) flags[key] = value;
-      i++;
+      if (value !== undefined && !value.startsWith("--")) {
+        flags[key] = value;
+        i++;
+      } else {
+        flags[key] = "true"; // bareword flag
+      }
     }
   }
 

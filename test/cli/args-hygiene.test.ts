@@ -58,4 +58,25 @@ describe("CLI flag hygiene", () => {
       expect(msg).toMatch(/--chrome/);
     }
   });
+
+  test("bareword flag followed by another flag does not eat it", () => {
+    const args = parseArgs([
+      "bun", "gauntlet", "config",
+      "--json",
+      "--data-dir", "/tmp/x",
+    ]);
+    expect(args.command).toBe("config");
+    expect((args as any).json).toBe(true);
+    expect((args as any).cli.dataDir).toBe("/tmp/x");
+  });
+
+  test("bareword --json alone parses correctly", () => {
+    const args = parseArgs(["bun", "gauntlet", "config", "--json"]);
+    expect((args as any).json).toBe(true);
+  });
+
+  test("--json true still works (explicit value form)", () => {
+    const args = parseArgs(["bun", "gauntlet", "config", "--json", "true"]);
+    expect((args as any).json).toBe(true);
+  });
 });
