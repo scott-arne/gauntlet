@@ -2,6 +2,21 @@ import { parseModelFlags } from "../models/resolve";
 import type { ModelConfig } from "../types";
 import type { CliArgsInput } from "../config";
 
+/**
+ * parseInt("abc", 10) returns NaN, which propagates through loadConfig
+ * (typeof NaN === "number") and ultimately crashes Bun.serve. Reject
+ * non-integer values up front with a clean error, matching how
+ * GAUNTLET_PORT is validated inside loadConfig.
+ */
+function parseIntFlag(raw: string | undefined, label: string): number | undefined {
+  if (raw === undefined) return undefined;
+  const parsed = parseInt(raw, 10);
+  if (Number.isNaN(parsed)) {
+    throw new Error(`Invalid ${label} value "${raw}": expected an integer`);
+  }
+  return parsed;
+}
+
 const RUN_ALLOWED = new Set(["target", "out", "adapter", "model", "chrome", "data-dir"]);
 const VALIDATE_ALLOWED = new Set<string>([]);
 const FANOUT_ALLOWED = new Set(["out", "model", "from-result"]);
@@ -92,7 +107,7 @@ function parseConfigArgs(args: string[]): ConfigArgs {
     json: flags.json === "true",
     cli: {
       dataDir: flags["data-dir"],
-      port: flags.port ? parseInt(flags.port, 10) : undefined,
+      port: parseIntFlag(flags.port, "--port"),
       chrome: flags.chrome,
       target: flags.target,
       models: parseModelFlagArray(flags.model),
@@ -174,7 +189,7 @@ function parseServeArgs(args: string[]): ServeArgs {
     command: "serve",
     cli: {
       dataDir: flags["data-dir"],
-      port: flags.port ? parseInt(flags.port, 10) : undefined,
+      port: parseIntFlag(flags.port, "--port"),
       chrome: flags.chrome,
       target: flags.target,
       models: parseModelFlagArray(flags.model),

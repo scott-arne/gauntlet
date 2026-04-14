@@ -79,4 +79,9 @@ describe("CLI flag hygiene", () => {
     const args = parseArgs(["bun", "gauntlet", "config", "--json", "true"]);
     expect((args as any).json).toBe(true);
   });
+
+  test("--port with non-integer value throws", () => {
+    expect(() => parseArgs(["bun", "gauntlet", "serve", "--port", "abc"]))
+      .toThrow(/--port/);
+  });
 });
