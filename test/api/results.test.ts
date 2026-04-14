@@ -1,8 +1,12 @@
 import { describe, test, expect, beforeEach, afterEach } from "bun:test";
 import { createApp } from "../../src/api/server";
+import { loadConfig } from "../../src/config";
 import { mkdtempSync, rmSync, mkdirSync, writeFileSync } from "fs";
 import { join } from "path";
 import { tmpdir } from "os";
+
+const makeApp = (dataDir: string, uiDir?: string) =>
+  createApp(loadConfig({ dataDir }, {} as NodeJS.ProcessEnv), uiDir);
 
 describe("Results API", () => {
   let dataDir: string;
@@ -43,7 +47,7 @@ describe("Results API", () => {
       })
     );
 
-    app = createApp(dataDir);
+    app = makeApp(dataDir);
   });
 
   afterEach(() => {
@@ -83,7 +87,7 @@ describe("Results API", () => {
     mkdirSync(join(resultsDir, "bad-001"), { recursive: true });
     writeFileSync(join(resultsDir, "bad-001", "result.json"), "not valid json{{{");
 
-    const badApp = createApp(badDir);
+    const badApp = makeApp(badDir);
     const res = await badApp.request("/api/results");
     expect(res.status).toBe(200);
     const body = await res.json();
@@ -99,7 +103,7 @@ describe("Results API", () => {
     mkdirSync(join(resultsDir, "bad-002"), { recursive: true });
     writeFileSync(join(resultsDir, "bad-002", "result.json"), "not json");
 
-    const badApp = createApp(badDir);
+    const badApp = makeApp(badDir);
     const res = await badApp.request("/api/results/bad-002");
     expect(res.status).toBe(500);
     rmSync(badDir, { recursive: true, force: true });
@@ -116,7 +120,7 @@ describe("Results API", () => {
   test("GET /api/results returns empty array when no results dir", async () => {
     const emptyDir = mkdtempSync(join(tmpdir(), "gauntlet-empty-"));
     mkdirSync(join(emptyDir, "stories"), { recursive: true });
-    const emptyApp = createApp(emptyDir);
+    const emptyApp = makeApp(emptyDir);
     const res = await emptyApp.request("/api/results");
     expect(res.status).toBe(200);
     const body = await res.json();

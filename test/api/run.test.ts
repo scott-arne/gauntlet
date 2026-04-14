@@ -2,6 +2,7 @@ import { describe, test, expect, beforeEach, afterEach } from "bun:test";
 import { runRoutes, executeRun } from "../../src/api/routes/run";
 import { ActiveRunRegistry } from "../../src/api/active-runs";
 import { RunBroadcaster } from "../../src/api/ws";
+import { loadConfig } from "../../src/config";
 import { mkdtempSync, rmSync, mkdirSync, writeFileSync } from "fs";
 import { join } from "path";
 import { tmpdir } from "os";
@@ -39,8 +40,9 @@ describe("Run API", () => {
   });
 
   test("POST /api/run/:id returns 404 for unknown scenario", async () => {
+    const config = loadConfig({ dataDir }, { GAUNTLET_AGENT_MODEL: "claude-sonnet-4-6" } as NodeJS.ProcessEnv);
     const app = new Hono();
-    app.route("/api/run", runRoutes(dataDir));
+    app.route("/api/run", runRoutes(config));
 
     const res = await app.request("/api/run/story-999", {
       method: "POST",
@@ -53,8 +55,9 @@ describe("Run API", () => {
   });
 
   test("POST /api/run/:id returns 400 when target is missing", async () => {
+    const config = loadConfig({ dataDir }, { GAUNTLET_AGENT_MODEL: "claude-sonnet-4-6" } as NodeJS.ProcessEnv);
     const app = new Hono();
-    app.route("/api/run", runRoutes(dataDir));
+    app.route("/api/run", runRoutes(config));
 
     const res = await app.request("/api/run/story-001", {
       method: "POST",
@@ -67,11 +70,11 @@ describe("Run API", () => {
   });
 
   test("POST /api/run/:id returns 202 and registers the run", async () => {
-    process.env.GAUNTLET_AGENT_MODEL = "claude-sonnet-4-6";
+    const config = loadConfig({ dataDir }, { GAUNTLET_AGENT_MODEL: "claude-sonnet-4-6" } as NodeJS.ProcessEnv);
     const registry = new ActiveRunRegistry();
     const broadcaster = new RunBroadcaster();
     const app = new Hono();
-    app.route("/api/run", runRoutes(dataDir, broadcaster, undefined, registry));
+    app.route("/api/run", runRoutes(config, broadcaster, undefined, registry));
 
     // This will fail downstream (no real Chrome) but should still return 202
     // because start is detached. We only assert the acknowledgement + registration.
@@ -155,24 +158,21 @@ describe("Run API", () => {
     expect(registryHadEntryAtTerminal).toBe(false);
   });
 
-  test("POST /api/run/:id returns 400 when no model configured", async () => {
-    const savedAgent = process.env.GAUNTLET_AGENT_MODEL;
-    delete process.env.GAUNTLET_AGENT_MODEL;
+  test("POST /api/run/:id returns 400 when model is not in allow-list", async () => {
+    const config = loadConfig(
+      { dataDir },
+      { GAUNTLET_AGENT_MODEL: "claude-sonnet-4-6", GAUNTLET_MODELS: "claude-sonnet-4-6" } as NodeJS.ProcessEnv,
+    );
+    const app = new Hono();
+    app.route("/api/run", runRoutes(config));
 
-    try {
-      const app = new Hono();
-      app.route("/api/run", runRoutes(dataDir));
-
-      const res = await app.request("/api/run/story-001", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ target: "http://localhost:3000" }),
-      });
-      expect(res.status).toBe(400);
-      const body = await res.json();
-      expect(body.error).toContain("no model configured");
-    } finally {
-      if (savedAgent !== undefined) process.env.GAUNTLET_AGENT_MODEL = savedAgent;
-    }
+    const res = await app.request("/api/run/story-001", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ target: "http://localhost:3000", model: "gpt-4o" }),
+    });
+    expect(res.status).toBe(400);
+    const body = await res.json();
+    expect(body.error).toContain("allow-list");
   });
 });

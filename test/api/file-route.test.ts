@@ -1,8 +1,12 @@
 import { describe, test, expect, beforeEach, afterEach } from "bun:test";
 import { createApp } from "../../src/api/server";
+import { loadConfig } from "../../src/config";
 import { mkdtempSync, rmSync, mkdirSync, writeFileSync } from "fs";
 import { join } from "path";
 import { tmpdir } from "os";
+
+const makeApp = (dataDir: string, uiDir?: string) =>
+  createApp(loadConfig({ dataDir }, {} as NodeJS.ProcessEnv), uiDir);
 
 // The file route serves a file only if the run's result.json lists it.
 // This test uses a video file as the example; the same contract covers any
@@ -13,7 +17,7 @@ describe("Manifest-gated file route", () => {
 
   beforeEach(() => {
     dataDir = mkdtempSync(join(tmpdir(), "gauntlet-file-"));
-    app = createApp(dataDir);
+    app = makeApp(dataDir);
   });
 
   afterEach(() => {

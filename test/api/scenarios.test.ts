@@ -1,8 +1,12 @@
 import { describe, test, expect, beforeEach, afterEach } from "bun:test";
 import { createApp } from "../../src/api/server";
+import { loadConfig } from "../../src/config";
 import { mkdtempSync, rmSync, mkdirSync, writeFileSync } from "fs";
 import { join } from "path";
 import { tmpdir } from "os";
+
+const makeApp = (dataDir: string, uiDir?: string) =>
+  createApp(loadConfig({ dataDir }, {} as NodeJS.ProcessEnv), uiDir);
 
 describe("Scenarios API", () => {
   let dataDir: string;
@@ -23,7 +27,7 @@ describe("Scenarios API", () => {
       "---\nid: story-002\ntitle: Another story\nstatus: ready\n---\n\nAnother story.\n"
     );
 
-    app = createApp(dataDir);
+    app = makeApp(dataDir);
   });
 
   afterEach(() => {
@@ -70,7 +74,7 @@ describe("Scenarios API", () => {
 
   test("GET /api/scenarios returns empty array when stories dir doesn't exist", async () => {
     const emptyDir = mkdtempSync(join(tmpdir(), "gauntlet-no-stories-"));
-    const emptyApp = createApp(emptyDir);
+    const emptyApp = makeApp(emptyDir);
     const res = await emptyApp.request("/api/scenarios");
     expect(res.status).toBe(200);
     const body = await res.json();

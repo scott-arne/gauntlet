@@ -1,8 +1,12 @@
 import { describe, test, expect, beforeEach, afterEach } from "bun:test";
 import { createApp } from "../../src/api/server";
+import { loadConfig } from "../../src/config";
 import { mkdtempSync, rmSync, mkdirSync, writeFileSync } from "fs";
 import { join } from "path";
 import { tmpdir } from "os";
+
+const makeApp = (dataDir: string, uiDir?: string) =>
+  createApp(loadConfig({ dataDir }, {} as NodeJS.ProcessEnv), uiDir);
 
 describe("Static UI serving", () => {
   let dataDir: string;
@@ -22,7 +26,7 @@ describe("Static UI serving", () => {
     mkdirSync(uiDir, { recursive: true });
     writeFileSync(join(uiDir, "index.html"), "<html><body>gauntlet ui</body></html>");
 
-    app = createApp(dataDir, uiDir);
+    app = makeApp(dataDir, uiDir);
     const res = await app.request("/cards");
     expect(res.status).toBe(200);
     expect(res.headers.get("Content-Type")).toBe("text/html");
@@ -36,7 +40,7 @@ describe("Static UI serving", () => {
     mkdirSync(assetsDir, { recursive: true });
     writeFileSync(join(assetsDir, "main.js"), "console.log('hello')");
 
-    app = createApp(dataDir, uiDir);
+    app = makeApp(dataDir, uiDir);
     const res = await app.request("/assets/main.js");
     expect(res.status).toBe(200);
     expect(res.headers.get("Content-Type")).toBe("application/javascript");
@@ -49,7 +53,7 @@ describe("Static UI serving", () => {
     mkdirSync(uiDir, { recursive: true });
     writeFileSync(join(uiDir, "index.html"), "<html></html>");
 
-    app = createApp(dataDir, uiDir);
+    app = makeApp(dataDir, uiDir);
     const res = await app.request("/api/scenarios");
     expect(res.status).toBe(200);
     const data = await res.json();
@@ -57,7 +61,7 @@ describe("Static UI serving", () => {
   });
 
   test("works without UI dist directory", async () => {
-    app = createApp(dataDir);
+    app = makeApp(dataDir);
     const res = await app.request("/cards");
     expect(res.status).toBe(404);
   });

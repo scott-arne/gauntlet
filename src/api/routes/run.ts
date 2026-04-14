@@ -5,6 +5,7 @@ import { createClient } from "../../models/resolve";
 import { EvidenceLogger } from "../../evidence/logger";
 import { writeResultFiles } from "../../evidence/writer";
 import { runAgent } from "../../agent/agent";
+import { mergeRunConfig, validateRunBody, type AppConfig, type ChromeEndpoint } from "../../config";
 import type { Adapter } from "../../adapters/adapter";
 import type { RunBroadcaster } from "../ws";
 import type { ActiveRunRegistry } from "../active-runs";
@@ -13,7 +14,7 @@ import type { ErrorLog } from "./errors";
 import type { StoryCard } from "../../format/story-card";
 import type { LLMClient } from "../../models/provider";
 
-function createAdapter(type: string, chromeEndpoint?: string): Adapter {
+function createAdapter(type: string, chrome?: ChromeEndpoint): Adapter {
   switch (type) {
     case "cli": {
       const { CLIAdapter } = require("../../adapters/cli/adapter");
@@ -25,7 +26,8 @@ function createAdapter(type: string, chromeEndpoint?: string): Adapter {
     }
     case "web": {
       const { WebAdapter } = require("../../adapters/web/adapter");
-      return new WebAdapter({ chrome: chromeEndpoint });
+      // WebAdapter still takes the legacy `chrome: string` shape until Task 6.
+      return new WebAdapter({ chrome: chrome ? `${chrome.host}:${chrome.port}` : undefined });
     }
     default:
       throw new Error(`Unknown adapter type: ${type}`);
@@ -33,39 +35,48 @@ function createAdapter(type: string, chromeEndpoint?: string): Adapter {
 }
 
 export function runRoutes(
-  dataDir: string,
+  config: AppConfig,
   broadcaster?: RunBroadcaster,
   errorLog?: ErrorLog,
   registry?: ActiveRunRegistry,
 ) {
   const router = new Hono();
-  const storiesDir = join(dataDir, "stories");
+  const storiesDir = join(config.dataDir, "stories");
 
   router.post("/:id", async (c) => {
     const entry = findCard(storiesDir, c.req.param("id"));
     if (!entry) return c.json({ error: "not found" }, 404);
 
-    const body = await c.req.json().catch(() => ({}));
-    const target = body.target as string | undefined;
-    if (!target) return c.json({ error: "target is required" }, 400);
-
-    const adapterType = (body.adapter as string) || "web";
-    const model = (body.model as string) || process.env.GAUNTLET_AGENT_MODEL;
-    if (!model) {
-      return c.json({ error: "no model configured (set GAUNTLET_AGENT_MODEL or pass model in body)" }, 400);
+    const rawBody = await c.req.json().catch(() => ({}));
+    let body;
+    try {
+      body = validateRunBody(rawBody);
+    } catch (err) {
+      return c.json({ error: err instanceof Error ? err.message : String(err) }, 400);
     }
 
-    const client = createClient(model);
-    const adapter = createAdapter(adapterType, body.chrome);
-    const outDir = join(dataDir, "results", entry.card.id);
+    let effective;
+    try {
+      effective = mergeRunConfig(config, body);
+    } catch (err) {
+      return c.json({ error: err instanceof Error ? err.message : String(err) }, 400);
+    }
+
+    if (config.models.available.length > 0 && !config.models.available.includes(effective.model)) {
+      return c.json({ error: `model "${effective.model}" is not in GAUNTLET_MODELS allow-list` }, 400);
+    }
+
+    const client = createClient(effective.model);
+    const adapter = createAdapter(effective.adapter, effective.chrome);
+    const outDir = join(config.dataDir, "results", entry.card.id);
 
     const startedAt = Date.now();
     if (registry) {
       registry.register({
         id: entry.card.id,
         title: entry.card.title,
-        target,
-        model,
+        target: effective.target,
+        model: effective.model,
         startedAt,
       });
     }
@@ -74,9 +85,9 @@ export function runRoutes(
     executeRun({
       card: entry.card,
       adapter,
-      adapterType,
+      adapterType: effective.adapter,
       client,
-      target,
+      target: effective.target,
       outDir,
       broadcaster,
       registry,

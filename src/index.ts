@@ -45,14 +45,17 @@ async function main() {
       const { RunBroadcaster } = await import("./api/ws");
       const { ActiveRunRegistry } = await import("./api/active-runs");
       const { handleWsOpen } = await import("./api/ws-handlers");
+      const { loadConfig } = await import("./config");
       const { join } = await import("path");
-      const dataDir = args.cli.dataDir ?? ".";
+
+      const config = loadConfig(args.cli, process.env);
+
       const uiDir = join(import.meta.dir, "..", "ui", "dist");
       const broadcaster = new RunBroadcaster();
       const registry = new ActiveRunRegistry();
-      const app = createApp(dataDir, uiDir, broadcaster, registry);
-      const port = args.cli.port ?? parseInt(process.env.GAUNTLET_PORT || "4400", 10);
-      if (!process.env.GAUNTLET_AGENT_MODEL && !process.env.GAUNTLET_MODELS) {
+      const app = createApp(config, uiDir, broadcaster, registry);
+      const port = config.port;
+      if (config.models.available.length === 0) {
         console.error("WARNING: No model configured. Set GAUNTLET_AGENT_MODEL or GAUNTLET_MODELS environment variable.");
       }
       console.error(`gauntlet server listening on port ${port}`);
