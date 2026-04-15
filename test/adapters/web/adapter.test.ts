@@ -1,4 +1,7 @@
 import { describe, test, expect } from "bun:test";
+import { mkdtempSync, mkdirSync, writeFileSync, rmSync } from "fs";
+import { tmpdir } from "os";
+import { join } from "path";
 import { WebAdapter } from "../../../src/adapters/web/adapter";
 
 describe("WebAdapter", () => {
@@ -42,6 +45,78 @@ describe("WebAdapter", () => {
     const screenshotTool = tools.find((t) => t.name === "screenshot");
     const props = (screenshotTool!.parameters as any).properties;
     expect(props.return_screenshot).toBeUndefined();
+  });
+
+  test("omits read_profile when no profiles directory is set", () => {
+    const adapter = new WebAdapter();
+    const names = adapter.toolDefinitions().map((t) => t.name);
+    expect(names).not.toContain("read_profile");
+  });
+
+  test("omits read_profile when profiles directory is empty", () => {
+    const tmp = mkdtempSync(join(tmpdir(), "gauntlet-web-empty-"));
+    try {
+      const adapter = new WebAdapter({ profilesDir: tmp });
+      const names = adapter.toolDefinitions().map((t) => t.name);
+      expect(names).not.toContain("read_profile");
+    } finally {
+      rmSync(tmp, { recursive: true, force: true });
+    }
+  });
+
+  test("includes read_profile when profiles directory has at least one file", () => {
+    const tmp = mkdtempSync(join(tmpdir(), "gauntlet-web-profiles-"));
+    try {
+      mkdirSync(join(tmp, "profiles"));
+      writeFileSync(join(tmp, "profiles", "alice.md"), "A");
+      writeFileSync(join(tmp, "profiles", "bob.md"), "B");
+      const adapter = new WebAdapter({ profilesDir: join(tmp, "profiles") });
+      const tools = adapter.toolDefinitions();
+      const readProfile = tools.find((t) => t.name === "read_profile");
+      expect(readProfile).toBeDefined();
+      // The parameter is a plain string — no enum of valid names.
+      const params = readProfile!.parameters as {
+        properties: { name: { enum?: unknown } };
+      };
+      expect(params.properties.name.enum).toBeUndefined();
+    } finally {
+      rmSync(tmp, { recursive: true, force: true });
+    }
+  });
+
+  test("omits install_passkey when profiles directory has no passkey files", () => {
+    const tmp = mkdtempSync(join(tmpdir(), "gauntlet-web-nopasskey-"));
+    try {
+      mkdirSync(join(tmp, "profiles"));
+      writeFileSync(join(tmp, "profiles", "alice.md"), "A");
+      const adapter = new WebAdapter({ profilesDir: join(tmp, "profiles") });
+      const names = adapter.toolDefinitions().map((t) => t.name);
+      expect(names).not.toContain("install_passkey");
+    } finally {
+      rmSync(tmp, { recursive: true, force: true });
+    }
+  });
+
+  test("includes install_passkey when a subdir has passkey.json", () => {
+    const tmp = mkdtempSync(join(tmpdir(), "gauntlet-web-passkey-"));
+    try {
+      mkdirSync(join(tmp, "profiles"));
+      mkdirSync(join(tmp, "profiles", "matt"));
+      writeFileSync(
+        join(tmp, "profiles", "matt", "passkey.json"),
+        JSON.stringify({
+          credentialId: "dGVzdA",
+          isResidentCredential: true,
+          rpId: "example.test",
+          privateKey: "TEST_KEY",
+        }),
+      );
+      const adapter = new WebAdapter({ profilesDir: join(tmp, "profiles") });
+      const names = adapter.toolDefinitions().map((t) => t.name);
+      expect(names).toContain("install_passkey");
+    } finally {
+      rmSync(tmp, { recursive: true, force: true });
+    }
   });
 
   // The whole AppConfig refactor depends on this thread:

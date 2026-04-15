@@ -1,7 +1,7 @@
 import { describe, test, expect, afterEach } from "bun:test";
 import { TUIAdapter } from "../../../src/adapters/tui/adapter";
 import { EvidenceLogger } from "../../../src/evidence/logger";
-import { mkdtempSync, readFileSync } from "fs";
+import { mkdtempSync, mkdirSync, writeFileSync, rmSync, readFileSync } from "fs";
 import { join } from "path";
 import { tmpdir } from "os";
 
@@ -86,5 +86,37 @@ describe.skipIf(!tmuxAvailable)("TUIAdapter", () => {
     expect(names).toContain("type");
     expect(names).toContain("press");
     expect(names).toContain("read_screen");
+  });
+});
+
+describe("TUIAdapter profile tool wiring", () => {
+  test("omits read_profile when no profiles directory is set", () => {
+    const adapter = new TUIAdapter();
+    const names = adapter.toolDefinitions().map((t) => t.name);
+    expect(names).not.toContain("read_profile");
+  });
+
+  test("omits read_profile when profiles directory is empty", () => {
+    const tmp = mkdtempSync(join(tmpdir(), "gauntlet-tui-empty-"));
+    try {
+      const adapter = new TUIAdapter({ profilesDir: tmp });
+      const names = adapter.toolDefinitions().map((t) => t.name);
+      expect(names).not.toContain("read_profile");
+    } finally {
+      rmSync(tmp, { recursive: true, force: true });
+    }
+  });
+
+  test("includes read_profile when profiles directory has at least one file", () => {
+    const tmp = mkdtempSync(join(tmpdir(), "gauntlet-tui-profiles-"));
+    try {
+      mkdirSync(join(tmp, "profiles"));
+      writeFileSync(join(tmp, "profiles", "alice.md"), "Alice body");
+      const adapter = new TUIAdapter({ profilesDir: join(tmp, "profiles") });
+      const names = adapter.toolDefinitions().map((t) => t.name);
+      expect(names).toContain("read_profile");
+    } finally {
+      rmSync(tmp, { recursive: true, force: true });
+    }
   });
 });

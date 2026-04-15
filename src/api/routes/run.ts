@@ -14,19 +14,24 @@ import type { ErrorLog } from "./errors";
 import type { StoryCard } from "../../format/story-card";
 import type { LLMClient } from "../../models/provider";
 
-function createAdapter(type: string, chrome?: ChromeEndpoint): Adapter {
+function createAdapter(
+  type: string,
+  chrome: ChromeEndpoint | undefined,
+  profilesDir: string,
+  logger: EvidenceLogger,
+): Adapter {
   switch (type) {
     case "cli": {
       const { CLIAdapter } = require("../../adapters/cli/adapter");
-      return new CLIAdapter();
+      return new CLIAdapter({ profilesDir });
     }
     case "tui": {
       const { TUIAdapter } = require("../../adapters/tui/adapter");
-      return new TUIAdapter();
+      return new TUIAdapter({ profilesDir });
     }
     case "web": {
       const { WebAdapter } = require("../../adapters/web/adapter");
-      return new WebAdapter({ chrome });
+      return new WebAdapter({ chrome, profilesDir, logger });
     }
     default:
       throw new Error(`Unknown adapter type: ${type}`);
@@ -41,6 +46,7 @@ export function runRoutes(
 ) {
   const router = new Hono();
   const storiesDir = join(config.dataDir, "stories");
+  const profilesDir = join(config.dataDir, "profiles");
 
   router.post("/:id", async (c) => {
     const entry = findCard(storiesDir, c.req.param("id"));
@@ -66,8 +72,11 @@ export function runRoutes(
     }
 
     const client = createClient(effective.model);
-    const adapter = createAdapter(effective.adapter, effective.chrome);
     const outDir = join(config.dataDir, "results", entry.card.id);
+    // Create the logger *before* the adapter so WebAdapter can open its
+    // background observer session against it in start().
+    const logger = new EvidenceLogger(outDir);
+    const adapter = createAdapter(effective.adapter, effective.chrome, profilesDir, logger);
 
     const startedAt = Date.now();
     if (registry) {
@@ -88,6 +97,7 @@ export function runRoutes(
       client,
       target: effective.target,
       outDir,
+      logger,
       broadcaster,
       registry,
       errorLog,
@@ -110,6 +120,7 @@ export interface ExecuteRunOpts {
   client: LLMClient;
   target: string;
   outDir: string;
+  logger: EvidenceLogger;
   broadcaster?: RunBroadcaster;
   registry?: ActiveRunRegistry;
   errorLog?: ErrorLog;
@@ -118,8 +129,7 @@ export interface ExecuteRunOpts {
 }
 
 export async function executeRun(opts: ExecuteRunOpts): Promise<void> {
-  const { card, adapter, adapterType, client, target, outDir, broadcaster, registry, errorLog, startedAt } = opts;
-  const logger = new EvidenceLogger(outDir);
+  const { card, adapter, adapterType, client, target, outDir, logger, broadcaster, registry, errorLog, startedAt } = opts;
 
   if (broadcaster || registry) {
     logger.onAction = (action, params) => {

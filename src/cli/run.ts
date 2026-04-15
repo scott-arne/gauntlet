@@ -1,4 +1,5 @@
 import { readFileSync } from "fs";
+import { join } from "path";
 import { parseStoryCard } from "../format/story-card";
 import { EvidenceLogger } from "../evidence/logger";
 import { writeResultFiles } from "../evidence/writer";
@@ -25,16 +26,17 @@ export async function run(opts: RunCommandOptions): Promise<void> {
   const card = parseStoryCard(content);
   const logger = new EvidenceLogger(outDir);
   const client = createClient(config.models.agent);
+  const profilesDir = join(config.dataDir, "profiles");
 
   let adapter;
   switch (adapterType) {
     case "cli":
-      adapter = new CLIAdapter();
+      adapter = new CLIAdapter({ profilesDir });
       await adapter.start(target);
       break;
     case "tui": {
       const { TUIAdapter } = await import("../adapters/tui/adapter");
-      adapter = new TUIAdapter();
+      adapter = new TUIAdapter({ profilesDir });
       await adapter.start(target);
       break;
     }
@@ -47,7 +49,7 @@ export async function run(opts: RunCommandOptions): Promise<void> {
       const chromeOpt = config.sources.defaultChrome === "default"
         ? undefined
         : config.defaultChrome;
-      adapter = new WebAdapter({ chrome: chromeOpt });
+      adapter = new WebAdapter({ chrome: chromeOpt, profilesDir, logger });
       await adapter.start(target);
       break;
     }

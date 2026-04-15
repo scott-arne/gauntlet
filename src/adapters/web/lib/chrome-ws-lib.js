@@ -267,8 +267,22 @@ async function resolveWsUrl(wsUrlOrIndex) {
 // Message ID counter for legacy single-use connections
 let messageIdCounter = 1;
 
-// Helper to generate element selection code (supports CSS and XPath)
-// For XPath with text()='...', also tries normalize-space() fallback for mixed content elements
+// Parse a :contains('text') / :contains("text") clause at the end of a
+// selector. Returns { base, text } or null if the selector doesn't use
+// :contains. The base may be empty (meaning "match any element"); we
+// turn that into "*". `:contains` is a jQuery extension and is invalid
+// CSS, but agents reach for it anyway — translating to a JS walk turns
+// a silent syntax error into a working match.
+function parseContains(selector) {
+  const m = selector.match(/^(.*?):contains\(\s*(['"])(.*?)\2\s*\)\s*$/);
+  if (!m) return null;
+  const base = m[1].trim();
+  return { base: base || '*', text: m[3] };
+}
+
+// Helper to generate element selection code (supports CSS, XPath, and
+// jQuery-style :contains('text')). For XPath with text()='...', also
+// tries normalize-space() fallback for mixed content elements.
 function getElementSelector(selector) {
   if (selector.startsWith('/') || selector.startsWith('//')) {
     // XPath selector - with fallback for text()='...' patterns on mixed content elements
@@ -280,10 +294,23 @@ function getElementSelector(selector) {
       return `(document.evaluate(${JSON.stringify(selector)}, document, null, XPathResult.FIRST_ORDERED_NODE_TYPE, null).singleNodeValue || document.evaluate(${JSON.stringify(fallbackSelector)}, document, null, XPathResult.FIRST_ORDERED_NODE_TYPE, null).singleNodeValue)`;
     }
     return `document.evaluate(${JSON.stringify(selector)}, document, null, XPathResult.FIRST_ORDERED_NODE_TYPE, null).singleNodeValue`;
-  } else {
-    // CSS selector
-    return `document.querySelector(${JSON.stringify(selector)})`;
   }
+
+  // jQuery-style :contains('text') — translate to a querySelectorAll walk.
+  const contains = parseContains(selector);
+  if (contains) {
+    return `(() => {
+      const _els = document.querySelectorAll(${JSON.stringify(contains.base)});
+      for (const _el of _els) {
+        const _t = (_el.textContent || '').replace(/\\s+/g, ' ').trim();
+        if (_t.includes(${JSON.stringify(contains.text)})) return _el;
+      }
+      return null;
+    })()`;
+  }
+
+  // CSS selector
+  return `document.querySelector(${JSON.stringify(selector)})`;
 }
 
 // Helper to get all matching elements (for JRV-129 warnings)
@@ -314,10 +341,23 @@ function getElementSelectorAll(selector) {
       while (node = iterator.iterateNext()) result.push(node);
       return result;
     })()`;
-  } else {
-    // CSS selector
-    return `Array.from(document.querySelectorAll(${JSON.stringify(selector)}))`;
   }
+
+  // jQuery-style :contains('text')
+  const contains = parseContains(selector);
+  if (contains) {
+    return `(() => {
+      const _els = document.querySelectorAll(${JSON.stringify(contains.base)});
+      const _want = ${JSON.stringify(contains.text)};
+      return Array.from(_els).filter((_el) => {
+        const _t = (_el.textContent || '').replace(/\\s+/g, ' ').trim();
+        return _t.includes(_want);
+      });
+    })()`;
+  }
+
+  // CSS selector
+  return `Array.from(document.querySelectorAll(${JSON.stringify(selector)}))`;
 }
 
 /**
@@ -590,56 +630,70 @@ async function navigate(tabIndexOrWsUrl, url, autoCapture = false) {
 async function click(tabIndexOrWsUrl, selector) {
   const wsUrl = await resolveWsUrl(tabIndexOrWsUrl);
 
-  try {
-    // Get element's bounding box and scroll into view
-    const js = `
-      (() => {
+  // First: find the element and get its bounding box. This evaluation also
+  // covers any syntax errors in the selector (which surface as exception
+  // details on the result). We distinguish three outcomes:
+  //   - element found and measured → mouse events path
+  //   - element not found          → throw a clear "not found" error
+  //   - selector syntax error      → throw the JS error text
+  const findJs = `
+    (() => {
+      try {
         const el = ${getElementSelector(selector)};
         if (!el) return { found: false };
         el.scrollIntoView({ block: 'center', inline: 'center' });
         const rect = el.getBoundingClientRect();
         return {
+          found: true,
           x: rect.left + rect.width / 2,
           y: rect.top + rect.height / 2,
-          found: true
+          width: rect.width,
+          height: rect.height,
         };
-      })()
-    `;
+      } catch (err) {
+        return { found: false, error: String(err && err.message || err) };
+      }
+    })()
+  `;
 
-    const result = await sendCdpCommand(wsUrl, 'Runtime.evaluate', {
-      expression: js,
-      returnByValue: true
-    });
+  const findResult = await sendCdpCommand(wsUrl, 'Runtime.evaluate', {
+    expression: findJs,
+    returnByValue: true,
+  });
 
-    if (!result.result.value || !result.result.value.found) {
-      throw new Error(`Element not found: ${selector}`);
-    }
+  const value = findResult && findResult.result && findResult.result.value;
+  if (!value || !value.found) {
+    const reason = value && value.error
+      ? ` (${value.error})`
+      : '';
+    throw new Error(`Element not found: ${selector}${reason}`);
+  }
 
-    const { x, y } = result.result.value;
+  const { x, y, width, height } = value;
+  if (!width || !height) {
+    // Element exists but has no layout box (display:none, hidden, detached).
+    // Fall back to el.click() — the native click handler may still fire.
+    const clickJs = `${getElementSelector(selector)}?.click()`;
+    await sendCdpCommand(wsUrl, 'Runtime.evaluate', { expression: clickJs });
+    return { clicked: true, fallback: 'zero-size' };
+  }
 
-    // Send real mouse events (works with React synthetic events)
+  try {
+    // Send real mouse events (works with React synthetic events and
+    // Phoenix LiveView's document-level delegated `phx-click` listener).
     await sendCdpCommand(wsUrl, 'Input.dispatchMouseEvent', {
-      type: 'mousePressed',
-      x,
-      y,
-      button: 'left',
-      clickCount: 1
+      type: 'mousePressed', x, y, button: 'left', clickCount: 1,
     });
-
     await sendCdpCommand(wsUrl, 'Input.dispatchMouseEvent', {
-      type: 'mouseReleased',
-      x,
-      y,
-      button: 'left',
-      clickCount: 1
+      type: 'mouseReleased', x, y, button: 'left', clickCount: 1,
     });
-
     return { clicked: true, x, y };
   } catch (e) {
-    // Fallback to el.click() for edge cases (e.g., hidden elements)
-    const js = `${getElementSelector(selector)}?.click()`;
-    await sendCdpCommand(wsUrl, 'Runtime.evaluate', { expression: js });
-    return { clicked: true, fallback: true };
+    // Mouse events themselves failed (rare — Input domain unreachable etc.).
+    // Fall back to el.click() but report we did so.
+    const clickJs = `${getElementSelector(selector)}?.click()`;
+    await sendCdpCommand(wsUrl, 'Runtime.evaluate', { expression: clickJs });
+    return { clicked: true, fallback: 'mouse-event-error' };
   }
 }
 
@@ -2283,6 +2337,233 @@ async function clearCookies(tabIndexOrWsUrl) {
   await sendCdpCommand(wsUrl, 'Network.clearBrowserCookies', {});
 }
 
+// =============================================================================
+// WebAuthn — virtual authenticator support (for installing test passkeys)
+// =============================================================================
+// CDP's WebAuthn domain is scoped to the specific DevTools session (WebSocket
+// connection) it was enabled on. `WebAuthn.enable` must precede every other
+// WebAuthn call, and all calls in a sequence must ride on the same socket —
+// if we let the pool reconnect between calls, the new socket sees "not
+// enabled" and any virtual authenticator from the old socket is gone.
+//
+// We bypass the pool entirely for WebAuthn by opening a dedicated WebSocket
+// via `webAuthnOpenSession`. The returned session object stays pinned for
+// its lifetime. When closed, Chrome automatically disposes any virtual
+// authenticators that were created on it — no explicit teardown required.
+
+async function webAuthnOpenSession(tabIndexOrWsUrl) {
+  const wsUrl = await resolveWsUrl(tabIndexOrWsUrl);
+  const ws = new WebSocketClient(wsUrl);
+  const pendingRequests = new Map();
+  let messageIdCounter = 1;
+  let closed = false;
+
+  ws.on('message', (msg) => {
+    try {
+      const data = JSON.parse(msg);
+      if (data.id !== undefined) {
+        const pending = pendingRequests.get(data.id);
+        if (pending) {
+          clearTimeout(pending.timeout);
+          pendingRequests.delete(data.id);
+          if (data.error) {
+            pending.reject(new Error(data.error.message || JSON.stringify(data.error)));
+          } else {
+            pending.resolve(data.result);
+          }
+        }
+      }
+    } catch (e) {
+      console.error('Error processing WebAuthn session message:', e);
+    }
+  });
+
+  ws.on('close', () => {
+    closed = true;
+    for (const [, pending] of pendingRequests) {
+      clearTimeout(pending.timeout);
+      pending.reject(new Error('WebAuthn session closed'));
+    }
+    pendingRequests.clear();
+  });
+
+  await ws.connect();
+
+  const sendOnThisSocket = (method, params = {}, timeout = 30000) => {
+    if (closed) return Promise.reject(new Error('WebAuthn session closed'));
+    const id = messageIdCounter++;
+    return new Promise((resolve, reject) => {
+      const timeoutHandle = setTimeout(() => {
+        pendingRequests.delete(id);
+        reject(new Error(`CDP command timeout: ${method}`));
+      }, timeout);
+      pendingRequests.set(id, { resolve, reject, timeout: timeoutHandle });
+      ws.send(JSON.stringify({ id, method, params }));
+    });
+  };
+
+  // Enable once at session creation. Everything downstream rides this socket.
+  await sendOnThisSocket('WebAuthn.enable', { enableUI: false });
+
+  return {
+    async addVirtualAuthenticator(options) {
+      const result = await sendOnThisSocket('WebAuthn.addVirtualAuthenticator', { options });
+      return result.authenticatorId;
+    },
+    async addCredential(authenticatorId, credential) {
+      return await sendOnThisSocket('WebAuthn.addCredential', { authenticatorId, credential });
+    },
+    async removeVirtualAuthenticator(authenticatorId) {
+      return await sendOnThisSocket('WebAuthn.removeVirtualAuthenticator', { authenticatorId });
+    },
+    close() {
+      if (closed) return;
+      closed = true;
+      ws.close();
+    },
+    isClosed() {
+      return closed;
+    },
+  };
+}
+
+// =============================================================================
+// Observer session — stream browser events to a handler for evidence logging
+// =============================================================================
+// Opens a dedicated WebSocket outside the pool and enables the Runtime, Log,
+// and Network domains. The caller supplies an `onEvent(category, payload)`
+// handler that fires for each relevant event. Returns `{ close() }` to tear
+// down the session cleanly.
+//
+// Categories:
+//   - 'console'     — Runtime.consoleAPICalled (console.log/warn/error/etc.)
+//   - 'exception'   — Runtime.exceptionThrown (uncaught errors)
+//   - 'log'         — Log.entryAdded (browser-level warnings: CORS, CSP, etc.)
+//   - 'network-ws'  — Network.webSocket* lifecycle + frame events
+//
+// We deliberately do NOT subscribe to Network.requestWillBeSent or similar
+// HTTP events — they're firehose-level noisy. WebSocket events only.
+
+async function openObserverSession(tabIndexOrWsUrl, onEvent) {
+  const wsUrl = await resolveWsUrl(tabIndexOrWsUrl);
+  const ws = new WebSocketClient(wsUrl);
+  const pendingRequests = new Map();
+  let messageIdCounter = 1;
+  let closed = false;
+
+  ws.on('message', (msg) => {
+    try {
+      const data = JSON.parse(msg);
+
+      // Command responses
+      if (data.id !== undefined) {
+        const pending = pendingRequests.get(data.id);
+        if (pending) {
+          clearTimeout(pending.timeout);
+          pendingRequests.delete(data.id);
+          if (data.error) {
+            pending.reject(new Error(data.error.message || JSON.stringify(data.error)));
+          } else {
+            pending.resolve(data.result);
+          }
+        }
+        return;
+      }
+
+      // Events
+      if (!data.method) return;
+      const method = data.method;
+      const params = data.params || {};
+
+      if (method === 'Runtime.consoleAPICalled') {
+        const text = (params.args || []).map((arg) => {
+          if (arg.type === 'string') return arg.value;
+          if (arg.type === 'number') return String(arg.value);
+          if (arg.type === 'boolean') return String(arg.value);
+          return arg.description || arg.value || arg.type || '';
+        }).join(' ');
+        onEvent('console', {
+          level: params.type || 'log',
+          text,
+          stackTrace: params.stackTrace || null,
+        });
+      } else if (method === 'Runtime.exceptionThrown') {
+        const details = params.exceptionDetails || {};
+        onEvent('exception', {
+          text: details.text || '',
+          exception: details.exception ? (details.exception.description || details.exception.value || '') : '',
+          url: details.url || null,
+          line: details.lineNumber,
+          column: details.columnNumber,
+          stackTrace: details.stackTrace || null,
+        });
+      } else if (method === 'Log.entryAdded') {
+        const entry = params.entry || {};
+        onEvent('log', {
+          level: entry.level,
+          source: entry.source,
+          text: entry.text,
+          url: entry.url || null,
+          line: entry.lineNumber,
+        });
+      } else if (method.startsWith('Network.webSocket')) {
+        onEvent('network-ws', {
+          event: method.slice('Network.'.length),
+          ...params,
+        });
+      }
+    } catch (e) {
+      console.error('Error processing observer event:', e);
+    }
+  });
+
+  ws.on('close', () => {
+    closed = true;
+    for (const [, pending] of pendingRequests) {
+      clearTimeout(pending.timeout);
+      pending.reject(new Error('Observer session closed'));
+    }
+    pendingRequests.clear();
+  });
+
+  await ws.connect();
+
+  const sendOnThisSocket = (method, params = {}, timeout = 10000) => {
+    if (closed) return Promise.reject(new Error('Observer session closed'));
+    const id = messageIdCounter++;
+    return new Promise((resolve, reject) => {
+      const timeoutHandle = setTimeout(() => {
+        pendingRequests.delete(id);
+        reject(new Error(`CDP command timeout: ${method}`));
+      }, timeout);
+      pendingRequests.set(id, { resolve, reject, timeout: timeoutHandle });
+      ws.send(JSON.stringify({ id, method, params }));
+    });
+  };
+
+  // Enable all three domains. Order matters only to the extent that events
+  // fired before `enable` succeeds aren't delivered — we await each in turn.
+  try {
+    await sendOnThisSocket('Runtime.enable');
+    await sendOnThisSocket('Log.enable');
+    await sendOnThisSocket('Network.enable');
+  } catch (err) {
+    ws.close();
+    throw err;
+  }
+
+  return {
+    close() {
+      if (closed) return;
+      closed = true;
+      ws.close();
+    },
+    isClosed() {
+      return closed;
+    },
+  };
+}
+
 // Subscribe to CDP events on a tab's connection
 async function onCdpEvent(tabIndex, handler) {
   const tabs = await getTabs();
@@ -2379,6 +2660,14 @@ module.exports = {
 
   // Cookie management
   clearCookies,
+
+  // WebAuthn virtual authenticator (pinned session — see comment on
+  // webAuthnOpenSession for why we bypass the pool).
+  webAuthnOpenSession,
+
+  // Observer session — streams console/exception/log/network-ws events
+  // to a caller-supplied handler for evidence logging.
+  openObserverSession,
 
   // CDP raw access (for screencast streaming)
   sendCdpCommand,

@@ -141,6 +141,9 @@ describe("Run API", () => {
     };
     broadcaster.addClient("story-001", ws as any);
 
+    const { EvidenceLogger } = await import("../../src/evidence/logger");
+    const logger = new EvidenceLogger(join(dataDir, "results", "story-001"));
+
     await executeRun({
       card,
       adapter: stubAdapter,
@@ -148,6 +151,7 @@ describe("Run API", () => {
       client: stubClient,
       target: "http://localhost:3000",
       outDir: join(dataDir, "results", "story-001"),
+      logger,
       broadcaster,
       registry,
     });

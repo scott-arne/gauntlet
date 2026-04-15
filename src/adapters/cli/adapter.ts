@@ -1,6 +1,7 @@
 import type { Adapter } from "../adapter";
 import type { ToolDefinition, ToolResult } from "../../models/provider";
 import type { EvidenceLogger } from "../../evidence/logger";
+import { buildReadProfileTool, type ProfileTool } from "../profile-tool";
 
 
 const KEY_MAP: Record<string, string> = {
@@ -12,9 +13,20 @@ const KEY_MAP: Record<string, string> = {
   "Ctrl+Z": "\x1a",
 };
 
+export interface CLIAdapterOptions {
+  profilesDir?: string;
+}
+
 export class CLIAdapter implements Adapter {
   private proc: ReturnType<typeof Bun.spawn> | null = null;
   private buffer = "";
+  private profileTool: ProfileTool | null;
+
+  constructor(options?: CLIAdapterOptions) {
+    this.profileTool = options?.profilesDir
+      ? buildReadProfileTool(options.profilesDir)
+      : null;
+  }
 
   async start(command: string): Promise<void> {
     this.buffer = "";
@@ -70,7 +82,7 @@ export class CLIAdapter implements Adapter {
   }
 
   toolDefinitions(): ToolDefinition[] {
-    return [
+    const tools: ToolDefinition[] = [
       {
         name: "type",
         description: "Type text into the terminal stdin",
@@ -104,6 +116,10 @@ export class CLIAdapter implements Adapter {
         },
       },
     ];
+    if (this.profileTool) {
+      tools.push(this.profileTool.definition);
+    }
+    return tools;
   }
 
   async executeTool(
@@ -112,6 +128,10 @@ export class CLIAdapter implements Adapter {
     logger: EvidenceLogger
   ): Promise<ToolResult> {
     logger.logAction(name, args);
+
+    if (name === "read_profile" && this.profileTool) {
+      return this.profileTool.execute(args);
+    }
 
     switch (name) {
       case "type": {

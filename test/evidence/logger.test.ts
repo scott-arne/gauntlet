@@ -84,4 +84,33 @@ describe("EvidenceLogger", () => {
     // Should not throw
     logger.logAction("click", { selector: "#btn" });
   });
+
+  test("logBrowserEvent writes to a per-category jsonl file", () => {
+    logger.logBrowserEvent("console", { level: "log", text: "hello" });
+    logger.logBrowserEvent("console", { level: "error", text: "bang" });
+
+    const lines = readFileSync(join(outDir, "console.jsonl"), "utf-8")
+      .trim()
+      .split("\n")
+      .map((l) => JSON.parse(l));
+
+    expect(lines).toHaveLength(2);
+    expect(lines[0].category).toBe("console");
+    expect(lines[0].level).toBe("log");
+    expect(lines[0].text).toBe("hello");
+    expect(lines[0].timestamp).toBeDefined();
+    expect(lines[1].level).toBe("error");
+  });
+
+  test("logBrowserEvent routes different categories to different files", () => {
+    logger.logBrowserEvent("console", { text: "c" });
+    logger.logBrowserEvent("exception", { text: "e" });
+    logger.logBrowserEvent("log", { text: "l" });
+    logger.logBrowserEvent("network-ws", { text: "n" });
+
+    expect(existsSync(join(outDir, "console.jsonl"))).toBe(true);
+    expect(existsSync(join(outDir, "exception.jsonl"))).toBe(true);
+    expect(existsSync(join(outDir, "log.jsonl"))).toBe(true);
+    expect(existsSync(join(outDir, "network-ws.jsonl"))).toBe(true);
+  });
 });

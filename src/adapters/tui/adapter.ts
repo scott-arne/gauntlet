@@ -1,6 +1,7 @@
 import type { Adapter } from "../adapter";
 import type { ToolDefinition, ToolResult } from "../../models/provider";
 import type { EvidenceLogger } from "../../evidence/logger";
+import { buildReadProfileTool, type ProfileTool } from "../profile-tool";
 
 const KEY_MAP: Record<string, string> = {
   Enter: "Enter",
@@ -29,8 +30,19 @@ const KEY_MAP: Record<string, string> = {
 
 const AVAILABLE_KEYS = Object.keys(KEY_MAP).join(", ");
 
+export interface TUIAdapterOptions {
+  profilesDir?: string;
+}
+
 export class TUIAdapter implements Adapter {
   private _sessionName: string | null = null;
+  private profileTool: ProfileTool | null;
+
+  constructor(options?: TUIAdapterOptions) {
+    this.profileTool = options?.profilesDir
+      ? buildReadProfileTool(options.profilesDir)
+      : null;
+  }
 
   get sessionName(): string {
     if (!this._sessionName) throw new Error("Session not started");
@@ -123,7 +135,7 @@ export class TUIAdapter implements Adapter {
   }
 
   toolDefinitions(): ToolDefinition[] {
-    return [
+    const tools: ToolDefinition[] = [
       {
         name: "type",
         description: "Type literal text into the terminal",
@@ -155,6 +167,10 @@ export class TUIAdapter implements Adapter {
         },
       },
     ];
+    if (this.profileTool) {
+      tools.push(this.profileTool.definition);
+    }
+    return tools;
   }
 
   async executeTool(
@@ -163,6 +179,10 @@ export class TUIAdapter implements Adapter {
     logger: EvidenceLogger
   ): Promise<ToolResult> {
     logger.logAction(name, args);
+
+    if (name === "read_profile" && this.profileTool) {
+      return this.profileTool.execute(args);
+    }
 
     switch (name) {
       case "type": {

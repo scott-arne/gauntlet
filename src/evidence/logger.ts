@@ -1,6 +1,12 @@
 import { mkdirSync, appendFileSync, writeFileSync } from "fs";
 import { join } from "path";
 
+export type BrowserEventCategory =
+  | "console"
+  | "exception"
+  | "log"
+  | "network-ws";
+
 export class EvidenceLogger {
   private outDir: string;
   private screenshotCount = 0;
@@ -27,6 +33,21 @@ export class EvidenceLogger {
       JSON.stringify(entry) + "\n"
     );
     this.onAction?.(action, params);
+  }
+
+  logBrowserEvent(
+    category: BrowserEventCategory,
+    data: Record<string, unknown>,
+  ): void {
+    const entry = {
+      timestamp: new Date().toISOString(),
+      category,
+      ...data,
+    };
+    appendFileSync(
+      join(this.outDir, `${category}.jsonl`),
+      JSON.stringify(entry) + "\n",
+    );
   }
 
   saveScreenshot(data: Buffer, name?: string): string {
