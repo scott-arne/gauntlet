@@ -15,11 +15,11 @@ function parseIntFlag(raw: string | undefined, label: string): number | undefine
   return parsed;
 }
 
-const RUN_ALLOWED = new Set(["target", "out", "adapter", "model", "chrome", "data-dir"]);
+const RUN_ALLOWED = new Set(["target", "out", "adapter", "model", "chrome", "project-dir"]);
 const VALIDATE_ALLOWED = new Set<string>([]);
 const FANOUT_ALLOWED = new Set(["out", "model", "from-result"]);
-const SERVE_ALLOWED = new Set(["port", "data-dir", "chrome", "target", "model"]);
-const CONFIG_ALLOWED = new Set(["json", "data-dir", "port", "chrome", "target", "model"]);
+const SERVE_ALLOWED = new Set(["port", "project-dir", "chrome", "target", "model"]);
+const CONFIG_ALLOWED = new Set(["json", "project-dir", "port", "chrome", "target", "model"]);
 
 function rejectUnknownFlags(
   flags: Record<string, unknown>,
@@ -104,7 +104,7 @@ function parseConfigArgs(args: string[]): ConfigArgs {
     command: "config",
     json: flags.json === "true",
     cli: {
-      dataDir: flags["data-dir"],
+      projectRoot: flags["project-dir"],
       port: parseIntFlag(flags.port, "--port"),
       chrome: flags.chrome,
       target: flags.target,
@@ -131,7 +131,7 @@ function parseRunArgs(args: string[]): RunArgs {
     outDir: flags.out ?? "./evidence",
     adapter: (flags.adapter as "web" | "cli" | "tui") ?? "web",
     cli: {
-      dataDir: flags["data-dir"],
+      projectRoot: flags["project-dir"],
       chrome: flags.chrome,
       target: flags.target,
       models: parseModelFlagArray(flags.model),
@@ -182,7 +182,7 @@ function parseServeArgs(args: string[]): ServeArgs {
   return {
     command: "serve",
     cli: {
-      dataDir: flags["data-dir"],
+      projectRoot: flags["project-dir"],
       port: parseIntFlag(flags.port, "--port"),
       chrome: flags.chrome,
       target: flags.target,
@@ -221,8 +221,8 @@ function extractPositional(args: string[]): string | undefined {
  *
  * A flag whose "value" begins with `--` (or is missing entirely) is treated as
  * a bareword flag — `flags[key] = "true"` — and the next token is left in
- * place for the next iteration. This prevents `--json --data-dir /tmp` from
- * silently eating the `--data-dir` token as the value of `--json`.
+ * place for the next iteration. This prevents `--json --project-dir /tmp` from
+ * silently eating the `--project-dir` token as the value of `--json`.
  */
 function parseFlags(args: string[]): Record<string, string> & { model?: string[] } {
   const flags: Record<string, string> = {};
@@ -265,7 +265,7 @@ Commands:
     --chrome host:port   Chrome debugging endpoint (default: 127.0.0.1:9222)
     --adapter <type>     web | cli | tui (default: web)
     --out <dir>          Evidence output directory (default: ./evidence)
-    --data-dir <dir>     Project root with stories/, results/
+    --project-dir <dir>  Project root (contains .gauntlet/ state dir)
 
   validate <scenario.md>  Validate a scenario file
 
@@ -276,7 +276,7 @@ Commands:
 
   serve                    Start the API server
     --port <n>               Server port (default: 4400)
-    --data-dir <dir>         Project root with stories/, results/
+    --project-dir <dir>      Project root (contains .gauntlet/ state dir)
     --chrome host:port       Default Chrome endpoint for runs
     --target <url>           Default target (hint only; UI still overrides)
     --model agent=<name>     Default agent model
@@ -287,7 +287,7 @@ Commands:
 
 Environment:
   GAUNTLET_PORT            Server port
-  GAUNTLET_DATA_DIR        Project root
+  GAUNTLET_PROJECT_ROOT    Project root (contains .gauntlet/ state dir)
   GAUNTLET_CHROME          Default Chrome endpoint (host:port)
   GAUNTLET_AGENT_MODEL     Default agent model
   GAUNTLET_FANOUT_MODEL    Default fanout model

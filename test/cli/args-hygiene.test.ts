@@ -7,11 +7,11 @@ describe("CLI flag hygiene", () => {
       .toThrow(/unknown flag.*--bogus/i);
   });
 
-  test("parseServeArgs accepts --chrome, --data-dir, --port, --model, --target", () => {
+  test("parseServeArgs accepts --chrome, --project-dir, --port, --model, --target", () => {
     const args = parseArgs([
       "bun", "gauntlet", "serve",
       "--port", "4400",
-      "--data-dir", "/tmp/x",
+      "--project-dir", "/tmp/x",
       "--chrome", "localhost:9222",
       "--model", "agent=claude-sonnet-4-6",
       "--target", "http://localhost:3000",
@@ -69,7 +69,7 @@ describe("CLI flag hygiene", () => {
     } catch (e) {
       const msg = (e as Error).message;
       expect(msg).toMatch(/--port/);
-      expect(msg).toMatch(/--data-dir/);
+      expect(msg).toMatch(/--project-dir/);
       expect(msg).toMatch(/--chrome/);
     }
   });
@@ -78,11 +78,11 @@ describe("CLI flag hygiene", () => {
     const args = parseArgs([
       "bun", "gauntlet", "config",
       "--json",
-      "--data-dir", "/tmp/x",
+      "--project-dir", "/tmp/x",
     ]);
     expect(args.command).toBe("config");
     expect((args as any).json).toBe(true);
-    expect((args as any).cli.dataDir).toBe("/tmp/x");
+    expect((args as any).cli.projectRoot).toBe("/tmp/x");
   });
 
   test("bareword --json alone parses correctly", () => {

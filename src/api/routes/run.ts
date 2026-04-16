@@ -7,6 +7,7 @@ import { writeResultFiles } from "../../evidence/writer";
 import { runAgent } from "../../agent/agent";
 import { renderContextTree } from "../../context/tree";
 import { makeRunId, sanitizeProfileSegment } from "../../util/id";
+import { gauntletPath } from "../../paths";
 import { mergeRunConfig, validateRunBody, type AppConfig, type ChromeEndpoint } from "../../config";
 import type { Adapter } from "../../adapters/adapter";
 import type { RunBroadcaster } from "../ws";
@@ -48,8 +49,8 @@ export function runRoutes(
   registry?: ActiveRunRegistry,
 ) {
   const router = new Hono();
-  const storiesDir = join(config.dataDir, "stories");
-  const contextRoot = join(config.dataDir, ".gauntlet", "context");
+  const storiesDir = gauntletPath(config.projectRoot, "stories");
+  const contextRoot = gauntletPath(config.projectRoot, "context");
 
   router.post("/:id", async (c) => {
     const entry = findCard(storiesDir, c.req.param("id"));
@@ -75,7 +76,7 @@ export function runRoutes(
     }
 
     const client = createClient(effective.model);
-    const outDir = join(config.dataDir, "results", entry.card.id);
+    const outDir = gauntletPath(config.projectRoot, "results", entry.card.id);
     // Create the logger *before* the adapter so WebAdapter can open its
     // background observer session against it in start().
     const logger = new EvidenceLogger(outDir);

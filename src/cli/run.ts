@@ -1,5 +1,4 @@
 import { readFileSync } from "fs";
-import { join } from "path";
 import { parseStoryCard } from "../format/story-card";
 import { EvidenceLogger } from "../evidence/logger";
 import { writeResultFiles } from "../evidence/writer";
@@ -8,6 +7,7 @@ import { createClient } from "../models/resolve";
 import { CLIAdapter } from "../adapters/cli/adapter";
 import { renderContextTree } from "../context/tree";
 import { makeRunId, sanitizeProfileSegment } from "../util/id";
+import { gauntletPath } from "../paths";
 import type { AppConfig } from "../config";
 
 export interface RunCommandOptions {
@@ -28,7 +28,7 @@ export async function run(opts: RunCommandOptions): Promise<void> {
   const card = parseStoryCard(content);
   const logger = new EvidenceLogger(outDir);
   const client = createClient(config.models.agent);
-  const contextRoot = join(config.dataDir, ".gauntlet", "context");
+  const contextRoot = gauntletPath(config.projectRoot, "context");
   // Render the tree **once per run** — the immutability invariant
   // (spec §4.2) forbids re-rendering during the run.
   const contextTree = renderContextTree(contextRoot);

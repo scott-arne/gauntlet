@@ -37,7 +37,7 @@ describe("GET /api/config/effective", () => {
   });
 
   test("createApp mounts /api/config/effective alongside /api/config", async () => {
-    const config = loadConfig({ dataDir: "." }, { GAUNTLET_AGENT_MODEL: "claude-sonnet-4-6" } as NodeJS.ProcessEnv);
+    const config = loadConfig({ projectRoot: "." }, { GAUNTLET_AGENT_MODEL: "claude-sonnet-4-6" } as NodeJS.ProcessEnv);
     const app = createApp(config);
 
     const eff = await app.request("/api/config/effective");

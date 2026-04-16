@@ -4,7 +4,7 @@ export interface ChromeEndpoint {
 }
 
 export interface AppConfig {
-  dataDir: string;
+  projectRoot: string;
   port: number;
   defaultChrome: ChromeEndpoint;
   models: {
@@ -17,7 +17,7 @@ export interface AppConfig {
     openai: boolean;
   };
   sources: {
-    dataDir: "default" | "env" | "flag";
+    projectRoot: "default" | "env" | "flag";
     port: "default" | "env" | "flag";
     defaultChrome: "default" | "env" | "flag";
     "models.agent": "default" | "env" | "flag";
@@ -27,7 +27,7 @@ export interface AppConfig {
 }
 
 export interface CliArgsInput {
-  dataDir?: string;
+  projectRoot?: string;
   port?: number;
   chrome?: string;
   target?: string;
@@ -51,7 +51,7 @@ export interface EffectiveRunConfig {
    */
   chrome: ChromeEndpoint | undefined;
   adapter: "web" | "cli" | "tui";
-  dataDir: string;
+  projectRoot: string;
 }
 
 const RUN_BODY_ALLOWED = new Set(["target", "model", "chrome", "adapter"]);
@@ -96,11 +96,11 @@ export function mergeRunConfig(app: AppConfig, body: RunRequestBody): EffectiveR
     model,
     chrome,
     adapter: body.adapter ?? "web",
-    dataDir: app.dataDir,
+    projectRoot: app.projectRoot,
   };
 }
 
-const DEFAULT_DATA_DIR = ".";
+const DEFAULT_PROJECT_ROOT = ".";
 const DEFAULT_PORT = 4400;
 const DEFAULT_CHROME: ChromeEndpoint = { host: "127.0.0.1", port: 9222 };
 const DEFAULT_AGENT_MODEL = "claude-sonnet-4-6";
@@ -180,16 +180,16 @@ export function requireLlmCapable(config: AppConfig): void {
 }
 
 export function loadConfig(args: CliArgsInput, env: NodeJS.ProcessEnv): AppConfig {
-  // dataDir
-  let dataDir = DEFAULT_DATA_DIR;
-  let dataDirSource: "default" | "env" | "flag" = "default";
-  if (env.GAUNTLET_DATA_DIR) {
-    dataDir = env.GAUNTLET_DATA_DIR;
-    dataDirSource = "env";
+  // projectRoot
+  let projectRoot = DEFAULT_PROJECT_ROOT;
+  let projectRootSource: "default" | "env" | "flag" = "default";
+  if (env.GAUNTLET_PROJECT_ROOT) {
+    projectRoot = env.GAUNTLET_PROJECT_ROOT;
+    projectRootSource = "env";
   }
-  if (args.dataDir !== undefined) {
-    dataDir = args.dataDir;
-    dataDirSource = "flag";
+  if (args.projectRoot !== undefined) {
+    projectRoot = args.projectRoot;
+    projectRootSource = "flag";
   }
 
   // port
@@ -257,7 +257,7 @@ export function loadConfig(args: CliArgsInput, env: NodeJS.ProcessEnv): AppConfi
   };
 
   return {
-    dataDir,
+    projectRoot,
     port,
     defaultChrome,
     models: {
@@ -267,7 +267,7 @@ export function loadConfig(args: CliArgsInput, env: NodeJS.ProcessEnv): AppConfi
     },
     apiKeys,
     sources: {
-      dataDir: dataDirSource,
+      projectRoot: projectRootSource,
       port: portSource,
       defaultChrome: chromeSource,
       "models.agent": agentSource,

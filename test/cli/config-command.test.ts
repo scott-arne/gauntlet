@@ -8,7 +8,7 @@ describe("runConfigCommand", () => {
   test("returns JSON when json flag true", () => {
     const result = runConfigCommand({ ...minimalArgs(), json: true }, {});
     const parsed = JSON.parse(result);
-    expect(parsed.gauntlet.dataDir).toBe(".");
+    expect(parsed.gauntlet.projectRoot).toBe(".");
     expect(parsed.gauntlet.port).toBe(4400);
     expect(parsed.sdkEnv.ANTHROPIC_API_KEY).toBe("unset");
   });
@@ -16,16 +16,16 @@ describe("runConfigCommand", () => {
   test("returns text format when json flag false", () => {
     const result = runConfigCommand(minimalArgs(), {});
     expect(result).toContain("# Gauntlet configuration");
-    expect(result).toContain("dataDir:");
+    expect(result).toContain("projectRoot:");
     expect(result).toContain("anthropic:");
   });
 
   test("text output shows source attribution", () => {
     const result = runConfigCommand(
-      minimalArgs({ dataDir: "/flag" }),
+      minimalArgs({ projectRoot: "/flag" }),
       { GAUNTLET_PORT: "5500" } as NodeJS.ProcessEnv,
     );
-    expect(result).toMatch(/dataDir:\s+\/flag\s+\(flag\)/);
+    expect(result).toMatch(/projectRoot:\s+\/flag\s+\(flag\)/);
     expect(result).toMatch(/port:\s+5500\s+\(env\)/);
   });
 

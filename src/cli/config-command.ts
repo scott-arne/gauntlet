@@ -3,7 +3,7 @@ import { loadConfig, type AppConfig } from "../config";
 
 interface ConfigOutput {
   gauntlet: {
-    dataDir: string;
+    projectRoot: string;
     port: number;
     defaultChrome: { host: string; port: number };
     models: {
@@ -31,7 +31,7 @@ interface ConfigOutput {
 export function buildConfigOutput(config: AppConfig, env: NodeJS.ProcessEnv): ConfigOutput {
   return {
     gauntlet: {
-      dataDir: config.dataDir,
+      projectRoot: config.projectRoot,
       port: config.port,
       defaultChrome: config.defaultChrome,
       models: {
@@ -64,7 +64,7 @@ export function formatConfigText(output: ConfigOutput): string {
   const lines: string[] = [];
   lines.push("# Gauntlet configuration");
   lines.push("");
-  lines.push(`  dataDir:        ${output.gauntlet.dataDir}  (${output.gauntlet.sources.dataDir})`);
+  lines.push(`  projectRoot:    ${output.gauntlet.projectRoot}  (${output.gauntlet.sources.projectRoot})`);
   lines.push(`  port:           ${output.gauntlet.port}  (${output.gauntlet.sources.port})`);
   lines.push(`  defaultChrome:  ${output.gauntlet.defaultChrome.host}:${output.gauntlet.defaultChrome.port}  (${output.gauntlet.sources.defaultChrome})`);
   lines.push(`  models.agent:   ${output.gauntlet.models.agent}  (${output.gauntlet.sources["models.agent"]})`);

@@ -1,20 +1,21 @@
 import { describe, test, expect, beforeEach, afterEach } from "bun:test";
 import { createApp } from "../../src/api/server";
 import { loadConfig } from "../../src/config";
+import { gauntletPath } from "../../src/paths";
 import { mkdtempSync, rmSync, mkdirSync, writeFileSync } from "fs";
 import { join } from "path";
 import { tmpdir } from "os";
 
-const makeApp = (dataDir: string, uiDir?: string) =>
-  createApp(loadConfig({ dataDir }, {} as NodeJS.ProcessEnv), uiDir);
+const makeApp = (projectRoot: string, uiDir?: string) =>
+  createApp(loadConfig({ projectRoot }, {} as NodeJS.ProcessEnv), uiDir);
 
 describe("Scenarios API", () => {
-  let dataDir: string;
+  let projectRoot: string;
   let app: ReturnType<typeof createApp>;
 
   beforeEach(() => {
-    dataDir = mkdtempSync(join(tmpdir(), "gauntlet-api-"));
-    const storiesDir = join(dataDir, "stories");
+    projectRoot = mkdtempSync(join(tmpdir(), "gauntlet-api-"));
+    const storiesDir = gauntletPath(projectRoot, "stories");
     mkdirSync(storiesDir, { recursive: true });
 
     writeFileSync(
@@ -27,11 +28,11 @@ describe("Scenarios API", () => {
       "---\nid: story-002\ntitle: Another story\nstatus: ready\n---\n\nAnother story.\n"
     );
 
-    app = makeApp(dataDir);
+    app = makeApp(projectRoot);
   });
 
   afterEach(() => {
-    rmSync(dataDir, { recursive: true, force: true });
+    rmSync(projectRoot, { recursive: true, force: true });
   });
 
   test("GET /api/scenarios lists all scenarios", async () => {

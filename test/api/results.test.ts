@@ -1,23 +1,24 @@
 import { describe, test, expect, beforeEach, afterEach } from "bun:test";
 import { createApp } from "../../src/api/server";
 import { loadConfig } from "../../src/config";
+import { gauntletPath } from "../../src/paths";
 import { mkdtempSync, rmSync, mkdirSync, writeFileSync } from "fs";
 import { join } from "path";
 import { tmpdir } from "os";
 
-const makeApp = (dataDir: string, uiDir?: string) =>
-  createApp(loadConfig({ dataDir }, {} as NodeJS.ProcessEnv), uiDir);
+const makeApp = (projectRoot: string, uiDir?: string) =>
+  createApp(loadConfig({ projectRoot }, {} as NodeJS.ProcessEnv), uiDir);
 
 describe("Results API", () => {
-  let dataDir: string;
+  let projectRoot: string;
   let app: ReturnType<typeof createApp>;
 
   beforeEach(() => {
-    dataDir = mkdtempSync(join(tmpdir(), "gauntlet-results-api-"));
+    projectRoot = mkdtempSync(join(tmpdir(), "gauntlet-results-api-"));
     // Create stories dir (needed by scenarioRoutes)
-    mkdirSync(join(dataDir, "stories"), { recursive: true });
+    mkdirSync(gauntletPath(projectRoot, "stories"), { recursive: true });
     // Create results
-    const resultsDir = join(dataDir, "results");
+    const resultsDir = gauntletPath(projectRoot, "results");
     mkdirSync(join(resultsDir, "test-001"), { recursive: true });
     writeFileSync(
       join(resultsDir, "test-001", "result.json"),
@@ -47,11 +48,11 @@ describe("Results API", () => {
       })
     );
 
-    app = makeApp(dataDir);
+    app = makeApp(projectRoot);
   });
 
   afterEach(() => {
-    rmSync(dataDir, { recursive: true, force: true });
+    rmSync(projectRoot, { recursive: true, force: true });
   });
 
   test("GET /api/results lists all results", async () => {
@@ -82,8 +83,8 @@ describe("Results API", () => {
 
   test("GET /api/results handles malformed result.json gracefully", async () => {
     const badDir = mkdtempSync(join(tmpdir(), "gauntlet-bad-json-"));
-    mkdirSync(join(badDir, "stories"), { recursive: true });
-    const resultsDir = join(badDir, "results");
+    mkdirSync(gauntletPath(badDir, "stories"), { recursive: true });
+    const resultsDir = gauntletPath(badDir, "results");
     mkdirSync(join(resultsDir, "bad-001"), { recursive: true });
     writeFileSync(join(resultsDir, "bad-001", "result.json"), "not valid json{{{");
 
@@ -98,8 +99,8 @@ describe("Results API", () => {
 
   test("GET /api/results/:scenario returns 500 for malformed result.json", async () => {
     const badDir = mkdtempSync(join(tmpdir(), "gauntlet-bad-json2-"));
-    mkdirSync(join(badDir, "stories"), { recursive: true });
-    const resultsDir = join(badDir, "results");
+    mkdirSync(gauntletPath(badDir, "stories"), { recursive: true });
+    const resultsDir = gauntletPath(badDir, "results");
     mkdirSync(join(resultsDir, "bad-002"), { recursive: true });
     writeFileSync(join(resultsDir, "bad-002", "result.json"), "not json");
 
@@ -119,7 +120,7 @@ describe("Results API", () => {
 
   test("GET /api/results returns empty array when no results dir", async () => {
     const emptyDir = mkdtempSync(join(tmpdir(), "gauntlet-empty-"));
-    mkdirSync(join(emptyDir, "stories"), { recursive: true });
+    mkdirSync(gauntletPath(emptyDir, "stories"), { recursive: true });
     const emptyApp = makeApp(emptyDir);
     const res = await emptyApp.request("/api/results");
     expect(res.status).toBe(200);

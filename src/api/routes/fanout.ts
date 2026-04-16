@@ -4,6 +4,7 @@ import { join } from "path";
 import { parseStoryCard } from "../../format/story-card";
 import { generateFanout, generateFromObservations, generateFromFailure } from "../../fanout/generator";
 import { createClient } from "../../models/resolve";
+import { gauntletPath } from "../../paths";
 import type { LLMClient } from "../../models/provider";
 import type { VetResult } from "../../types";
 import { findCard } from "./helpers";
@@ -27,9 +28,9 @@ function writeCards(storiesDir: string, cardTexts: string[], prefix: string) {
   });
 }
 
-export function fanoutRoutes(dataDir: string, clientFactory?: () => LLMClient, errorLog?: ErrorLog) {
+export function fanoutRoutes(projectRoot: string, clientFactory?: () => LLMClient, errorLog?: ErrorLog) {
   const router = new Hono();
-  const storiesDir = join(dataDir, "stories");
+  const storiesDir = gauntletPath(projectRoot, "stories");
 
   router.post("/:id", async (c) => {
     const entry = findCard(storiesDir, c.req.param("id"));
@@ -51,7 +52,7 @@ export function fanoutRoutes(dataDir: string, clientFactory?: () => LLMClient, e
 
   router.post("/:id/observations", async (c) => {
     const id = c.req.param("id");
-    const resultPath = join(dataDir, "results", id, "result.json");
+    const resultPath = gauntletPath(projectRoot, "results", id, "result.json");
     if (!existsSync(resultPath)) return c.json({ error: "not found" }, 404);
 
     const result: VetResult = JSON.parse(readFileSync(resultPath, "utf-8"));
@@ -73,7 +74,7 @@ export function fanoutRoutes(dataDir: string, clientFactory?: () => LLMClient, e
 
   router.post("/:id/failure", async (c) => {
     const id = c.req.param("id");
-    const resultPath = join(dataDir, "results", id, "result.json");
+    const resultPath = gauntletPath(projectRoot, "results", id, "result.json");
     if (!existsSync(resultPath)) return c.json({ error: "not found" }, 404);
 
     const result: VetResult = JSON.parse(readFileSync(resultPath, "utf-8"));

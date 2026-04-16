@@ -5,10 +5,11 @@ import { serializeStoryCard } from "../../format/story-card";
 import type { StoryCard } from "../../format/story-card";
 import { loadAllCards, findCard } from "./helpers";
 import { isSafePath } from "../safe-path";
+import { gauntletPath } from "../../paths";
 
-export function scenarioRoutes(dataDir: string) {
+export function scenarioRoutes(projectRoot: string) {
   const router = new Hono();
-  const storiesDir = join(dataDir, "stories");
+  const storiesDir = gauntletPath(projectRoot, "stories");
 
   router.get("/", (c) => {
     const entries = loadAllCards(storiesDir);

@@ -188,8 +188,9 @@ gauntlet fanout scenario.md --out ./stories
 # Generate follow-up scenarios from a previous result
 gauntlet fanout --from-result ./results/run-001 --out ./stories
 
-# Start the web server — point --data-dir at a project's .gauntlet directory
-gauntlet serve --port 4400 --data-dir ../my-app/.gauntlet
+# Start the web server — point --project-dir at the project's root
+# (Gauntlet writes state to <project>/.gauntlet/).
+gauntlet serve --port 4400 --project-dir ../my-app
 ```
 
 ### Web UI
@@ -247,7 +248,7 @@ cp .env.example .env    # then fill in your API keys
 docker compose up
 ```
 
-By default this mounts `./.gauntlet` (relative to `compose.yaml`) as the data directory. Story cards live at `.gauntlet/stories/`, run artifacts at `.gauntlet/results/`.
+By default this mounts `.` (the Gauntlet repo itself) as the project root and Gauntlet writes state under `./.gauntlet/`. Story cards live at `.gauntlet/stories/`, run artifacts at `.gauntlet/results/`.
 
 ## Configuration
 
@@ -270,9 +271,9 @@ The web `POST /api/run/:id` body is validated against an explicit allow-list. Un
 | `run` | `--chrome host:port` | Chrome debugging endpoint |
 | `run` | `--adapter web\|cli\|tui` | Adapter type (default: web) |
 | `run` | `--out <dir>` | Evidence output directory |
-| `run` | `--data-dir <dir>` | Project root |
+| `run` | `--project-dir <dir>` | Project root (contains `.gauntlet/` state dir) |
 | `serve` | `--port <n>` | Server port |
-| `serve` | `--data-dir <dir>` | Project root |
+| `serve` | `--project-dir <dir>` | Project root (contains `.gauntlet/` state dir) |
 | `serve` | `--chrome host:port` | Default Chrome endpoint for runs |
 | `serve` | `--target <url>` | Default target hint for the UI |
 | `serve` | `--model agent=<name>` | Default agent model |
@@ -290,7 +291,7 @@ Gauntlet-prefixed (consumed by `loadConfig`):
 | Variable | Description | Default |
 |----------|-------------|---------|
 | `GAUNTLET_PORT` | Server port | `4400` |
-| `GAUNTLET_DATA_DIR` | Project root | `.` |
+| `GAUNTLET_PROJECT_ROOT` | Project root (contains `.gauntlet/` state dir) | `.` |
 | `GAUNTLET_CHROME` | Default Chrome endpoint (`host:port`) | `127.0.0.1:9222` |
 | `GAUNTLET_AGENT_MODEL` | Default agent model | `claude-sonnet-4-6` |
 | `GAUNTLET_FANOUT_MODEL` | Default fanout model | -- |
@@ -315,9 +316,9 @@ If you want to point Gauntlet at a custom Anthropic endpoint, set `ANTHROPIC_BAS
 ```bash
 gauntlet config              # formatted text with per-field source attribution
 gauntlet config --json       # machine-readable
-GAUNTLET_PORT=5500 gauntlet config --data-dir /tmp/x
+GAUNTLET_PORT=5500 gauntlet config --project-dir /tmp/x
 #   port:           5500  (env)
-#   dataDir:        /tmp/x  (flag)
+#   projectRoot:    /tmp/x  (flag)
 ```
 
 The same payload is available over HTTP at `GET /api/config/effective` once the server is running.
@@ -344,7 +345,7 @@ See the [Configuration](#configuration) section above for the full list. Quick r
 | `ANTHROPIC_API_KEY` | API key for Claude models | -- |
 | `OPENAI_API_KEY` | API key for OpenAI models | -- |
 | `GAUNTLET_PORT` | Server port | 4400 |
-| `GAUNTLET_DATA_DIR` | Project root | `.` |
+| `GAUNTLET_PROJECT_ROOT` | Project root (contains `.gauntlet/` state dir) | `.` |
 | `GAUNTLET_CHROME` | Default Chrome endpoint | `127.0.0.1:9222` |
 | `GAUNTLET_AGENT_MODEL` | Default model for test execution | `claude-sonnet-4-6` |
 | `GAUNTLET_FANOUT_MODEL` | Model for scenario generation | -- |
@@ -397,6 +398,6 @@ ui/
 docker/
   Dockerfile            Production image (Debian + Chrome + Bun)
   Dockerfile.chrome     Standalone headless Chrome image (separate target)
-compose.yaml            Docker Compose entry point (mounts .gauntlet as data dir)
+compose.yaml            Docker Compose entry point (mounts project root at /project)
 .env.example            Template for API keys and optional env overrides
 ```

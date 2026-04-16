@@ -1,32 +1,33 @@
 import { describe, test, expect, beforeEach, afterEach } from "bun:test";
 import { createApp } from "../../src/api/server";
 import { loadConfig } from "../../src/config";
+import { gauntletPath } from "../../src/paths";
 import { mkdtempSync, rmSync, mkdirSync, writeFileSync } from "fs";
 import { join } from "path";
 import { tmpdir } from "os";
 
-const makeApp = (dataDir: string, uiDir?: string) =>
-  createApp(loadConfig({ dataDir }, {} as NodeJS.ProcessEnv), uiDir);
+const makeApp = (projectRoot: string, uiDir?: string) =>
+  createApp(loadConfig({ projectRoot }, {} as NodeJS.ProcessEnv), uiDir);
 
 describe("Static UI serving", () => {
-  let dataDir: string;
+  let projectRoot: string;
   let app: ReturnType<typeof createApp>;
 
   beforeEach(() => {
-    dataDir = mkdtempSync(join(tmpdir(), "gauntlet-static-"));
-    mkdirSync(join(dataDir, "stories"), { recursive: true });
+    projectRoot = mkdtempSync(join(tmpdir(), "gauntlet-static-"));
+    mkdirSync(gauntletPath(projectRoot, "stories"), { recursive: true });
   });
 
   afterEach(() => {
-    rmSync(dataDir, { recursive: true, force: true });
+    rmSync(projectRoot, { recursive: true, force: true });
   });
 
   test("serves index.html for unknown routes when UI is built", async () => {
-    const uiDir = join(dataDir, "ui-dist");
+    const uiDir = join(projectRoot, "ui-dist");
     mkdirSync(uiDir, { recursive: true });
     writeFileSync(join(uiDir, "index.html"), "<html><body>gauntlet ui</body></html>");
 
-    app = makeApp(dataDir, uiDir);
+    app = makeApp(projectRoot, uiDir);
     const res = await app.request("/cards");
     expect(res.status).toBe(200);
     expect(res.headers.get("Content-Type")).toBe("text/html");
@@ -35,12 +36,12 @@ describe("Static UI serving", () => {
   });
 
   test("serves static assets from UI dist", async () => {
-    const uiDir = join(dataDir, "ui-dist");
+    const uiDir = join(projectRoot, "ui-dist");
     const assetsDir = join(uiDir, "assets");
     mkdirSync(assetsDir, { recursive: true });
     writeFileSync(join(assetsDir, "main.js"), "console.log('hello')");
 
-    app = makeApp(dataDir, uiDir);
+    app = makeApp(projectRoot, uiDir);
     const res = await app.request("/assets/main.js");
     expect(res.status).toBe(200);
     expect(res.headers.get("Content-Type")).toBe("application/javascript");
@@ -49,11 +50,11 @@ describe("Static UI serving", () => {
   });
 
   test("API routes still work with UI serving enabled", async () => {
-    const uiDir = join(dataDir, "ui-dist");
+    const uiDir = join(projectRoot, "ui-dist");
     mkdirSync(uiDir, { recursive: true });
     writeFileSync(join(uiDir, "index.html"), "<html></html>");
 
-    app = makeApp(dataDir, uiDir);
+    app = makeApp(projectRoot, uiDir);
     const res = await app.request("/api/scenarios");
     expect(res.status).toBe(200);
     const data = await res.json();
@@ -61,7 +62,7 @@ describe("Static UI serving", () => {
   });
 
   test("works without UI dist directory", async () => {
-    app = makeApp(dataDir);
+    app = makeApp(projectRoot);
     const res = await app.request("/cards");
     expect(res.status).toBe(404);
   });

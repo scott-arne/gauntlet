@@ -11,6 +11,7 @@ import { ErrorLog, errorRoutes } from "./routes/errors";
 import { activeRunRoutes } from "./routes/active-runs";
 import { isSafePath } from "./safe-path";
 import { getMimeType } from "./mime-types";
+import { gauntletPath } from "../paths";
 import type { RunBroadcaster } from "./ws";
 import type { ActiveRunRegistry } from "./active-runs";
 import type { AppConfig } from "../config";
@@ -23,12 +24,12 @@ export function createApp(
 ) {
   const app = new Hono();
   const errorLog = new ErrorLog();
-  const dataDir = config.dataDir;
+  const projectRoot = config.projectRoot;
 
   const api = new Hono();
-  api.route("/scenarios", scenarioRoutes(dataDir));
-  api.route("/results", resultRoutes(join(dataDir, "results")));
-  api.route("/fanout", fanoutRoutes(dataDir, undefined, errorLog));
+  api.route("/scenarios", scenarioRoutes(projectRoot));
+  api.route("/results", resultRoutes(gauntletPath(projectRoot, "results")));
+  api.route("/fanout", fanoutRoutes(projectRoot, undefined, errorLog));
   api.route("/run", runRoutes(config, broadcaster, errorLog, registry));
   api.route("/config", configRoutes(config));
   api.route("/config/effective", configEffectiveRoutes(config));

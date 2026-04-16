@@ -33,6 +33,9 @@ report.[0-9]_.[0-9]_.[0-9]_.[0-9]_.json
 # Finder (MacOS) folder config
 .DS_Store
 
-# Gauntlet run artifacts -- story cards under .gauntlet/stories/ are
-# meant to be committed; run results (screenshots, videos, JSON) are not.
+# Gauntlet state -- story cards under .gauntlet/stories/ are meant to be
+# committed (team artifacts). Run results, user context, and profiles
+# often contain sensitive or per-user data and should not be.
 .gauntlet/results/
+.gauntlet/context/
+.gauntlet/profiles/

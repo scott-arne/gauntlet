@@ -8,11 +8,10 @@ services:
     environment:
       - GAUNTLET_PORT=${GAUNTLET_PORT:-4400}
     volumes:
-      # Mounts <TARGET_PROJECT>/.gauntlet as the data dir inside the container.
-      # Defaults to "." so `docker compose up` from the Gauntlet repo mounts
-      # this repo's own .gauntlet (Gauntlet-on-Gauntlet). To test a different
-      # project, set TARGET_PROJECT=/abs/or/rel/path in .env or the shell.
-      - ${TARGET_PROJECT:-.}/.gauntlet:/data
+      # Mounts the target project root. Gauntlet writes state to
+      # <project>/.gauntlet/. Defaults to "." so `docker compose up`
+      # from the Gauntlet repo mounts this repo (Gauntlet-on-Gauntlet).
+      - ${TARGET_PROJECT:-.}:/project
     env_file:
       - .env
-    command: ["serve", "--data-dir", "/data"]
+    command: ["serve", "--project-dir", "/project"]

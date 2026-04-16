@@ -1,31 +1,32 @@
 import { describe, test, expect, beforeEach, afterEach } from "bun:test";
 import { createApp } from "../../src/api/server";
 import { loadConfig } from "../../src/config";
+import { gauntletPath } from "../../src/paths";
 import { mkdtempSync, rmSync, mkdirSync, writeFileSync } from "fs";
 import { join } from "path";
 import { tmpdir } from "os";
 
-const makeApp = (dataDir: string, uiDir?: string) =>
-  createApp(loadConfig({ dataDir }, {} as NodeJS.ProcessEnv), uiDir);
+const makeApp = (projectRoot: string, uiDir?: string) =>
+  createApp(loadConfig({ projectRoot }, {} as NodeJS.ProcessEnv), uiDir);
 
 // The file route serves a file only if the run's result.json lists it.
 // This test uses a video file as the example; the same contract covers any
 // file kind (screenshots, log, video, observation evidence).
 describe("Manifest-gated file route", () => {
-  let dataDir: string;
+  let projectRoot: string;
   let app: ReturnType<typeof createApp>;
 
   beforeEach(() => {
-    dataDir = mkdtempSync(join(tmpdir(), "gauntlet-file-"));
-    app = makeApp(dataDir);
+    projectRoot = mkdtempSync(join(tmpdir(), "gauntlet-file-"));
+    app = makeApp(projectRoot);
   });
 
   afterEach(() => {
-    rmSync(dataDir, { recursive: true, force: true });
+    rmSync(projectRoot, { recursive: true, force: true });
   });
 
   function makeRun(scenario: string, manifest: Record<string, unknown>) {
-    const runDir = join(dataDir, "results", scenario);
+    const runDir = gauntletPath(projectRoot, "results", scenario);
     mkdirSync(runDir, { recursive: true });
     writeFileSync(join(runDir, "result.json"), JSON.stringify(manifest));
     return runDir;
@@ -73,7 +74,7 @@ describe("Manifest-gated file route", () => {
   });
 
   test("404s when the run directory has no result.json", async () => {
-    const runDir = join(dataDir, "results", "no-manifest");
+    const runDir = gauntletPath(projectRoot, "results", "no-manifest");
     mkdirSync(runDir, { recursive: true });
     writeFileSync(join(runDir, "video.webm"), "fake-video-data");
 

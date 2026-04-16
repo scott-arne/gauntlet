@@ -3,6 +3,7 @@ import { runRoutes, executeRun } from "../../src/api/routes/run";
 import { ActiveRunRegistry } from "../../src/api/active-runs";
 import { RunBroadcaster } from "../../src/api/ws";
 import { loadConfig } from "../../src/config";
+import { gauntletPath } from "../../src/paths";
 import { mkdtempSync, rmSync, mkdirSync, writeFileSync } from "fs";
 import { join } from "path";
 import { tmpdir } from "os";
@@ -25,22 +26,22 @@ A test story.
 `;
 
 describe("Run API", () => {
-  let dataDir: string;
+  let projectRoot: string;
   let storiesDir: string;
 
   beforeEach(() => {
-    dataDir = mkdtempSync(join(tmpdir(), "gauntlet-run-api-"));
-    storiesDir = join(dataDir, "stories");
+    projectRoot = mkdtempSync(join(tmpdir(), "gauntlet-run-api-"));
+    storiesDir = gauntletPath(projectRoot, "stories");
     mkdirSync(storiesDir, { recursive: true });
     writeFileSync(join(storiesDir, "story-001-test.md"), STORY_MD);
   });
 
   afterEach(() => {
-    rmSync(dataDir, { recursive: true, force: true });
+    rmSync(projectRoot, { recursive: true, force: true });
   });
 
   test("POST /api/run/:id returns 404 for unknown scenario", async () => {
-    const config = loadConfig({ dataDir }, { GAUNTLET_AGENT_MODEL: "claude-sonnet-4-6" } as NodeJS.ProcessEnv);
+    const config = loadConfig({ projectRoot }, { GAUNTLET_AGENT_MODEL: "claude-sonnet-4-6" } as NodeJS.ProcessEnv);
     const app = new Hono();
     app.route("/api/run", runRoutes(config));
 
@@ -55,7 +56,7 @@ describe("Run API", () => {
   });
 
   test("POST /api/run/:id returns 400 when target is missing", async () => {
-    const config = loadConfig({ dataDir }, { GAUNTLET_AGENT_MODEL: "claude-sonnet-4-6" } as NodeJS.ProcessEnv);
+    const config = loadConfig({ projectRoot }, { GAUNTLET_AGENT_MODEL: "claude-sonnet-4-6" } as NodeJS.ProcessEnv);
     const app = new Hono();
     app.route("/api/run", runRoutes(config));
 
@@ -70,7 +71,7 @@ describe("Run API", () => {
   });
 
   test("POST /api/run/:id returns 202 and registers the run", async () => {
-    const config = loadConfig({ dataDir }, { GAUNTLET_AGENT_MODEL: "claude-sonnet-4-6" } as NodeJS.ProcessEnv);
+    const config = loadConfig({ projectRoot }, { GAUNTLET_AGENT_MODEL: "claude-sonnet-4-6" } as NodeJS.ProcessEnv);
     const registry = new ActiveRunRegistry();
     const broadcaster = new RunBroadcaster();
     const app = new Hono();
@@ -142,7 +143,8 @@ describe("Run API", () => {
     broadcaster.addClient("story-001", ws as any);
 
     const { EvidenceLogger } = await import("../../src/evidence/logger");
-    const logger = new EvidenceLogger(join(dataDir, "results", "story-001"));
+    const resultsDir = gauntletPath(projectRoot, "results", "story-001");
+    const logger = new EvidenceLogger(resultsDir);
 
     await executeRun({
       card,
@@ -150,7 +152,7 @@ describe("Run API", () => {
       adapterType: "cli",
       client: stubClient,
       target: "http://localhost:3000",
-      outDir: join(dataDir, "results", "story-001"),
+      outDir: resultsDir,
       logger,
       broadcaster,
       registry,
@@ -169,7 +171,7 @@ describe("Run API", () => {
     // We import mergeRunConfig directly to validate the threading.
     const { mergeRunConfig, validateRunBody } = await import("../../src/config");
     const config = loadConfig(
-      { dataDir },
+      { projectRoot },
       { GAUNTLET_AGENT_MODEL: "claude-sonnet-4-6", GAUNTLET_CHROME: "server:9100" } as NodeJS.ProcessEnv,
     );
     const body = validateRunBody({ target: "http://localhost:3000", chrome: "override:9333", adapter: "cli" });
@@ -194,7 +196,7 @@ describe("Run API", () => {
     // the route layer after the floor check. `claude-opus-4-6` passes the
     // floor but is not in GAUNTLET_MODELS, so the route-level check wins.
     const config = loadConfig(
-      { dataDir },
+      { projectRoot },
       { GAUNTLET_AGENT_MODEL: "claude-sonnet-4-6", GAUNTLET_MODELS: "claude-sonnet-4-6" } as NodeJS.ProcessEnv,
     );
     const app = new Hono();
@@ -212,7 +214,7 @@ describe("Run API", () => {
 
   test("POST /api/run/:id returns 400 when body.model is below the v1.5 floor", async () => {
     const config = loadConfig(
-      { dataDir },
+      { projectRoot },
       { GAUNTLET_AGENT_MODEL: "claude-sonnet-4-6" } as NodeJS.ProcessEnv,
     );
     const app = new Hono();
