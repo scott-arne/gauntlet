@@ -20,22 +20,38 @@ function resolveClient(config: AppConfig, clientFactory?: () => LLMClient): LLMC
   return createClient(model);
 }
 
-function writeCards(storiesDir: string, cardTexts: string[], prefix: string) {
+function writeCards(
+  storiesDir: string,
+  cardTexts: string[],
+  errorLog?: ErrorLog,
+) {
   mkdirSync(storiesDir, { recursive: true });
-  return cardTexts.map((text, i) => {
+  const seen = new Set<string>();
+  const written: { id: string; title: string; filename: string }[] = [];
+  for (const text of cardTexts) {
     const card = parseStoryCard(text);
-    const letter = String.fromCharCode(97 + i); // a, b, c, ...
-    const filename = `${prefix}-${letter}.md`;
+    if (seen.has(card.id)) {
+      // Duplicate id within the same batch — keep the first, skip this one
+      // rather than silently overwrite. A correct LLM prompt should never
+      // emit two cards with the same id.
+      errorLog?.add(
+        "fanout",
+        `duplicate card id "${card.id}" in generated batch — skipping duplicate`,
+      );
+      continue;
+    }
+    seen.add(card.id);
+    const filename = `${card.id}.md`;
     writeFileSync(join(storiesDir, filename), text);
-    return { id: card.id, title: card.title, filename };
-  });
+    written.push({ id: card.id, title: card.title, filename });
+  }
+  return written;
 }
 
 type Mode = "observations" | "failure";
 
 interface ModeConfig {
   generator: (result: VetResult, client: LLMClient) => Promise<string[]>;
-  filenameSuffix: string;
   errorLabel: string;
   // Returns an error message to send as 400, or null to proceed.
   // Observations has no precondition check (zero observations is a success
@@ -47,12 +63,10 @@ interface ModeConfig {
 const MODES: Record<Mode, ModeConfig> = {
   observations: {
     generator: generateFromObservations,
-    filenameSuffix: "obs",
     errorLabel: "observations",
   },
   failure: {
     generator: generateFromFailure,
-    filenameSuffix: "fail",
     errorLabel: "failure analysis",
     preflight: (r) => (r.status !== "fail" ? "result is not a failure" : null),
   },
@@ -77,7 +91,7 @@ export function fanoutRoutes(config: AppConfig, clientFactory?: () => LLMClient,
 
     try {
       const cardTexts = await generateFanout(entry.card, clientOrError);
-      const generated = writeCards(storiesDir, cardTexts, entry.card.id);
+      const generated = writeCards(storiesDir, cardTexts, errorLog);
       return c.json({ parent: entry.card.id, generated });
     } catch (err) {
       const message = err instanceof Error ? err.message : String(err);
@@ -112,7 +126,7 @@ export function fanoutRoutes(config: AppConfig, clientFactory?: () => LLMClient,
 
     try {
       const cardTexts = await modeConfig.generator(result, clientOrError);
-      const generated = writeCards(storiesDir, cardTexts, `${cardId}-${modeConfig.filenameSuffix}`);
+      const generated = writeCards(storiesDir, cardTexts, errorLog);
       return c.json({ parent: cardId, runId, generated });
     } catch (err) {
       const message = err instanceof Error ? err.message : String(err);

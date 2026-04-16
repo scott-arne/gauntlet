@@ -256,10 +256,10 @@ describe("Fanout observations API", () => {
     expect(body.generated[0].id).toBe("test-001-obs-1");
     expect(body.generated[1].id).toBe("test-001-obs-2");
 
-    // Filename prefix is cardId, not runId.
+    // Filenames come from the generated card's id (not a letter-suffix scheme).
     const files = readdirSync(storiesDir).sort();
-    expect(files).toContain("test-001-obs-a.md");
-    expect(files).toContain("test-001-obs-b.md");
+    expect(files).toContain("test-001-obs-1.md");
+    expect(files).toContain("test-001-obs-2.md");
   });
 
   test("POST /api/fanout/:id/observations returns empty generated when no observations", async () => {
@@ -357,10 +357,10 @@ describe("Fanout failure API", () => {
     expect(body.generated[0].id).toBe("test-002-fail-1");
     expect(body.generated[1].id).toBe("test-002-fail-2");
 
-    // Filename prefix is cardId, not runId.
+    // Filenames come from the generated card's id (not a letter-suffix scheme).
     const files = readdirSync(storiesDir).sort();
-    expect(files).toContain("test-002-fail-a.md");
-    expect(files).toContain("test-002-fail-b.md");
+    expect(files).toContain("test-002-fail-1.md");
+    expect(files).toContain("test-002-fail-2.md");
   });
 
   test("POST /api/fanout/:id/failure returns 400 when result is not a failure", async () => {
