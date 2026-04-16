@@ -2,16 +2,19 @@ import { useRunStream } from "../hooks/useRunStream";
 import { useEffect, useRef } from "react";
 import { useParams, useNavigate, Navigate } from "react-router-dom";
 import { type ActiveRun } from "../lib/api";
+import { parseRunId } from "../lib/runId";
 import { Spinner } from "./shared";
 
 interface LiveRunProps {
   activeRuns: ActiveRun[];
   /** True once we've heard back from GET /api/runs/active at least once. */
   activeRunsLoaded: boolean;
-  onComplete: (id: string) => void;
+  onComplete: (runId: string) => void;
 }
 
 export function LiveRun({ activeRuns, activeRunsLoaded, onComplete }: LiveRunProps) {
+  // Route path is /runs/live/:id but the value is semantically a runId
+  // (composite key: `<cardId>_<ts>_<nonce>`).
   const { id: runId } = useParams();
   const navigate = useNavigate();
   const { frame, messages, result, connected, error, gone } = useRunStream(runId ?? null);
@@ -27,11 +30,13 @@ export function LiveRun({ activeRuns, activeRunsLoaded, onComplete }: LiveRunPro
 
   if (!runId) return <Navigate to="/runs" replace />;
 
-  // If we know the active-runs list has loaded and this id isn't there
+  // If we know the active-runs list has loaded and this runId isn't there
   // *and* the server said `gone` without a result, fall through to the
   // finished-run detail page.
   const active = activeRuns.find((r) => r.id === runId);
-  const title = active?.title ?? runId;
+  // Prefer the server-provided title; fall back to the cardId extracted
+  // from the runId so we never render a full composite key as the heading.
+  const title = active?.title ?? parseRunId(runId)?.cardId ?? runId;
 
   if (activeRunsLoaded && !active && gone && !result) {
     // Run isn't active and we couldn't load a result — bounce home.

@@ -1,6 +1,7 @@
 import { useState } from "react";
 import { api, type VetResult, type FanoutResult } from "../lib/api";
 import { StatusBadge, formatDuration } from "./shared";
+import { formatRunTimestamp } from "../lib/runId";
 
 interface RunDetailProps {
   result: VetResult;
@@ -12,12 +13,14 @@ export function RunDetail({ result, onFanout }: RunDetailProps) {
   const [error, setError] = useState<string | null>(null);
   const [generated, setGenerated] = useState<FanoutResult["generated"] | null>(null);
 
+  // Fanout from observations/failure reads the result.json under
+  // .gauntlet/results/<runId>/, so this path segment must be the runId.
   async function handleFromObservations() {
     try {
       setActing(true);
       setError(null);
       setGenerated(null);
-      const res = await api.fanout.fromObservations(result.scenario);
+      const res = await api.fanout.fromObservations(result.runId);
       setGenerated(res.generated);
       onFanout();
     } catch (e) {
@@ -32,7 +35,7 @@ export function RunDetail({ result, onFanout }: RunDetailProps) {
       setActing(true);
       setError(null);
       setGenerated(null);
-      const res = await api.fanout.fromFailure(result.scenario);
+      const res = await api.fanout.fromFailure(result.runId);
       setGenerated(res.generated);
       onFanout();
     } catch (e) {
@@ -42,12 +45,17 @@ export function RunDetail({ result, onFanout }: RunDetailProps) {
     }
   }
 
+  const when = formatRunTimestamp(result.runId);
+
   return (
     <div className="p-6 max-w-3xl">
-      <div className="flex items-center gap-3 mb-6">
+      <div className={`flex items-center gap-3 ${when ? "mb-2" : "mb-6"}`}>
         <h1 className="heading-display text-2xl">{result.scenario}</h1>
         <StatusBadge status={result.status} size="md" />
       </div>
+      {when && (
+        <p className="text-sm text-slate mb-6">Run at {when}</p>
+      )}
 
       {error && (
         <div className="mb-4 rounded-lg bg-red-50 border border-red-200 px-4 py-3 text-sm text-red-700">
@@ -120,7 +128,7 @@ export function RunDetail({ result, onFanout }: RunDetailProps) {
               {result.evidence.screenshots.map((relPath) => (
                 <img
                   key={relPath}
-                  src={api.results.fileUrl(result.scenario, relPath)}
+                  src={api.results.fileUrl(result.runId, relPath)}
                   alt={relPath}
                   className="rounded border border-edge"
                 />

@@ -4,7 +4,7 @@ import { Spinner } from "./shared";
 
 interface NewRunModalProps {
   onClose: () => void;
-  onStarted: (scenarioId: string, config: { target: string; model?: string; chrome?: string }) => void;
+  onStarted: (cardId: string, config: { target: string; model?: string; chrome?: string }) => void;
 }
 
 export function NewRunModal({ onClose, onStarted }: NewRunModalProps) {

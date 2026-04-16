@@ -74,20 +74,23 @@ function RunsPage() {
 }
 
 function RunDetailPage({ onFanout }: { onFanout: () => void }) {
-  const { id } = useParams();
+  // Route path uses :id for historical reasons; the value is a runId
+  // (`<cardId>_<YYYYMMDDTHHMMSSZ>_<nonce>`), which is the directory name
+  // under .gauntlet/results/ and the primary key backend-side.
+  const { id: runId } = useParams();
   const [result, setResult] = useState<VetResult | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
-    if (!id) return;
+    if (!runId) return;
     setLoading(true);
     setError(null);
-    api.results.get(id)
+    api.results.get(runId)
       .then(setResult)
       .catch((e) => setError(e instanceof Error ? e.message : "Failed to load result"))
       .finally(() => setLoading(false));
-  }, [id]);
+  }, [runId]);
 
   if (loading) {
     return <div className="p-6"><Spinner label="Loading run..." /></div>;
@@ -158,7 +161,7 @@ function RunsSidebar({
   loading: boolean;
   error: string | null;
   onRetry: () => void;
-  onSelectActive: (id: string) => void;
+  onSelectActive: (runId: string) => void;
 }) {
   const navigate = useNavigate();
 
@@ -182,7 +185,7 @@ function RunsSidebar({
       results={results}
       activeRuns={activeRuns}
       selectedId={selectedId}
-      onSelect={(id) => navigate(`/runs/${id}`)}
+      onSelect={(runId) => navigate(`/runs/${runId}`)}
       onSelectActive={onSelectActive}
     />
   );
@@ -216,10 +219,10 @@ export default function App() {
     refreshResults();
   }
 
-  const handleRunComplete = useCallback((id: string) => {
+  const handleRunComplete = useCallback((runId: string) => {
     refreshActive();
     refreshResults();
-    navigate(`/runs/${id}`);
+    navigate(`/runs/${runId}`);
   }, [refreshActive, refreshResults, navigate]);
 
   return (
@@ -260,7 +263,7 @@ export default function App() {
                 loading={runsLoading}
                 error={runsError}
                 onRetry={refreshResults}
-                onSelectActive={(id) => navigate(`/runs/live/${id}`)}
+                onSelectActive={(runId) => navigate(`/runs/live/${runId}`)}
               />
             )}
           </Sidebar>
@@ -296,12 +299,12 @@ export default function App() {
       {showRunModal && (
         <NewRunModal
           onClose={() => setShowRunModal(false)}
-          onStarted={async (scenarioId, config) => {
+          onStarted={async (cardId, config) => {
             setShowRunModal(false);
             try {
-              const { id } = await api.run.start(scenarioId, config);
+              const { runId } = await api.run.start(cardId, config);
               await refreshActive();
-              navigate(`/runs/live/${id}`);
+              navigate(`/runs/live/${runId}`);
             } catch (e) {
               // Start failed synchronously — surface error via refresh so
               // any server-side error gets logged, then bounce to Runs tab.

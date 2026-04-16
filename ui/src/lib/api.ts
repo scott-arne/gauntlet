@@ -19,6 +19,12 @@ export interface CardDetail {
 
 export interface VetResult {
   schemaVersion: number;
+  /**
+   * Primary key for this run: `<cardId>_<YYYYMMDDTHHMMSSZ>_<nonce>`. Matches
+   * the on-disk results directory name and the active-runs registry key.
+   */
+  runId: string;
+  /** The cardId this run tested. Retained as `scenario` for back-compat. */
   scenario: string;
   status: "pass" | "fail" | "investigate";
   summary: string;
@@ -35,7 +41,13 @@ export interface FanoutResult {
 }
 
 export interface ActiveRun {
+  /**
+   * Primary key for the run: `<cardId>_<YYYYMMDDTHHMMSSZ>_<nonce>`. Use
+   * this to subscribe to the WS channel or fetch the on-disk result.
+   */
   id: string;
+  /** Card this run is exercising. Use for grouping/display, not routing. */
+  cardId: string;
   title: string;
   target: string;
   model: string;
@@ -101,34 +113,40 @@ export const api = {
   },
   results: {
     list: () => request<VetResult[]>("/results"),
-    get: (id: string) => request<VetResult>(`/results/${id}`),
+    get: (runId: string) => request<VetResult>(`/results/${runId}`),
     // Build a URL for any file inside a run directory, given the relative
     // path stored in the manifest (e.g. "screenshots/001.png", "run.jsonl").
     // This is the one place in the FE that turns a manifest path into a URL.
-    fileUrl: (scenario: string, relPath: string) =>
-      `/api/results/${encodeURIComponent(scenario)}/file/${relPath
+    // The path segment is a runId (directory name under .gauntlet/results/),
+    // not a cardId.
+    fileUrl: (runId: string, relPath: string) =>
+      `/api/results/${encodeURIComponent(runId)}/file/${relPath
         .split("/")
         .map(encodeURIComponent)
         .join("/")}`,
   },
   fanout: {
-    generate: (id: string) =>
-      request<FanoutResult>(`/fanout/${id}`, { method: "POST" }),
-    fromObservations: (id: string) =>
-      request<FanoutResult>(`/fanout/${id}/observations`, { method: "POST" }),
-    fromFailure: (id: string) =>
-      request<FanoutResult>(`/fanout/${id}/failure`, { method: "POST" }),
+    // `generate` takes a cardId — it fans out a card into related variations
+    // without needing a run to exist.
+    generate: (cardId: string) =>
+      request<FanoutResult>(`/fanout/${cardId}`, { method: "POST" }),
+    // These two key off an on-disk run result, so the path segment is a
+    // runId (results directory name) — not a cardId.
+    fromObservations: (runId: string) =>
+      request<FanoutResult>(`/fanout/${runId}/observations`, { method: "POST" }),
+    fromFailure: (runId: string) =>
+      request<FanoutResult>(`/fanout/${runId}/failure`, { method: "POST" }),
   },
   run: {
-    start: (id: string, body: { target: string; model?: string; adapter?: string; chrome?: string }) =>
-      request<{ id: string }>(`/run/${id}`, {
+    start: (cardId: string, body: { target: string; model?: string; adapter?: string; chrome?: string }) =>
+      request<{ runId: string; cardId: string }>(`/run/${cardId}`, {
         method: "POST",
         body: JSON.stringify(body),
       }),
   },
   activeRuns: {
     list: () => request<{ runs: ActiveRun[] }>("/runs/active").then((r) => r.runs),
-    snapshot: (id: string) =>
-      request<RunSnapshot>(`/runs/active/${encodeURIComponent(id)}/snapshot`),
+    snapshot: (runId: string) =>
+      request<RunSnapshot>(`/runs/active/${encodeURIComponent(runId)}/snapshot`),
   },
 };
