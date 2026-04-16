@@ -1,6 +1,6 @@
 import { Hono } from "hono";
 import { join } from "path";
-import { findCard } from "./helpers";
+import { findCard } from "../../cards/store";
 import { createClient } from "../../models/resolve";
 import { EvidenceLogger } from "../../evidence/logger";
 import { writeResultFiles } from "../../evidence/writer";
@@ -49,11 +49,10 @@ export function runRoutes(
   registry?: ActiveRunRegistry,
 ) {
   const router = new Hono();
-  const storiesDir = gauntletPath(config.projectRoot, "stories");
   const contextRoot = gauntletPath(config.projectRoot, "context");
 
   router.post("/:id", async (c) => {
-    const entry = findCard(storiesDir, c.req.param("id"));
+    const entry = findCard(config.projectRoot, c.req.param("id"), errorLog);
     if (!entry) return c.json({ error: "not found" }, 404);
 
     const rawBody = await c.req.json().catch(() => ({}));

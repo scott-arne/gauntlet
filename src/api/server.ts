@@ -27,7 +27,7 @@ export function createApp(
   const projectRoot = config.projectRoot;
 
   const api = new Hono();
-  api.route("/scenarios", scenarioRoutes(projectRoot));
+  api.route("/scenarios", scenarioRoutes(projectRoot, errorLog));
   api.route("/results", resultRoutes(gauntletPath(projectRoot, "results")));
   api.route("/fanout", fanoutRoutes(projectRoot, undefined, errorLog));
   api.route("/run", runRoutes(config, broadcaster, errorLog, registry));

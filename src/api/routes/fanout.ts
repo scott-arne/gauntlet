@@ -7,7 +7,7 @@ import { createClient } from "../../models/resolve";
 import { gauntletPath } from "../../paths";
 import type { LLMClient } from "../../models/provider";
 import type { VetResult } from "../../types";
-import { findCard } from "./helpers";
+import { findCard } from "../../cards/store";
 import type { ErrorLog } from "./errors";
 
 function resolveClient(clientFactory?: () => LLMClient): LLMClient | { error: string } {
@@ -33,7 +33,7 @@ export function fanoutRoutes(projectRoot: string, clientFactory?: () => LLMClien
   const storiesDir = gauntletPath(projectRoot, "stories");
 
   router.post("/:id", async (c) => {
-    const entry = findCard(storiesDir, c.req.param("id"));
+    const entry = findCard(projectRoot, c.req.param("id"), errorLog);
     if (!entry) return c.json({ error: "not found" }, 404);
 
     const clientOrError = resolveClient(clientFactory);

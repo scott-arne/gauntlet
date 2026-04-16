@@ -1,6 +1,6 @@
 import { Hono } from "hono";
 
-export type ErrorSource = "run" | "fanout";
+export type ErrorSource = "run" | "fanout" | "cards";
 
 export interface ErrorEntry {
   timestamp: string;
