@@ -107,9 +107,6 @@ async function main() {
       const registry = new ActiveRunRegistry();
       const app = createApp(config, uiDir, broadcaster, registry);
       const port = config.port;
-      if (config.models.available.length === 0) {
-        console.error("WARNING: No model configured. Set GAUNTLET_AGENT_MODEL or GAUNTLET_MODELS environment variable.");
-      }
       console.error(`gauntlet server listening on port ${port}`);
       Bun.serve<{ runId: string }>({
         port,

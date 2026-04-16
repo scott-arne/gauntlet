@@ -19,7 +19,9 @@ describe("Config API", () => {
     expect(body.defaultModel).toBe("claude-sonnet-4-6");
   });
 
-  test("GET /api/config falls back to GAUNTLET_AGENT_MODEL as single model", async () => {
+  test("GET /api/config returns empty allow-list when GAUNTLET_MODELS unset", async () => {
+    // GAUNTLET_MODELS is opt-in; when unset, the available list is empty
+    // (no restriction). The defaultModel still reflects the agent default.
     const config = loadConfig({}, {
       GAUNTLET_AGENT_MODEL: "claude-sonnet-4-6",
     } as NodeJS.ProcessEnv);
@@ -28,7 +30,7 @@ describe("Config API", () => {
     app.route("/api/config", configRoutes(config));
     const res = await app.request("/api/config");
     const body = await res.json();
-    expect(body.models).toEqual(["claude-sonnet-4-6"]);
+    expect(body.models).toEqual([]);
     expect(body.defaultModel).toBe("claude-sonnet-4-6");
   });
 
@@ -38,9 +40,9 @@ describe("Config API", () => {
     app.route("/api/config", configRoutes(config));
     const res = await app.request("/api/config");
     const body = await res.json();
-    // loadConfig defaults agent to claude-sonnet-4-6 and seeds available
-    // from that, so the API never returns a truly empty list.
-    expect(body.models).toEqual(["claude-sonnet-4-6"]);
+    // GAUNTLET_MODELS is unset, so the allow-list is empty; the UI falls
+    // back to a free-form text input pre-populated with defaultModel.
+    expect(body.models).toEqual([]);
     expect(body.defaultModel).toBe("claude-sonnet-4-6");
   });
 

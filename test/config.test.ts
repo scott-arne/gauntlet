@@ -11,7 +11,7 @@ describe("loadConfig", () => {
     expect(c.defaultChrome).toEqual({ host: "127.0.0.1", port: 9222 });
     expect(c.models.agent).toBe("claude-sonnet-4-6");
     expect(c.models.fanout).toBeUndefined();
-    expect(c.models.available).toEqual(["claude-sonnet-4-6"]);
+    expect(c.models.available).toEqual([]);
     expect(c.apiKeys).toEqual({ anthropic: false, openai: false });
     expect(c.sources.projectRoot).toBe("default");
   });
@@ -66,9 +66,9 @@ describe("loadConfig", () => {
       .toThrow(/GAUNTLET_PORT/);
   });
 
-  test("available models falls back to [agent] when GAUNTLET_MODELS unset", () => {
+  test("available models defaults to [] (no allow-list) when GAUNTLET_MODELS unset", () => {
     const c = loadConfig({}, { GAUNTLET_AGENT_MODEL: "gpt-4o" } as NodeJS.ProcessEnv);
-    expect(c.models.available).toEqual(["gpt-4o"]);
+    expect(c.models.available).toEqual([]);
   });
 
   test("apiKeys reflects both providers when both keys set", () => {
@@ -186,81 +186,3 @@ describe("requireLlmCapable", () => {
   });
 });
 
-describe("agent model floor (v1.5 Sonnet 4.6 floor)", () => {
-  test("loadConfig still succeeds with a below-floor agent model (introspection)", () => {
-    // `gauntlet config` must be able to introspect broken environments
-    // without throwing. The floor check is deferred to requireLlmCapable /
-    // mergeRunConfig, not applied in loadConfig.
-    const c = loadConfig(
-      {},
-      {
-        ANTHROPIC_API_KEY: "sk-ant-xxx",
-        GAUNTLET_AGENT_MODEL: "claude-sonnet-4-20250514",
-      } as NodeJS.ProcessEnv,
-    );
-    expect(c.models.agent).toBe("claude-sonnet-4-20250514");
-  });
-
-  test("requireLlmCapable throws for a below-floor agent model", () => {
-    const config = loadConfig(
-      {},
-      {
-        ANTHROPIC_API_KEY: "sk-ant-xxx",
-        GAUNTLET_AGENT_MODEL: "claude-sonnet-4-20250514",
-      } as NodeJS.ProcessEnv,
-    );
-    expect(() => requireLlmCapable(config)).toThrow(/below the Gauntlet v1.5 floor/);
-    expect(() => requireLlmCapable(config)).toThrow(/claude-sonnet-4-6/);
-    expect(() => requireLlmCapable(config)).toThrow(/GAUNTLET_AGENT_MODEL/);
-  });
-
-  test("requireLlmCapable passes for claude-sonnet-4-6", () => {
-    const config = loadConfig(
-      {},
-      { ANTHROPIC_API_KEY: "sk-ant-xxx", GAUNTLET_AGENT_MODEL: "claude-sonnet-4-6" } as NodeJS.ProcessEnv,
-    );
-    expect(() => requireLlmCapable(config)).not.toThrow();
-  });
-
-  test("requireLlmCapable passes for claude-opus-4-6", () => {
-    const config = loadConfig(
-      {},
-      { ANTHROPIC_API_KEY: "sk-ant-xxx", GAUNTLET_AGENT_MODEL: "claude-opus-4-6" } as NodeJS.ProcessEnv,
-    );
-    expect(() => requireLlmCapable(config)).not.toThrow();
-  });
-
-  test("mergeRunConfig throws for a below-floor per-request model override", () => {
-    const app = loadConfig(
-      {},
-      { GAUNTLET_AGENT_MODEL: "claude-sonnet-4-6" } as NodeJS.ProcessEnv,
-    );
-    expect(() =>
-      mergeRunConfig(app, { target: "http://x", model: "claude-sonnet-4-20250514" }),
-    ).toThrow(/below the Gauntlet v1.5 floor/);
-    expect(() =>
-      mergeRunConfig(app, { target: "http://x", model: "gpt-4o" }),
-    ).toThrow(/run\.model/);
-  });
-
-  test("mergeRunConfig throws when the server default agent model is below floor", () => {
-    // A server that booted without ever calling requireLlmCapable still gets
-    // caught at the merge seam — belt-and-suspenders.
-    const app = loadConfig(
-      {},
-      { GAUNTLET_AGENT_MODEL: "claude-sonnet-4-20250514" } as NodeJS.ProcessEnv,
-    );
-    expect(() => mergeRunConfig(app, { target: "http://x" })).toThrow(
-      /below the Gauntlet v1.5 floor/,
-    );
-  });
-
-  test("mergeRunConfig accepts an allowlisted per-request override", () => {
-    const app = loadConfig(
-      {},
-      { GAUNTLET_AGENT_MODEL: "claude-sonnet-4-6" } as NodeJS.ProcessEnv,
-    );
-    const eff = mergeRunConfig(app, { target: "http://x", model: "claude-opus-4-6" });
-    expect(eff.model).toBe("claude-opus-4-6");
-  });
-});

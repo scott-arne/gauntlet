@@ -220,9 +220,7 @@ describe("Run API", () => {
   });
 
   test("POST /api/run/:id returns 400 when model is not in allow-list", async () => {
-    // "allow-list" here is the GAUNTLET_MODELS env allow-list, checked at
-    // the route layer after the floor check. `claude-opus-4-6` passes the
-    // floor but is not in GAUNTLET_MODELS, so the route-level check wins.
+    // GAUNTLET_MODELS, when set, is enforced at the route layer.
     const config = loadConfig(
       { projectRoot },
       { GAUNTLET_AGENT_MODEL: "claude-sonnet-4-6", GAUNTLET_MODELS: "claude-sonnet-4-6" } as NodeJS.ProcessEnv,
@@ -238,27 +236,5 @@ describe("Run API", () => {
     expect(res.status).toBe(400);
     const body = await res.json();
     expect(body.error).toContain("allow-list");
-  });
-
-  test("POST /api/run/:id returns 400 when body.model is below the v1.5 floor", async () => {
-    const config = loadConfig(
-      { projectRoot },
-      { GAUNTLET_AGENT_MODEL: "claude-sonnet-4-6" } as NodeJS.ProcessEnv,
-    );
-    const app = new Hono();
-    app.route("/api/run", runRoutes(config));
-
-    const res = await app.request("/api/run/story-001", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({
-        target: "http://localhost:3000",
-        model: "claude-sonnet-4-20250514",
-      }),
-    });
-    expect(res.status).toBe(400);
-    const body = await res.json();
-    expect(body.error).toContain("below the Gauntlet v1.5 floor");
-    expect(body.error).toContain("claude-sonnet-4-6");
   });
 });

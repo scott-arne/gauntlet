@@ -89,11 +89,9 @@ export function mergeRunConfig(app: AppConfig, body: RunRequestBody): EffectiveR
     : app.sources.defaultChrome === "default"
       ? undefined
       : app.defaultChrome;
-  const model = body.model ?? app.models.agent;
-  checkAgentModelFloor(model, body.model ? "run.model" : "GAUNTLET_AGENT_MODEL");
   return {
     target: body.target,
-    model,
+    model: body.model ?? app.models.agent,
     chrome,
     adapter: body.adapter ?? "web",
     projectRoot: app.projectRoot,
@@ -104,35 +102,6 @@ const DEFAULT_PROJECT_ROOT = ".";
 const DEFAULT_PORT = 4400;
 const DEFAULT_CHROME: ChromeEndpoint = { host: "127.0.0.1", port: 9222 };
 const DEFAULT_AGENT_MODEL = "claude-sonnet-4-6";
-
-/**
- * The Gauntlet v1.5 Sonnet 4.6 floor (spec §9). Models at or above the
- * floor are considered "v1.5-capable". This list is additive as newer
- * variants ship; anything not here is rejected at the "about to actually
- * run" seams (`requireLlmCapable` and `mergeRunConfig`).
- *
- * Intentionally NOT checked in `loadConfig` — `gauntlet config` must be
- * able to introspect broken environments without throwing.
- */
-export const AGENT_MODEL_FLOOR_ALLOWLIST: ReadonlySet<string> = new Set<string>([
-  "claude-sonnet-4-6",
-  "claude-opus-4-6",
-]);
-
-/**
- * Throws a descriptive error if `model` is not in the v1.5 floor allowlist.
- * `label` is prepended to the error message to tell the caller which seam
- * tripped the check (e.g. "GAUNTLET_AGENT_MODEL" or "run.model").
- */
-export function checkAgentModelFloor(model: string, label: string): void {
-  if (!AGENT_MODEL_FLOOR_ALLOWLIST.has(model)) {
-    const allowed = [...AGENT_MODEL_FLOOR_ALLOWLIST].join(", ");
-    throw new Error(
-      `${label}: model "${model}" is below the Gauntlet v1.5 floor. ` +
-        `The floor is Sonnet 4.6; use one of: ${allowed}.`,
-    );
-  }
-}
 
 function parseChromeEndpoint(raw: string, label: string): ChromeEndpoint {
   const idx = raw.lastIndexOf(":");
@@ -176,7 +145,6 @@ export function requireLlmCapable(config: AppConfig): void {
       "or OPENAI_API_KEY (for GPT models). Run 'gauntlet config' to see current state.",
     );
   }
-  checkAgentModelFloor(config.models.agent, "GAUNTLET_AGENT_MODEL");
 }
 
 export function loadConfig(args: CliArgsInput, env: NodeJS.ProcessEnv): AppConfig {
@@ -240,14 +208,14 @@ export function loadConfig(args: CliArgsInput, env: NodeJS.ProcessEnv): AppConfi
     fanoutSource = "flag";
   }
 
-  // models.available
-  let availableModels: string[];
+  // models.available — operator-controlled allow-list. Empty means "no
+  // restriction": per-request body model overrides flow through unchecked.
+  // When the operator sets GAUNTLET_MODELS, the route layer enforces it.
+  let availableModels: string[] = [];
   let availableSource: "default" | "env" | "flag" = "default";
   if (env.GAUNTLET_MODELS) {
     availableModels = env.GAUNTLET_MODELS.split(",").map((s) => s.trim()).filter(Boolean);
     availableSource = "env";
-  } else {
-    availableModels = [agentModel];
   }
 
   // apiKeys (presence only)

@@ -295,7 +295,7 @@ Gauntlet-prefixed (consumed by `loadConfig`):
 | `GAUNTLET_CHROME` | Default Chrome endpoint (`host:port`) | `127.0.0.1:9222` |
 | `GAUNTLET_AGENT_MODEL` | Default agent model | `claude-sonnet-4-6` |
 | `GAUNTLET_FANOUT_MODEL` | Default fanout model | -- |
-| `GAUNTLET_MODELS` | Comma-separated allow-list of models | `[agent]` |
+| `GAUNTLET_MODELS` | Comma-separated allow-list of models (opt-in) | `[]` (no restriction) |
 
 ### SDK env pass-through policy
 
@@ -349,7 +349,7 @@ See the [Configuration](#configuration) section above for the full list. Quick r
 | `GAUNTLET_CHROME` | Default Chrome endpoint | `127.0.0.1:9222` |
 | `GAUNTLET_AGENT_MODEL` | Default model for test execution | `claude-sonnet-4-6` |
 | `GAUNTLET_FANOUT_MODEL` | Model for scenario generation | -- |
-| `GAUNTLET_MODELS` | Comma-separated model allow-list | `[agent]` |
+| `GAUNTLET_MODELS` | Comma-separated model allow-list (opt-in) | `[]` (no restriction) |
 
 ## Project structure
 
