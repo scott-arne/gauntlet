@@ -38,6 +38,8 @@ function makeMockClient(responseText: string): LLMClient & { callCount: number }
 
 function makeVetResult(overrides: Partial<VetResult> = {}): VetResult {
   return {
+    schemaVersion: 1,
+    runId: "login-flow_20260416T142301Z_test",
     scenario: "login-flow",
     status: "pass",
     summary: "All checks passed",

@@ -12,22 +12,25 @@ function makeWs() {
   return { ws, sent };
 }
 
+const RUN_ID = "story-001_20260416T142301Z_k3xm";
+
 describe("handleWsOpen", () => {
-  test("sends snapshot when run is registered", () => {
+  test("sends snapshot when run is registered (looked up by runId)", () => {
     const registry = new ActiveRunRegistry();
     registry.register({
-      id: "story-001",
+      id: RUN_ID,
+      cardId: "story-001",
       title: "Test",
       target: "http://localhost:3000",
       model: "claude-sonnet-4-6",
       startedAt: 100,
     });
-    registry.recordFrame("story-001", { data: "AAA", width: 10, height: 20 });
-    registry.recordProgress("story-001", "hello");
+    registry.recordFrame(RUN_ID, { data: "AAA", width: 10, height: 20 });
+    registry.recordProgress(RUN_ID, "hello");
 
     const broadcaster = new RunBroadcaster();
     const { ws, sent } = makeWs();
-    handleWsOpen(registry, broadcaster, "story-001", ws);
+    handleWsOpen(registry, broadcaster, RUN_ID, ws);
 
     expect(sent).toHaveLength(1);
     const msg = JSON.parse(sent[0]);
@@ -36,7 +39,7 @@ describe("handleWsOpen", () => {
     expect(msg.progressLog).toEqual(["hello"]);
   });
 
-  test("sends gone when run is not registered", () => {
+  test("sends gone when runId is not registered", () => {
     const registry = new ActiveRunRegistry();
     const broadcaster = new RunBroadcaster();
     const { ws, sent } = makeWs();
@@ -50,6 +53,7 @@ describe("handleWsOpen", () => {
     const registry = new ActiveRunRegistry();
     registry.register({
       id: "a",
+      cardId: "card-a",
       title: "t",
       target: "x",
       model: "m",

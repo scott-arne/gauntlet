@@ -16,8 +16,10 @@ describe("writeResultFiles", () => {
     rmSync(outDir, { recursive: true, force: true });
   });
 
-  test("writes result.json", () => {
+  test("writes result.json with both runId and scenario for self-identifying artifacts", () => {
     const result: VetResult = {
+      schemaVersion: 1,
+      runId: "story-001_20260416T142301Z_test",
       scenario: "story-001",
       status: "pass",
       summary: "Everything worked",
@@ -28,12 +30,17 @@ describe("writeResultFiles", () => {
     };
     writeResultFiles(outDir, result);
     const json = JSON.parse(readFileSync(join(outDir, "result.json"), "utf-8"));
+    // scenario (the cardId) is preserved for back-compat consumers.
     expect(json.scenario).toBe("story-001");
     expect(json.status).toBe("pass");
+    // runId is the new self-describing primary key.
+    expect(json.runId).toBe("story-001_20260416T142301Z_test");
   });
 
   test("writes result.md", () => {
     const result: VetResult = {
+      schemaVersion: 1,
+      runId: "story-001_20260416T142301Z_test",
       scenario: "story-001",
       status: "fail",
       summary: "Button was broken",
@@ -52,6 +59,8 @@ describe("writeResultFiles", () => {
 
   test("writes individual issue files", () => {
     const result: VetResult = {
+      schemaVersion: 1,
+      runId: "story-001_20260416T142301Z_test",
       scenario: "story-001",
       status: "pass",
       summary: "Passed but found issues",
@@ -82,6 +91,8 @@ describe("writeResultFiles", () => {
 
   test("skips issues dir when no observations", () => {
     const result: VetResult = {
+      schemaVersion: 1,
+      runId: "story-001_20260416T142301Z_test",
       scenario: "story-001",
       status: "pass",
       summary: "Clean pass",

@@ -1,5 +1,13 @@
 export interface ActiveRunInfo {
-  id: string; // = cardId (last-run-wins)
+  /**
+   * Primary key for the run. Self-describing: `<cardId>_<YYYYMMDDTHHMMSSZ>_<nonce>`
+   * (see `makeRunId`). Concurrent runs of the same card now have distinct
+   * registry entries.
+   */
+  id: string;
+  /** The card id this run is exercising. Stored as payload metadata so
+   * UIs can still group/filter by card without using it as the registry key. */
+  cardId: string;
   title: string;
   target: string;
   model: string;
@@ -26,26 +34,27 @@ export class ActiveRunRegistry {
   }
 
   /**
-   * Remove the entry for `id`. If `startedAt` is provided, only remove it
-   * when the current entry's `startedAt` matches — this prevents a slow
-   * finally block from clobbering a freshly-registered second run with
-   * the same cardId (last-run-wins).
+   * Remove the entry for `runId`. If `startedAt` is provided, only remove
+   * it when the current entry's `startedAt` matches — this prevents a
+   * slow finally block from clobbering a freshly-registered entry that
+   * happens to share the same key (defensive: with runIds containing a
+   * nonce, collisions are extremely unlikely, but the guard is cheap).
    */
-  unregister(id: string, startedAt?: number): void {
-    const snap = this.runs.get(id);
+  unregister(runId: string, startedAt?: number): void {
+    const snap = this.runs.get(runId);
     if (!snap) return;
     if (startedAt !== undefined && snap.info.startedAt !== startedAt) return;
-    this.runs.delete(id);
+    this.runs.delete(runId);
   }
 
-  recordFrame(id: string, frame: { data: string; width: number; height: number }): void {
-    const snap = this.runs.get(id);
+  recordFrame(runId: string, frame: { data: string; width: number; height: number }): void {
+    const snap = this.runs.get(runId);
     if (!snap) return;
     snap.lastFrame = frame;
   }
 
-  recordProgress(id: string, message: string): void {
-    const snap = this.runs.get(id);
+  recordProgress(runId: string, message: string): void {
+    const snap = this.runs.get(runId);
     if (!snap) return;
     snap.progressLog.push(message);
     if (snap.progressLog.length > PROGRESS_LOG_CAP) {
@@ -59,11 +68,11 @@ export class ActiveRunRegistry {
       .sort((a, b) => b.startedAt - a.startedAt);
   }
 
-  getSnapshot(id: string): RunSnapshot | null {
-    return this.runs.get(id) ?? null;
+  getSnapshot(runId: string): RunSnapshot | null {
+    return this.runs.get(runId) ?? null;
   }
 
-  has(id: string): boolean {
-    return this.runs.has(id);
+  has(runId: string): boolean {
+    return this.runs.has(runId);
   }
 }

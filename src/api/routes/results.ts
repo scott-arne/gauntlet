@@ -29,9 +29,12 @@ export function resultRoutes(resultsDir: string) {
     return c.json(results);
   });
 
-  router.get("/:scenario", (c) => {
-    const scenario = c.req.param("scenario");
-    const resultPath = join(resultsDir, scenario, "result.json");
+  // `:runId` is the run directory name on disk — produced by `makeRunId`
+  // and shaped like `<cardId>_<YYYYMMDDTHHMMSSZ>_<nonce>`. The route
+  // accepts any safe path segment; the safe-path guard prevents escape.
+  router.get("/:runId", (c) => {
+    const runId = c.req.param("runId");
+    const resultPath = join(resultsDir, runId, "result.json");
 
     if (!isSafePath(resultsDir, resultPath)) {
       return c.json({ error: "invalid path" }, 400);
@@ -52,13 +55,13 @@ export function resultRoutes(resultsDir: string) {
   // Manifest-gated file route: serves a file from a run directory only if
   // the run's result.json lists it. The manifest is authoritative; arbitrary
   // files on disk are not accessible through the API. See docs/format.md.
-  router.get("/:scenario/file/:path{.+}", (c) => {
-    const scenario = c.req.param("scenario");
+  router.get("/:runId/file/:path{.+}", (c) => {
+    const runId = c.req.param("runId");
     const relPath = c.req.param("path");
-    const scenarioDir = join(resultsDir, scenario);
-    const manifestPath = join(scenarioDir, "result.json");
+    const runDir = join(resultsDir, runId);
+    const manifestPath = join(runDir, "result.json");
 
-    if (!isSafePath(resultsDir, scenarioDir)) {
+    if (!isSafePath(resultsDir, runDir)) {
       return c.json({ error: "invalid path" }, 400);
     }
 
@@ -77,8 +80,8 @@ export function resultRoutes(resultsDir: string) {
       return c.json({ error: "not in manifest" }, 404);
     }
 
-    const filePath = join(scenarioDir, relPath);
-    if (!isSafePath(scenarioDir, filePath)) {
+    const filePath = join(runDir, relPath);
+    if (!isSafePath(runDir, filePath)) {
       return c.json({ error: "invalid path" }, 400);
     }
 

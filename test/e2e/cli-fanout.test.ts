@@ -102,6 +102,8 @@ describe("fanout e2e: round-trip", () => {
 describe("fanout e2e: observation promotion", () => {
   test("generateFromObservations creates parseable cards with correct parent and tags", async () => {
     const result: VetResult = {
+      schemaVersion: 1,
+      runId: "checkout-flow_20260416T142301Z_test",
       scenario: "checkout-flow",
       status: "pass",
       summary: "Checkout completed but with issues",

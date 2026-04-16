@@ -1,15 +1,31 @@
 /**
- * Short opaque run id: Unix-ms + 4 random alphanumerics.
+ * Compose a self-describing run id from a cardId, an ISO 8601 basic-format
+ * UTC timestamp, and a 4-char base36 nonce:
  *
- * Used by the CLI/API entry points to tag per-run Chrome profile
- * directories (see spec §5.1). The shape is deliberately filesystem-safe
- * (lowercase alphanumerics, no separators beyond the inner hyphen) so it
- * composes into `gauntlet-run-<runId>-<cardId>` without further cleanup.
+ *   <cardId>_<YYYYMMDDTHHMMSSZ>_<nonce>
+ *
+ * Example: `login-001_20260416T142301Z_k3xm`
+ *
+ * - The cardId is preserved verbatim. Story-card parsing already enforces
+ *   `[a-zA-Z0-9-]`, so it is filesystem-safe and contains no `_`, which
+ *   makes the `_` separator unambiguous.
+ * - The timestamp is the primary source of uniqueness; the 4-char nonce
+ *   only resolves same-second collisions.
+ * - Lex-sortable (left-anchored cardId, then chrono) — agents reading
+ *   `.gauntlet/results/` can tell which card tested and when at a glance.
  */
-export function makeRunId(): string {
-  const ts = Date.now().toString(36);
-  const rand = Math.random().toString(36).slice(2, 6).padEnd(4, "0");
-  return `${ts}${rand}`;
+export function makeRunId(cardId: string): string {
+  const ts = isoBasicNow();
+  const nonce = Math.random().toString(36).slice(2, 6).padEnd(4, "0");
+  return `${cardId}_${ts}_${nonce}`;
+}
+
+/**
+ * ISO 8601 basic-format UTC timestamp at second precision: `YYYYMMDDTHHMMSSZ`.
+ * No hyphens, no colons — safe in path segments and Chrome profile names.
+ */
+function isoBasicNow(): string {
+  return new Date().toISOString().replace(/[-:]/g, "").replace(/\.\d{3}Z$/, "Z");
 }
 
 /**

@@ -20,6 +20,12 @@ export interface Observation {
 
 export interface VetResult {
   schemaVersion: number;
+  /**
+   * Self-describing primary key for the run, set by the caller (route or
+   * CLI) before writing. Shape: `<cardId>_<YYYYMMDDTHHMMSSZ>_<nonce>`.
+   * `scenario` (the cardId) is retained for back-compat readers.
+   */
+  runId: string;
   scenario: string;
   status: VetStatus;
   summary: string;

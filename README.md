@@ -214,14 +214,14 @@ The HTTP API (Hono) serves at `/api`:
 | `/api/scenarios/:id` | PUT | Update a card |
 | `/api/scenarios/:id` | DELETE | Delete a card |
 | `/api/scenarios/:id/approve` | POST | Set card status to ready |
-| `/api/run/:id` | POST | Execute a scenario |
+| `/api/run/:id` | POST | Execute a scenario; returns `{ runId, cardId }` |
 | `/api/results` | GET | List all results |
-| `/api/results/:id` | GET | Get result metadata |
-| `/api/results/:id/file/:path` | GET | Fetch a file from a run (must be listed in result.json) |
+| `/api/results/:runId` | GET | Get result metadata |
+| `/api/results/:runId/file/:path` | GET | Fetch a file from a run (must be listed in result.json) |
 | `/api/fanout/:id` | POST | Generate test variations |
 | `/api/fanout/:id/observations` | POST | Generate cards from observations |
 | `/api/fanout/:id/failure` | POST | Generate cards from a failure |
-| `/api/ws` | WS | WebSocket for live run streaming |
+| `/api/ws?run=<runId>` | WS | WebSocket for live run streaming, scoped to one run |
 
 ## Docker
 

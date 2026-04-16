@@ -8,8 +8,10 @@ export function activeRunRoutes(registry: ActiveRunRegistry) {
     return c.json({ runs: registry.list() });
   });
 
-  router.get("/:id/snapshot", (c) => {
-    const snap = registry.getSnapshot(c.req.param("id"));
+  // `:runId` is the registry key (see ActiveRunRegistry). Cards no
+  // longer have a single canonical run, so callers must use the runId.
+  router.get("/:runId/snapshot", (c) => {
+    const snap = registry.getSnapshot(c.req.param("runId"));
     if (!snap) return c.json({ error: "not running" }, 404);
     return c.json(snap);
   });

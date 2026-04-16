@@ -6,7 +6,7 @@ import { runAgent } from "../agent/agent";
 import { createClient } from "../models/resolve";
 import { CLIAdapter } from "../adapters/cli/adapter";
 import { renderContextTree } from "../context/tree";
-import { makeRunId, sanitizeProfileSegment } from "../util/id";
+import { makeRunId } from "../util/id";
 import { gauntletPath } from "../paths";
 import type { AppConfig } from "../config";
 
@@ -32,6 +32,9 @@ export async function run(opts: RunCommandOptions): Promise<void> {
   // Render the tree **once per run** — the immutability invariant
   // (spec §4.2) forbids re-rendering during the run.
   const contextTree = renderContextTree(contextRoot);
+  // Generate a runId so the CLI's written result is self-identifying
+  // even though `--out` overrides the runId-keyed results dir.
+  const runId = makeRunId(card.id);
 
   let adapter;
   switch (adapterType) {
@@ -55,9 +58,8 @@ export async function run(opts: RunCommandOptions): Promise<void> {
         ? undefined
         : config.defaultChrome;
       // Per-run Chrome profile name for browser state isolation (spec
-      // §5.1). Sanitized to match chrome-ws-lib's profile-name regex.
-      const runId = makeRunId();
-      const chromeProfileName = `gauntlet-run-${runId}-${sanitizeProfileSegment(card.id)}`;
+      // §5.1). The cardId is already encoded in runId.
+      const chromeProfileName = `gauntlet-run-${runId}`;
       adapter = new WebAdapter({
         chrome: chromeOpt,
         contextRoot,
@@ -72,9 +74,11 @@ export async function run(opts: RunCommandOptions): Promise<void> {
   try {
     const result = await runAgent(card, adapter, client, logger, target, {
       contextTree,
+      runId,
     });
     writeResultFiles(outDir, result);
     console.log(JSON.stringify(result, null, 2));
+    console.error(`runId: ${runId}`);
   } finally {
     await adapter.close();
   }

@@ -2,9 +2,13 @@ import { describe, test, expect } from "bun:test";
 import { ActiveRunRegistry } from "../../src/api/active-runs";
 
 describe("ActiveRunRegistry", () => {
-  const info = (id: string, startedAt: number) => ({
-    id,
-    title: `Title ${id}`,
+  // Per-run shape: `id` is the runId (the primary key), `cardId` is
+  // payload metadata. Tests use synthetic ids that satisfy both fields
+  // independently — the registry doesn't parse runId structure.
+  const info = (runId: string, startedAt: number, cardId = "card-x") => ({
+    id: runId,
+    cardId,
+    title: `Title ${runId}`,
     target: "http://localhost:3000",
     model: "claude-sonnet-4-6",
     startedAt,
@@ -28,7 +32,10 @@ describe("ActiveRunRegistry", () => {
     expect(r.list().map((x) => x.id)).toEqual(["b", "c", "a"]);
   });
 
-  test("register replaces existing entry (last-run-wins)", () => {
+  test("register with the same key replaces (last-wins) — distinct runIds normally avoid this", () => {
+    // With a real runId containing a timestamp + nonce, collisions are
+    // vanishingly rare. The replacement behavior is preserved as a
+    // defensive last-wins for edge cases (manual id reuse in tests).
     const r = new ActiveRunRegistry();
     r.register(info("a", 100));
     r.recordProgress("a", "old");
@@ -70,7 +77,7 @@ describe("ActiveRunRegistry", () => {
   test("re-register + first run's unregister does not clobber second run", () => {
     const r = new ActiveRunRegistry();
     r.register(info("a", 100));
-    // Second run starts before first run's finally executes
+    // Second run reuses the key before first run's finally executes
     r.register(info("a", 200));
     // First run's finally fires
     r.unregister("a", 100);
@@ -107,5 +114,18 @@ describe("ActiveRunRegistry", () => {
   test("getSnapshot returns null for unknown id", () => {
     const r = new ActiveRunRegistry();
     expect(r.getSnapshot("nope")).toBeNull();
+  });
+
+  test("entries carry both runId (id) and cardId so callers can group by card", () => {
+    // Two distinct runs of the same card produce distinct registry
+    // entries; each retains the cardId for filtering/grouping.
+    const r = new ActiveRunRegistry();
+    r.register(info("login-001_20260416T142301Z_k3xm", 100, "login-001"));
+    r.register(info("login-001_20260416T142302Z_qq8a", 200, "login-001"));
+    const list = r.list();
+    expect(list).toHaveLength(2);
+    expect(list.every((x) => x.cardId === "login-001")).toBe(true);
+    // Both ids present and distinct.
+    expect(new Set(list.map((x) => x.id)).size).toBe(2);
   });
 });

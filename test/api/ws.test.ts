@@ -1,8 +1,10 @@
 import { describe, test, expect } from "bun:test";
 import { RunBroadcaster } from "../../src/api/ws";
 
+// The broadcaster is keyed by runId — distinct runs of the same card
+// receive distinct channels, no interleaving.
 describe("RunBroadcaster", () => {
-  test("broadcasts messages to all connected clients", () => {
+  test("broadcasts messages to all connected clients on a runId channel", () => {
     const broadcaster = new RunBroadcaster();
     const received: string[] = [];
 
@@ -41,7 +43,7 @@ describe("RunBroadcaster", () => {
     expect(received).toEqual([]);
   });
 
-  test("different run IDs are isolated", () => {
+  test("different runIds are isolated channels", () => {
     const broadcaster = new RunBroadcaster();
     const received: string[] = [];
 
@@ -54,5 +56,24 @@ describe("RunBroadcaster", () => {
     broadcaster.send("run-a", { type: "frame", data: "abc" });
 
     expect(received).toEqual(['1:{"type":"frame","data":"abc"}']);
+  });
+
+  test("two concurrent runs of the same card use distinct runId channels", () => {
+    // The whole point of runId-as-key: two runs against the same card
+    // must not see each other's frames.
+    const broadcaster = new RunBroadcaster();
+    const a: string[] = [];
+    const b: string[] = [];
+    const wsA = { send: (d: string) => a.push(d), readyState: 1 };
+    const wsB = { send: (d: string) => b.push(d), readyState: 1 };
+
+    broadcaster.addClient("login-001_20260416T142301Z_k3xm", wsA as any);
+    broadcaster.addClient("login-001_20260416T142302Z_qq8a", wsB as any);
+
+    broadcaster.send("login-001_20260416T142301Z_k3xm", { type: "frame", data: "A" });
+    broadcaster.send("login-001_20260416T142302Z_qq8a", { type: "frame", data: "B" });
+
+    expect(a).toEqual(['{"type":"frame","data":"A"}']);
+    expect(b).toEqual(['{"type":"frame","data":"B"}']);
   });
 });

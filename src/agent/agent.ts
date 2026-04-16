@@ -20,6 +20,13 @@ export interface AgentOptions {
    * `runAgent` does not re-render or refresh it.
    */
   contextTree?: string;
+  /**
+   * The run's primary identity, written into the result so the artifact
+   * is self-describing on disk. Defaults to "" when the caller does not
+   * provide one (e.g. ad-hoc test fixtures); production callers always
+   * supply it via `makeRunId(card.id)`.
+   */
+  runId?: string;
 }
 
 const REPORT_TOOL: ToolDefinition = {
@@ -78,6 +85,7 @@ export async function runAgent(
   options?: AgentOptions
 ): Promise<VetResult> {
   const startTime = Date.now();
+  const runId = options?.runId ?? "";
   const systemPrompt = buildSystemPrompt(card, options?.contextTree);
   const tools = [...adapter.toolDefinitions(), REPORT_TOOL];
 
@@ -109,6 +117,7 @@ export async function runAgent(
       const args = report.arguments;
       return {
         schemaVersion: RESULT_SCHEMA_VERSION,
+        runId,
         scenario: card.id,
         status: args.status as VetStatus,
         summary: args.summary as string,
@@ -162,6 +171,7 @@ export async function runAgent(
   // Max turns reached
   return {
     schemaVersion: RESULT_SCHEMA_VERSION,
+    runId,
     scenario: card.id,
     status: "investigate",
     summary: "Agent reached maximum turn limit without reporting a result",

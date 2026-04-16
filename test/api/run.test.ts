@@ -70,7 +70,13 @@ describe("Run API", () => {
     expect(body.error).toContain("target");
   });
 
-  test("POST /api/run/:id returns 202 and registers the run", async () => {
+  test("POST /api/run/:id returns 202 with { runId, cardId } and registers by runId", async () => {
+    // createClient reads ANTHROPIC_API_KEY from process.env directly.
+    // Stub it just for this test so the createClient call doesn't throw
+    // before we reach the registry assertion.
+    const prev = process.env.ANTHROPIC_API_KEY;
+    process.env.ANTHROPIC_API_KEY = "test-key";
+    try {
     const config = loadConfig({ projectRoot }, { GAUNTLET_AGENT_MODEL: "claude-sonnet-4-6" } as NodeJS.ProcessEnv);
     const registry = new ActiveRunRegistry();
     const broadcaster = new RunBroadcaster();
@@ -86,15 +92,24 @@ describe("Run API", () => {
     });
     expect(res.status).toBe(202);
     const body = await res.json();
-    expect(body.id).toBe("story-001");
-    // Registered synchronously before detach
-    expect(registry.has("story-001")).toBe(true);
+    // Response shape: runId is the primary identity; cardId echoes the
+    // path param so callers don't have to re-parse the URL.
+    expect(body.cardId).toBe("story-001");
+    expect(typeof body.runId).toBe("string");
+    expect(body.runId).toMatch(/^story-001_\d{8}T\d{6}Z_[a-z0-9]{4}$/);
+    // Registered synchronously before detach, keyed by runId (not cardId).
+    expect(registry.has(body.runId)).toBe(true);
+    expect(registry.has("story-001")).toBe(false);
 
     // Give the detached task time to finish writing before afterEach rm's the dir.
     await new Promise((r) => setTimeout(r, 100));
+    } finally {
+      if (prev === undefined) delete process.env.ANTHROPIC_API_KEY;
+      else process.env.ANTHROPIC_API_KEY = prev;
+    }
   });
 
-  test("executeRun unregisters before broadcasting terminal event", async () => {
+  test("executeRun unregisters before broadcasting terminal event (keyed by runId)", async () => {
     // Stub adapter that throws on start — exercises the catch + finally
     // path without needing a real LLM or Chrome.
     const stubAdapter: Adapter = {
@@ -117,10 +132,12 @@ describe("Run API", () => {
       acceptance: ["Something works"],
     } as unknown as StoryCard;
 
+    const runId = "story-001_20260416T142301Z_test";
     const registry = new ActiveRunRegistry();
     const broadcaster = new RunBroadcaster();
     registry.register({
-      id: "story-001",
+      id: runId,
+      cardId: "story-001",
       title: "Test",
       target: "x",
       model: "m",
@@ -136,17 +153,18 @@ describe("Run API", () => {
       send(data: string) {
         const msg = JSON.parse(data);
         if (msg.type === "complete" || msg.type === "error") {
-          registryHadEntryAtTerminal = registry.has("story-001");
+          registryHadEntryAtTerminal = registry.has(runId);
         }
       },
     };
-    broadcaster.addClient("story-001", ws as any);
+    broadcaster.addClient(runId, ws as any);
 
     const { EvidenceLogger } = await import("../../src/evidence/logger");
-    const resultsDir = gauntletPath(projectRoot, "results", "story-001");
+    const resultsDir = gauntletPath(projectRoot, "results", runId);
     const logger = new EvidenceLogger(resultsDir);
 
     await executeRun({
+      runId,
       card,
       adapter: stubAdapter,
       adapterType: "cli",
@@ -159,7 +177,7 @@ describe("Run API", () => {
     });
 
     // After executeRun resolves, registry must be clean.
-    expect(registry.has("story-001")).toBe(false);
+    expect(registry.has(runId)).toBe(false);
     // And when the terminal event fired, the entry was already gone.
     expect(registryHadEntryAtTerminal).toBe(false);
   });
@@ -178,6 +196,12 @@ describe("Run API", () => {
     const eff = mergeRunConfig(config, body);
     expect(eff.chrome).toEqual({ host: "override", port: 9333 });
 
+    // The route's createClient call reads ANTHROPIC_API_KEY from
+    // process.env directly — stub it for the duration of this assertion
+    // so the 202 path is exercised without a real key.
+    const prev = process.env.ANTHROPIC_API_KEY;
+    process.env.ANTHROPIC_API_KEY = "test-key";
+    try {
     // And confirm the route accepts the request (returns 202).
     const app = new Hono();
     app.route("/api/run", runRoutes(config));
@@ -189,6 +213,10 @@ describe("Run API", () => {
     expect(res.status).toBe(202);
 
     await new Promise((r) => setTimeout(r, 100));
+    } finally {
+      if (prev === undefined) delete process.env.ANTHROPIC_API_KEY;
+      else process.env.ANTHROPIC_API_KEY = prev;
+    }
   });
 
   test("POST /api/run/:id returns 400 when model is not in allow-list", async () => {

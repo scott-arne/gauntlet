@@ -6,7 +6,7 @@ import { EvidenceLogger } from "../../evidence/logger";
 import { writeResultFiles } from "../../evidence/writer";
 import { runAgent } from "../../agent/agent";
 import { renderContextTree } from "../../context/tree";
-import { makeRunId, sanitizeProfileSegment } from "../../util/id";
+import { makeRunId } from "../../util/id";
 import { gauntletPath } from "../../paths";
 import { mergeRunConfig, validateRunBody, type AppConfig, type ChromeEndpoint } from "../../config";
 import type { Adapter } from "../../adapters/adapter";
@@ -75,15 +75,19 @@ export function runRoutes(
     }
 
     const client = createClient(effective.model);
-    const outDir = gauntletPath(config.projectRoot, "results", entry.card.id);
+    // runId is the primary key for the run end to end: results dir,
+    // active-runs registry, WS broadcaster channel, and the runId field
+    // written into result.json. The cardId is preserved as payload
+    // metadata where it matters (the registry, the result manifest).
+    const runId = makeRunId(entry.card.id);
+    const outDir = gauntletPath(config.projectRoot, "results", runId);
     // Create the logger *before* the adapter so WebAdapter can open its
     // background observer session against it in start().
     const logger = new EvidenceLogger(outDir);
     // Per-run Chrome profile name for browser state isolation (spec
-    // §5.1). Generated here so concurrent POSTs against the same card
-    // still get distinct profile dirs.
-    const runId = makeRunId();
-    const chromeProfileName = `gauntlet-run-${runId}-${sanitizeProfileSegment(entry.card.id)}`;
+    // §5.1). The cardId is already encoded in runId, so no additional
+    // suffix is needed.
+    const chromeProfileName = `gauntlet-run-${runId}`;
     const adapter = createAdapter(effective.adapter, effective.chrome, contextRoot, logger, chromeProfileName);
     // Render the tree **once per run** — the immutability invariant
     // (spec §4.2) forbids re-rendering during the run.
@@ -92,7 +96,8 @@ export function runRoutes(
     const startedAt = Date.now();
     if (registry) {
       registry.register({
-        id: entry.card.id,
+        id: runId,
+        cardId: entry.card.id,
         title: entry.card.title,
         target: effective.target,
         model: effective.model,
@@ -102,6 +107,7 @@ export function runRoutes(
 
     // Detach: run the agent in the background. The HTTP request returns now.
     executeRun({
+      runId,
       card: entry.card,
       adapter,
       adapterType: effective.adapter,
@@ -116,16 +122,26 @@ export function runRoutes(
       contextTree,
     }).catch((err) => {
       const message = err instanceof Error ? err.message : String(err);
-      errorLog?.add("run", `${entry.card.id}: ${message}`);
+      errorLog?.add("run", `${runId}: ${message}`);
     });
 
-    return c.json({ id: entry.card.id }, 202);
+    // Callers (e.g. the UI) need runId to subscribe to the WS channel
+    // and to look up results on disk. cardId is included so a caller
+    // that previously keyed by it still has the value at hand.
+    return c.json({ runId, cardId: entry.card.id }, 202);
   });
 
   return router;
 }
 
 export interface ExecuteRunOpts {
+  /**
+   * Primary identity for the run. Threads through the broadcaster
+   * channel, the registry key, and the runId field stamped into the
+   * written result. Optional only so legacy test fixtures can omit it;
+   * production routes always provide one via `makeRunId(card.id)`.
+   */
+  runId?: string;
   card: StoryCard;
   adapter: Adapter;
   adapterType: string;
@@ -136,7 +152,8 @@ export interface ExecuteRunOpts {
   broadcaster?: RunBroadcaster;
   registry?: ActiveRunRegistry;
   errorLog?: ErrorLog;
-  /** Token used to guard against clobbering a fresh same-card run. */
+  /** Token used to guard against clobbering a freshly-registered entry
+   * with the same key. */
   startedAt?: number;
   /**
    * Rendered context tree from `renderContextTree`. Built once per run
@@ -147,18 +164,21 @@ export interface ExecuteRunOpts {
 }
 
 export async function executeRun(opts: ExecuteRunOpts): Promise<void> {
-  const { card, adapter, adapterType, client, target, outDir, logger, broadcaster, registry, errorLog, startedAt, contextTree } = opts;
+  const { runId: optsRunId, card, adapter, adapterType, client, target, outDir, logger, broadcaster, registry, errorLog, startedAt, contextTree } = opts;
+  // Routing key for the broadcaster and registry. Defaults to cardId so
+  // ad-hoc test fixtures continue to work without supplying a runId.
+  const runId = optsRunId ?? card.id;
 
   if (broadcaster || registry) {
     logger.onAction = (action, params) => {
       const message = `[${action}] ${JSON.stringify(params)}`;
-      broadcaster?.send(card.id, {
+      broadcaster?.send(runId, {
         type: "progress",
         message,
         status: "running",
         card: card.id,
       });
-      registry?.recordProgress(card.id, message);
+      registry?.recordProgress(runId, message);
     };
   }
 
@@ -172,13 +192,13 @@ export async function executeRun(opts: ExecuteRunOpts): Promise<void> {
       const { ScreencastStreamer } = await import("../../streaming/screencast");
       const framesDir = join(outDir, "frames");
       streamer = new ScreencastStreamer(0, (frame) => {
-        broadcaster?.send(card.id, {
+        broadcaster?.send(runId, {
           type: "frame",
           data: frame.data,
           width: frame.metadata.width,
           height: frame.metadata.height,
         });
-        registry?.recordFrame(card.id, {
+        registry?.recordFrame(runId, {
           data: frame.data,
           width: frame.metadata.width,
           height: frame.metadata.height,
@@ -189,13 +209,14 @@ export async function executeRun(opts: ExecuteRunOpts): Promise<void> {
 
     const result = await runAgent(card, adapter, client, logger, target, {
       contextTree,
+      runId,
     });
     writeResultFiles(outDir, result);
 
     terminal = { type: "complete", result };
   } catch (err) {
     const message = err instanceof Error ? err.message : String(err);
-    errorLog?.add("run", `${card.id}: ${message}`);
+    errorLog?.add("run", `${runId}: ${message}`);
     terminal = { type: "error", message };
   } finally {
     if (streamer) {
@@ -210,10 +231,10 @@ export async function executeRun(opts: ExecuteRunOpts): Promise<void> {
     } catch {
       /* ignore */
     }
-    registry?.unregister(card.id, startedAt);
+    registry?.unregister(runId, startedAt);
     // Emit the terminal event AFTER unregister so a late-connecting
     // WebSocket sees an empty registry (and receives `gone`) instead of a
     // stale snapshot that would never get a follow-up event.
-    if (terminal) broadcaster?.send(card.id, terminal);
+    if (terminal) broadcaster?.send(runId, terminal);
   }
 }

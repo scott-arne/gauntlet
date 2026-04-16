@@ -3,28 +3,47 @@ import { makeRunId, sanitizeProfileSegment } from "../../src/util/id";
 
 describe("makeRunId", () => {
   test("returns a non-empty string", () => {
-    const id = makeRunId();
+    const id = makeRunId("card-001");
     expect(typeof id).toBe("string");
     expect(id.length).toBeGreaterThan(0);
   });
 
-  test("matches the Chrome profile-name regex (alphanumeric, hyphen, underscore)", () => {
-    // chrome-ws-lib's setProfileName enforces /^[a-zA-Z0-9_-]+$/.
-    // The runId is composed into `gauntlet-run-<runId>-<cardId>` without
-    // intermediate cleanup, so it must be safe on its own.
-    for (let i = 0; i < 50; i++) {
-      expect(makeRunId()).toMatch(/^[a-zA-Z0-9_-]+$/);
-    }
+  test("composes <cardId>_<timestamp>_<nonce> with three underscore-separated parts", () => {
+    const id = makeRunId("login-001");
+    const parts = id.split("_");
+    expect(parts).toHaveLength(3);
   });
 
-  test("returns distinct ids for successive calls", () => {
-    // A loose uniqueness guarantee: ms-resolution timestamp + 4 random
-    // chars. Two back-to-back calls should not collide in practice.
+  test("preserves the cardId verbatim as the leading segment", () => {
+    expect(makeRunId("login-001").split("_")[0]).toBe("login-001");
+    expect(makeRunId("foo-bar-baz").split("_")[0]).toBe("foo-bar-baz");
+  });
+
+  test("middle segment is an ISO 8601 basic-format UTC timestamp at second precision", () => {
+    const ts = makeRunId("c").split("_")[1];
+    // YYYYMMDDTHHMMSSZ — e.g. 20260416T142301Z
+    expect(ts).toMatch(/^\d{8}T\d{6}Z$/);
+  });
+
+  test("trailing nonce is 4 base36 characters", () => {
+    const nonce = makeRunId("c").split("_")[2];
+    expect(nonce).toMatch(/^[a-z0-9]{4}$/);
+  });
+
+  test("two calls in quick succession produce different ids", () => {
+    // Same-second collisions are resolved by the random nonce.
     const ids = new Set<string>();
-    for (let i = 0; i < 50; i++) {
-      ids.add(makeRunId());
-    }
+    for (let i = 0; i < 50; i++) ids.add(makeRunId("c"));
     expect(ids.size).toBeGreaterThan(1);
+  });
+
+  test("composes safely into a Chrome profile name (no collisions with /^[a-zA-Z0-9_-]+$/)", () => {
+    // chrome-ws-lib's setProfileName enforces /^[a-zA-Z0-9_-]+$/. The runId
+    // is embedded into `gauntlet-run-<runId>` directly, so it must remain
+    // within that character set on its own.
+    for (let i = 0; i < 20; i++) {
+      expect(makeRunId("card-001")).toMatch(/^[a-zA-Z0-9_-]+$/);
+    }
   });
 });
 
