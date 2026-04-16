@@ -1,3 +1,5 @@
+import { ADAPTER_TYPES, isAdapterType, type AdapterType } from "./adapters/adapter";
+
 export interface ChromeEndpoint {
   host: string;
   port: number;
@@ -38,7 +40,7 @@ export interface RunRequestBody {
   target: string;
   model?: string;
   chrome?: string;
-  adapter?: "web" | "cli" | "tui";
+  adapter?: AdapterType;
 }
 
 export interface EffectiveRunConfig {
@@ -50,7 +52,7 @@ export interface EffectiveRunConfig {
    * A defined value means an explicit endpoint (from body, env, or flag).
    */
   chrome: ChromeEndpoint | undefined;
-  adapter: "web" | "cli" | "tui";
+  adapter: AdapterType;
   projectRoot: string;
 }
 
@@ -70,11 +72,16 @@ export function validateRunBody(body: unknown): RunRequestBody {
   if (typeof bodyObj.target !== "string" || !bodyObj.target) {
     throw new Error("run request body: target is required and must be a non-empty string");
   }
+  if (bodyObj.adapter !== undefined && !isAdapterType(bodyObj.adapter)) {
+    throw new Error(
+      `run request body: adapter must be one of: ${ADAPTER_TYPES.join(", ")}`,
+    );
+  }
   return {
     target: bodyObj.target,
     model: typeof bodyObj.model === "string" ? bodyObj.model : undefined,
     chrome: typeof bodyObj.chrome === "string" ? bodyObj.chrome : undefined,
-    adapter: bodyObj.adapter as EffectiveRunConfig["adapter"] | undefined,
+    adapter: bodyObj.adapter,
   };
 }
 

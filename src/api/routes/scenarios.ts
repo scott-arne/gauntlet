@@ -7,6 +7,97 @@ import { loadAllCards, findCard } from "../../cards/store";
 import { isSafePath, gauntletPath } from "../../paths";
 import type { ErrorLog } from "./errors";
 
+/**
+ * Type-checked subset of StoryCard fields that scenario create/update bodies
+ * may carry. `id` is required on POST and forbidden on PUT (the path param
+ * is authoritative). Status semantics — draft vs ready vs UI-specific — are
+ * an open question separate from this validation, so the parser checks the
+ * shape of `status` (must be a string) but does NOT gate its values.
+ */
+interface ScenarioBody {
+  id?: string;
+  title?: string;
+  status?: string;
+  tags?: string[];
+  parent?: string;
+  stakeholder?: string;
+  description?: string;
+  acceptanceCriteria?: string[];
+}
+
+function isStringArray(v: unknown): v is string[] {
+  return Array.isArray(v) && v.every((x) => typeof x === "string");
+}
+
+function parseScenarioBody(raw: unknown, kind: "create" | "update"): ScenarioBody {
+  if (!raw || typeof raw !== "object" || Array.isArray(raw)) {
+    throw new Error("body must be a JSON object");
+  }
+  const b = raw as Record<string, unknown>;
+
+  const out: ScenarioBody = {};
+
+  if (kind === "create") {
+    if (typeof b.id !== "string" || b.id.length === 0) {
+      throw new Error("id: required and must be a non-empty string");
+    }
+    out.id = b.id;
+    if (typeof b.title !== "string" || b.title.length === 0) {
+      throw new Error("title: required and must be a non-empty string");
+    }
+    out.title = b.title;
+  } else {
+    if (b.id !== undefined) {
+      throw new Error("id: must not be set on update (path param is authoritative)");
+    }
+    if (b.title !== undefined) {
+      if (typeof b.title !== "string" || b.title.length === 0) {
+        throw new Error("title: must be a non-empty string if present");
+      }
+      out.title = b.title;
+    }
+  }
+
+  if (b.status !== undefined) {
+    if (typeof b.status !== "string") {
+      throw new Error("status: must be a string if present");
+    }
+    out.status = b.status;
+  }
+  if (b.tags !== undefined) {
+    if (!isStringArray(b.tags)) {
+      throw new Error("tags: must be a string[] if present");
+    }
+    out.tags = b.tags;
+  }
+  if (b.parent !== undefined) {
+    if (typeof b.parent !== "string") {
+      throw new Error("parent: must be a string if present");
+    }
+    out.parent = b.parent;
+  }
+  if (b.stakeholder !== undefined) {
+    if (typeof b.stakeholder !== "string") {
+      throw new Error("stakeholder: must be a string if present");
+    }
+    out.stakeholder = b.stakeholder;
+  }
+  if (b.description !== undefined) {
+    if (typeof b.description !== "string") {
+      throw new Error("description: must be a string if present");
+    }
+    out.description = b.description;
+  }
+  if (b.acceptanceCriteria !== undefined) {
+    if (!isStringArray(b.acceptanceCriteria)) {
+      throw new Error("acceptanceCriteria: must be a string[] if present");
+    }
+    out.acceptanceCriteria = b.acceptanceCriteria;
+  }
+
+  return out;
+}
+
 export function scenarioRoutes(projectRoot: string, errorLog?: ErrorLog) {
   const router = new Hono();
   const storiesDir = gauntletPath(projectRoot, "stories");
@@ -24,30 +115,37 @@ export function scenarioRoutes(projectRoot: string, errorLog?: ErrorLog) {
   });
 
   router.post("/", async (c) => {
-    const body = await c.req.json();
-    if (!body.id || !body.title) {
-      return c.json({ error: "id and title are required" }, 400);
+    let body: ScenarioBody;
+    try {
+      const raw = await c.req.json();
+      body = parseScenarioBody(raw, "create");
+    } catch (err) {
+      return c.json({ error: err instanceof Error ? err.message : String(err) }, 400);
     }
 
-    const targetPath = join(storiesDir, `${body.id}.md`);
+    // parseScenarioBody guarantees id and title on create.
+    const id = body.id!;
+    const title = body.title!;
+
+    const targetPath = join(storiesDir, `${id}.md`);
     if (!isSafePath(storiesDir, targetPath)) {
       return c.json({ error: "invalid id" }, 400);
     }
 
-    const existing = findCard(projectRoot, body.id, errorLog);
+    const existing = findCard(projectRoot, id, errorLog);
     if (existing) {
       return c.json({ error: "card already exists" }, 409);
     }
 
     const card: StoryCard = {
-      id: body.id,
-      title: body.title,
-      status: body.status || "draft",
-      tags: body.tags || [],
+      id,
+      title,
+      status: body.status ?? "draft",
+      tags: body.tags ?? [],
       parent: body.parent,
       stakeholder: body.stakeholder,
-      description: body.description || "",
-      acceptanceCriteria: body.acceptanceCriteria || [],
+      description: body.description ?? "",
+      acceptanceCriteria: body.acceptanceCriteria ?? [],
       raw: "",
     };
     card.raw = serializeStoryCard(card);
@@ -78,7 +176,14 @@ export function scenarioRoutes(projectRoot: string, errorLog?: ErrorLog) {
     const entry = findCard(projectRoot, c.req.param("id"), errorLog);
     if (!entry) return c.json({ error: "not found" }, 404);
 
-    const updates = await c.req.json();
+    let updates: ScenarioBody;
+    try {
+      const raw = await c.req.json();
+      updates = parseScenarioBody(raw, "update");
+    } catch (err) {
+      return c.json({ error: err instanceof Error ? err.message : String(err) }, 400);
+    }
+
     const updated: StoryCard = { ...entry.card, ...updates, id: entry.card.id };
     updated.raw = serializeStoryCard(updated);
 

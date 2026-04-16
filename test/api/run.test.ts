@@ -237,4 +237,23 @@ describe("Run API", () => {
     const body = await res.json();
     expect(body.error).toContain("allow-list");
   });
+
+  test("rejects unknown adapter value with 400", async () => {
+    const config = loadConfig(
+      { projectRoot },
+      { GAUNTLET_AGENT_MODEL: "claude-sonnet-4-6" } as NodeJS.ProcessEnv,
+    );
+    const app = new Hono();
+    app.route("/api/run", runRoutes(config));
+
+    const res = await app.request("/api/run/story-001", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ target: "http://localhost:3000", adapter: "wat" }),
+    });
+    expect(res.status).toBe(400);
+    const body = await res.json();
+    expect(body.error).toContain("adapter");
+    expect(body.error).toContain("web");
+  });
 });

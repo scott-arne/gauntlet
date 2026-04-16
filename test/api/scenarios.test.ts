@@ -169,4 +169,77 @@ describe("Scenarios API", () => {
     const body = await res.json();
     expect(body.status).toBe("ready");
   });
+
+  test("POST rejects tags as a string (wrong shape)", async () => {
+    const res = await app.request("/api/scenarios", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ id: "bad-tags", title: "Bad tags", tags: "smoke" }),
+    });
+    expect(res.status).toBe(400);
+    const body = await res.json();
+    expect(body.error).toContain("tags");
+  });
+
+  test("POST rejects acceptanceCriteria as non-array", async () => {
+    const res = await app.request("/api/scenarios", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ id: "bad-ac", title: "Bad AC", acceptanceCriteria: "one thing" }),
+    });
+    expect(res.status).toBe(400);
+    const body = await res.json();
+    expect(body.error).toContain("acceptanceCriteria");
+  });
+
+  test("POST rejects non-string title", async () => {
+    const res = await app.request("/api/scenarios", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ id: "bad-title", title: 42 }),
+    });
+    expect(res.status).toBe(400);
+    const body = await res.json();
+    expect(body.error).toContain("title");
+  });
+
+  test("POST accepts arbitrary status (no value gating)", async () => {
+    const res = await app.request("/api/scenarios", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ id: "weird-status", title: "Weird", status: "whatever-i-want" }),
+    });
+    expect(res.status).toBe(201);
+    const body = await res.json();
+    expect(body.status).toBe("whatever-i-want");
+  });
+
+  test("PUT rejects id in body", async () => {
+    const res = await app.request("/api/scenarios/story-001", {
+      method: "PUT",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ id: "renamed" }),
+    });
+    expect(res.status).toBe(400);
+    const body = await res.json();
+    expect(body.error).toContain("id");
+  });
+
+  test("POST rejects malformed JSON with 400", async () => {
+    const res = await app.request("/api/scenarios", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: "{not json",
+    });
+    expect(res.status).toBe(400);
+  });
+
+  test("PUT rejects non-array tags", async () => {
+    const res = await app.request("/api/scenarios/story-001", {
+      method: "PUT",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ tags: "smoke" }),
+    });
+    expect(res.status).toBe(400);
+  });
 });

@@ -1,4 +1,5 @@
 import type { CliArgsInput } from "../config";
+import { ADAPTER_TYPES, isAdapterType, type AdapterType } from "../adapters/adapter";
 
 /**
  * parseInt("abc", 10) returns NaN, which propagates through loadConfig
@@ -39,7 +40,7 @@ export interface RunArgs {
   command: "run";
   scenarioPath: string;
   outDir: string;
-  adapter: "web" | "cli" | "tui";
+  adapter: AdapterType;
   cli: CliArgsInput;
 }
 
@@ -125,11 +126,21 @@ function parseRunArgs(args: string[]): RunArgs {
     throw new Error("Missing required flag: --target <url>");
   }
 
+  let adapter: AdapterType = "web";
+  if (flags.adapter !== undefined) {
+    if (!isAdapterType(flags.adapter)) {
+      throw new Error(
+        `Invalid --adapter value "${flags.adapter}": must be one of ${ADAPTER_TYPES.join(", ")}`,
+      );
+    }
+    adapter = flags.adapter;
+  }
+
   return {
     command: "run",
     scenarioPath: positional,
     outDir: flags.out ?? "./evidence",
-    adapter: (flags.adapter as "web" | "cli" | "tui") ?? "web",
+    adapter,
     cli: {
       projectRoot: flags["project-dir"],
       chrome: flags.chrome,

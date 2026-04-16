@@ -29,6 +29,12 @@ describe("parseArgs", () => {
     expect(args.adapter).toBe("tui");
   });
 
+  test("rejects unknown --adapter value", () => {
+    expect(() =>
+      parseArgs(["bun", "index.ts", "run", "story.md", "--target", "url", "--adapter", "wat"]),
+    ).toThrow(/must be one of/);
+  });
+
   test("parses model flags", () => {
     const args = parseArgs(["bun", "index.ts", "run", "story.md", "--target", "url", "--model", "agent=gpt-4o", "--model", "fanout=claude-sonnet-4-6"]);
     if (args.command !== "run") throw new Error("unreachable");
