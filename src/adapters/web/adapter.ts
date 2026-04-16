@@ -6,7 +6,6 @@ import type { Adapter } from "../adapter";
 import type { ToolDefinition, ToolResult } from "../../models/provider";
 import type { EvidenceLogger, BrowserEventCategory } from "../../evidence/logger";
 import type { ChromeEndpoint } from "../../config";
-import { buildReadProfileTool, type ProfileTool } from "../profile-tool";
 import { buildReadTool, type ReadTool } from "../../context/read-tool";
 import {
   buildInstallPasskeyTool,
@@ -60,7 +59,6 @@ export interface WebAdapterOptions {
 
 export class WebAdapter implements Adapter {
   private remote: boolean;
-  private profileTool: ProfileTool | null;
   private readTool: ReadTool | null;
   private passkeyTool: PasskeyTool | null;
   private logger: EvidenceLogger | null;
@@ -78,9 +76,6 @@ export class WebAdapter implements Adapter {
     // or seeded from CHROME_WS_HOST/CHROME_WS_PORT at module load).
     this.logger = options?.logger ?? null;
     this.chromeProfileName = options?.chromeProfileName ?? null;
-    this.profileTool = options?.contextRoot
-      ? buildReadProfileTool(options.contextRoot)
-      : null;
     this.readTool = options?.contextRoot
       ? buildReadTool(options.contextRoot)
       : null;
@@ -329,9 +324,6 @@ export class WebAdapter implements Adapter {
         },
       },
     ];
-    if (this.profileTool) {
-      tools.push(this.profileTool.definition);
-    }
     if (this.readTool) {
       tools.push(this.readTool.definition);
     }
@@ -347,10 +339,6 @@ export class WebAdapter implements Adapter {
     logger: EvidenceLogger
   ): Promise<ToolResult> {
     logger.logAction(name, args);
-
-    if (name === "read_profile" && this.profileTool) {
-      return this.profileTool.execute(args);
-    }
 
     if (name === "read" && this.readTool) {
       return this.readTool.execute(args);

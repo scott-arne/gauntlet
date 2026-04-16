@@ -89,37 +89,7 @@ describe.skipIf(!tmuxAvailable)("TUIAdapter", () => {
   });
 });
 
-describe("TUIAdapter profile tool wiring", () => {
-  test("omits read_profile when no context root is set", () => {
-    const adapter = new TUIAdapter();
-    const names = adapter.toolDefinitions().map((t) => t.name);
-    expect(names).not.toContain("read_profile");
-  });
-
-  test("omits read_profile when context root is empty", () => {
-    const tmp = mkdtempSync(join(tmpdir(), "gauntlet-tui-empty-"));
-    try {
-      const adapter = new TUIAdapter({ contextRoot: tmp });
-      const names = adapter.toolDefinitions().map((t) => t.name);
-      expect(names).not.toContain("read_profile");
-    } finally {
-      rmSync(tmp, { recursive: true, force: true });
-    }
-  });
-
-  test("includes read_profile when context root has at least one file", () => {
-    const tmp = mkdtempSync(join(tmpdir(), "gauntlet-tui-context-"));
-    try {
-      mkdirSync(join(tmp, ".gauntlet", "context"), { recursive: true });
-      writeFileSync(join(tmp, ".gauntlet", "context", "alice.md"), "Alice body");
-      const adapter = new TUIAdapter({ contextRoot: join(tmp, ".gauntlet", "context") });
-      const names = adapter.toolDefinitions().map((t) => t.name);
-      expect(names).toContain("read_profile");
-    } finally {
-      rmSync(tmp, { recursive: true, force: true });
-    }
-  });
-
+describe("TUIAdapter context tool wiring", () => {
   test("includes `read` tool when context root is non-empty", () => {
     const tmp = mkdtempSync(join(tmpdir(), "gauntlet-tui-read-"));
     try {

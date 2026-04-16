@@ -47,43 +47,6 @@ describe("WebAdapter", () => {
     expect(props.return_screenshot).toBeUndefined();
   });
 
-  test("omits read_profile when no context root is set", () => {
-    const adapter = new WebAdapter();
-    const names = adapter.toolDefinitions().map((t) => t.name);
-    expect(names).not.toContain("read_profile");
-  });
-
-  test("omits read_profile when context root is empty", () => {
-    const tmp = mkdtempSync(join(tmpdir(), "gauntlet-web-empty-"));
-    try {
-      const adapter = new WebAdapter({ contextRoot: tmp });
-      const names = adapter.toolDefinitions().map((t) => t.name);
-      expect(names).not.toContain("read_profile");
-    } finally {
-      rmSync(tmp, { recursive: true, force: true });
-    }
-  });
-
-  test("includes read_profile when context root has at least one file", () => {
-    const tmp = mkdtempSync(join(tmpdir(), "gauntlet-web-context-"));
-    try {
-      mkdirSync(join(tmp, ".gauntlet", "context"), { recursive: true });
-      writeFileSync(join(tmp, ".gauntlet", "context", "alice.md"), "A");
-      writeFileSync(join(tmp, ".gauntlet", "context", "bob.md"), "B");
-      const adapter = new WebAdapter({ contextRoot: join(tmp, ".gauntlet", "context") });
-      const tools = adapter.toolDefinitions();
-      const readProfile = tools.find((t) => t.name === "read_profile");
-      expect(readProfile).toBeDefined();
-      // The parameter is a plain string — no enum of valid names.
-      const params = readProfile!.parameters as {
-        properties: { name: { enum?: unknown } };
-      };
-      expect(params.properties.name.enum).toBeUndefined();
-    } finally {
-      rmSync(tmp, { recursive: true, force: true });
-    }
-  });
-
   test("omits install_passkey when context root is empty", () => {
     const tmp = mkdtempSync(join(tmpdir(), "gauntlet-web-nopasskey-"));
     try {

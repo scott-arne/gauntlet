@@ -1,7 +1,6 @@
 import type { Adapter } from "../adapter";
 import type { ToolDefinition, ToolResult } from "../../models/provider";
 import type { EvidenceLogger } from "../../evidence/logger";
-import { buildReadProfileTool, type ProfileTool } from "../profile-tool";
 import { buildReadTool, type ReadTool } from "../../context/read-tool";
 
 const KEY_MAP: Record<string, string> = {
@@ -37,13 +36,9 @@ export interface TUIAdapterOptions {
 
 export class TUIAdapter implements Adapter {
   private _sessionName: string | null = null;
-  private profileTool: ProfileTool | null;
   private readTool: ReadTool | null;
 
   constructor(options?: TUIAdapterOptions) {
-    this.profileTool = options?.contextRoot
-      ? buildReadProfileTool(options.contextRoot)
-      : null;
     this.readTool = options?.contextRoot
       ? buildReadTool(options.contextRoot)
       : null;
@@ -172,9 +167,6 @@ export class TUIAdapter implements Adapter {
         },
       },
     ];
-    if (this.profileTool) {
-      tools.push(this.profileTool.definition);
-    }
     if (this.readTool) {
       tools.push(this.readTool.definition);
     }
@@ -187,10 +179,6 @@ export class TUIAdapter implements Adapter {
     logger: EvidenceLogger
   ): Promise<ToolResult> {
     logger.logAction(name, args);
-
-    if (name === "read_profile" && this.profileTool) {
-      return this.profileTool.execute(args);
-    }
 
     if (name === "read" && this.readTool) {
       return this.readTool.execute(args);
