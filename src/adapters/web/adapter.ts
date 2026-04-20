@@ -254,6 +254,172 @@ export class WebAdapter implements Adapter {
         },
       },
       {
+        name: "hover",
+        description:
+          "Move the mouse over an element (fires CSS :hover, tooltips, " +
+          "hover-to-reveal menus). Uses CDP mouse events, not synthetic " +
+          "JS — will fire real pointer/mouse listeners on the page.",
+        parameters: {
+          type: "object",
+          properties: {
+            selector: {
+              type: "string",
+              description: "Selector of the element to hover over (CSS, XPath, or :contains()).",
+            },
+            return_screenshot: {
+              type: "boolean",
+              description: "Take a screenshot after this action and return the image",
+            },
+          },
+          required: ["selector"],
+        },
+      },
+      {
+        name: "double_click",
+        description: "Double-click an element. Fires two clicks plus dblclick.",
+        parameters: {
+          type: "object",
+          properties: {
+            selector: {
+              type: "string",
+              description: "Selector of the element to double-click.",
+            },
+            return_screenshot: {
+              type: "boolean",
+              description: "Take a screenshot after this action and return the image",
+            },
+          },
+          required: ["selector"],
+        },
+      },
+      {
+        name: "right_click",
+        description:
+          "Right-click an element (fires contextmenu). Use when you need " +
+          "to open a context menu — does not dismiss the menu on its own.",
+        parameters: {
+          type: "object",
+          properties: {
+            selector: {
+              type: "string",
+              description: "Selector of the element to right-click.",
+            },
+            return_screenshot: {
+              type: "boolean",
+              description: "Take a screenshot after this action and return the image",
+            },
+          },
+          required: ["selector"],
+        },
+      },
+      {
+        name: "drag",
+        description:
+          "Drag an element to a target (native DnD pipeline via CDP mouse " +
+          "events, so drop handlers receive a real DataTransfer). Target is " +
+          "either another selector or explicit {x, y} coordinates.",
+        parameters: {
+          type: "object",
+          properties: {
+            source_selector: {
+              type: "string",
+              description: "Selector of the element to drag.",
+            },
+            target_selector: {
+              type: "string",
+              description: "Selector of the drop target. Provide this OR target_x+target_y.",
+            },
+            target_x: {
+              type: "number",
+              description: "Drop-target X coordinate (viewport pixels). Use with target_y.",
+            },
+            target_y: {
+              type: "number",
+              description: "Drop-target Y coordinate (viewport pixels). Use with target_x.",
+            },
+            return_screenshot: {
+              type: "boolean",
+              description: "Take a screenshot after this action and return the image",
+            },
+          },
+          required: ["source_selector"],
+        },
+      },
+      {
+        name: "mouse_move",
+        description:
+          "Move the mouse to (x, y) in viewport coordinates. Used for hover " +
+          "effects at arbitrary points or for bot-detection puzzles that " +
+          "track pointer trajectories.",
+        parameters: {
+          type: "object",
+          properties: {
+            x: { type: "number", description: "Target X coordinate (viewport pixels)." },
+            y: { type: "number", description: "Target Y coordinate (viewport pixels)." },
+            return_screenshot: {
+              type: "boolean",
+              description: "Take a screenshot after this action and return the image",
+            },
+          },
+          required: ["x", "y"],
+        },
+      },
+      {
+        name: "scroll",
+        description:
+          "Scroll the page (or an element) using real mouse-wheel CDP events. " +
+          "More natural than JS scrollTo, which bot detectors can flag.",
+        parameters: {
+          type: "object",
+          properties: {
+            direction: {
+              type: "string",
+              enum: ["up", "down", "left", "right"],
+              description: "Scroll direction.",
+            },
+            amount: {
+              type: "number",
+              description: "Pixels to scroll. Defaults to 300.",
+            },
+            selector: {
+              type: "string",
+              description: "Optional selector to scroll from (wheel event anchored at its center).",
+            },
+            return_screenshot: {
+              type: "boolean",
+              description: "Take a screenshot after this action and return the image",
+            },
+          },
+          required: ["direction"],
+        },
+      },
+      {
+        name: "file_upload",
+        description:
+          "Upload local files to an <input type=file> element via " +
+          "DOM.setFileInputFiles — the only way to programmatically set " +
+          "files (JS cannot). File paths must be absolute.",
+        parameters: {
+          type: "object",
+          properties: {
+            selector: {
+              type: "string",
+              description: "Selector of the file input.",
+            },
+            file_paths: {
+              type: "array",
+              items: { type: "string" },
+              description: "Absolute paths of files to upload.",
+            },
+            return_screenshot: {
+              type: "boolean",
+              description: "Take a screenshot after this action and return the image",
+            },
+          },
+          required: ["selector", "file_paths"],
+        },
+      },
+      {
         name: "navigate",
         description: "Navigate the browser to a URL",
         parameters: {
@@ -439,6 +605,93 @@ export class WebAdapter implements Adapter {
       case "press": {
         await chrome.keyboardPress(0, args.key as string);
         return { text: "pressed", image: await takeReturnScreenshot() };
+      }
+      case "hover": {
+        try {
+          await chrome.hover(0, args.selector as string);
+          return { text: `hovered ${args.selector}`, image: await takeReturnScreenshot() };
+        } catch (err) {
+          const reason = err instanceof Error ? err.message : String(err);
+          return { text: `Error: ${reason}`, image: await takeReturnScreenshot() };
+        }
+      }
+      case "double_click": {
+        try {
+          await chrome.doubleClick(0, args.selector as string);
+          return { text: `double-clicked ${args.selector}`, image: await takeReturnScreenshot() };
+        } catch (err) {
+          const reason = err instanceof Error ? err.message : String(err);
+          return { text: `Error: ${reason}`, image: await takeReturnScreenshot() };
+        }
+      }
+      case "right_click": {
+        try {
+          await chrome.rightClick(0, args.selector as string);
+          return { text: `right-clicked ${args.selector}`, image: await takeReturnScreenshot() };
+        } catch (err) {
+          const reason = err instanceof Error ? err.message : String(err);
+          return { text: `Error: ${reason}`, image: await takeReturnScreenshot() };
+        }
+      }
+      case "drag": {
+        const sourceSelector = args.source_selector as string;
+        const targetSelector = args.target_selector as string | undefined;
+        const targetX = args.target_x as number | undefined;
+        const targetY = args.target_y as number | undefined;
+        // Agent supplies target_selector XOR (target_x AND target_y).
+        // A real validation error — not something the lib will diagnose
+        // helpfully — so catch it here with a pointer back to the schema.
+        let target: string | { x: number; y: number };
+        if (targetSelector) {
+          target = targetSelector;
+        } else if (typeof targetX === "number" && typeof targetY === "number") {
+          target = { x: targetX, y: targetY };
+        } else {
+          return {
+            text: "Error: drag requires either target_selector or both target_x and target_y",
+          };
+        }
+        try {
+          await chrome.drag(0, sourceSelector, target);
+          return { text: `dragged ${sourceSelector}`, image: await takeReturnScreenshot() };
+        } catch (err) {
+          const reason = err instanceof Error ? err.message : String(err);
+          return { text: `Error: ${reason}`, image: await takeReturnScreenshot() };
+        }
+      }
+      case "mouse_move": {
+        await chrome.mouseMove(0, args.x as number, args.y as number);
+        return { text: `moved mouse to (${args.x}, ${args.y})`, image: await takeReturnScreenshot() };
+      }
+      case "scroll": {
+        const direction = args.direction as "up" | "down" | "left" | "right";
+        const amount = (args.amount as number) ?? 300;
+        // Map direction → wheel delta. Chrome's mouseWheel uses +y=down,
+        // +x=right, which matches intuitive direction names.
+        const deltaX = direction === "left" ? -amount : direction === "right" ? amount : 0;
+        const deltaY = direction === "up" ? -amount : direction === "down" ? amount : 0;
+        await chrome.scroll(0, {
+          deltaX,
+          deltaY,
+          selector: (args.selector as string) ?? undefined,
+        });
+        return { text: `scrolled ${direction} ${amount}px`, image: await takeReturnScreenshot() };
+      }
+      case "file_upload": {
+        try {
+          const result = await chrome.fileUpload(
+            0,
+            args.selector as string,
+            args.file_paths as string[],
+          );
+          return {
+            text: `uploaded ${result.files} file(s) to ${args.selector}`,
+            image: await takeReturnScreenshot(),
+          };
+        } catch (err) {
+          const reason = err instanceof Error ? err.message : String(err);
+          return { text: `Error: ${reason}`, image: await takeReturnScreenshot() };
+        }
       }
       case "navigate": {
         await chrome.navigate(0, args.url as string);
