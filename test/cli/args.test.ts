@@ -17,6 +17,16 @@ describe("parseArgs", () => {
     expect(args.adapter).toBe("web");
   });
 
+  // Default outDir is derived from projectRoot + runId inside `run()`,
+  // not baked in at parse time — so parseArgs must surface absence as
+  // undefined. Bug fix: previously defaulted to "./evidence" (cwd),
+  // which diverged from the serve path's `<project>/.gauntlet/results/<runId>`.
+  test("leaves outDir undefined when --out is not provided", () => {
+    const args = parseArgs(["bun", "index.ts", "run", "story.md", "--target", "http://localhost:3000"]);
+    if (args.command !== "run") throw new Error("unreachable");
+    expect(args.outDir).toBeUndefined();
+  });
+
   test("parses cli adapter flag", () => {
     const args = parseArgs(["bun", "index.ts", "run", "story.md", "--target", "cmd", "--adapter", "cli"]);
     if (args.command !== "run") throw new Error("unreachable");

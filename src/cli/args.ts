@@ -39,7 +39,7 @@ function rejectUnknownFlags(
 export interface RunArgs {
   command: "run";
   scenarioPath: string;
-  outDir: string;
+  outDir?: string;
   adapter: AdapterType;
   cli: CliArgsInput;
 }
@@ -139,7 +139,7 @@ function parseRunArgs(args: string[]): RunArgs {
   return {
     command: "run",
     scenarioPath: positional,
-    outDir: flags.out ?? "./evidence",
+    outDir: flags.out,
     adapter,
     cli: {
       projectRoot: flags["project-dir"],
@@ -275,7 +275,7 @@ Commands:
     --model agent=<name> Model for the agent (default: claude-sonnet-4-6)
     --chrome host:port   Chrome debugging endpoint (default: 127.0.0.1:9222)
     --adapter <type>     web | cli | tui (default: web)
-    --out <dir>          Evidence output directory (default: ./evidence)
+    --out <dir>          Evidence output directory (default: <project>/.gauntlet/results/<runId>)
     --project-dir <dir>  Project root (contains .gauntlet/ state dir)
 
   validate <scenario.md>  Validate a scenario file

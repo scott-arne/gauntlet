@@ -13,28 +13,31 @@ import type { AppConfig } from "../config";
 export interface RunCommandOptions {
   scenarioPath: string;
   target: string;
-  outDir: string;
+  outDir?: string;
   adapterType: "web" | "cli" | "tui";
   config: AppConfig;
 }
 
 export async function run(opts: RunCommandOptions): Promise<void> {
-  const { scenarioPath, target, outDir, adapterType, config } = opts;
+  const { scenarioPath, target, adapterType, config } = opts;
 
   // LLM-capable gate is enforced by the dispatch site (src/index.ts via
   // requireLlmCapableOrExit). This function assumes a valid AppConfig.
 
   const content = readFileSync(scenarioPath, "utf-8");
   const card = parseStoryCard(content);
+  // Generate runId first so we can derive the default outDir. Mirrors
+  // the serve path (src/api/routes/run.ts): `gauntletPath(projectRoot,
+  // "results", runId)` is the canonical run output location; `--out`
+  // stays available as an explicit override for ad-hoc debugging.
+  const runId = makeRunId(card.id);
+  const outDir = opts.outDir ?? gauntletPath(config.projectRoot, "results", runId);
   const logger = new EvidenceLogger(outDir);
   const client = createClient(config.models.agent);
   const contextRoot = gauntletPath(config.projectRoot, "context");
   // Render the tree **once per run** — the immutability invariant
   // (spec §4.2) forbids re-rendering during the run.
   const contextTree = renderContextTree(contextRoot);
-  // Generate a runId so the CLI's written result is self-identifying
-  // even though `--out` overrides the runId-keyed results dir.
-  const runId = makeRunId(card.id);
 
   let adapter;
   switch (adapterType) {
