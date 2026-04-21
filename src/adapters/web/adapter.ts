@@ -67,6 +67,7 @@ export interface WebAdapterOptions {
 }
 
 export class WebAdapter implements Adapter {
+  readonly name = "web";
   private remote: boolean;
   private readTool: ReadTool | null;
   private passkeyTool: PasskeyTool | null;

@@ -36,6 +36,7 @@ export interface TUIAdapterOptions {
 }
 
 export class TUIAdapter implements Adapter {
+  readonly name = "tui";
   private _sessionName: string | null = null;
   private readTool: ReadTool | null;
   /** Lazy cache of tool name → parameter schema for O(1) validation. */

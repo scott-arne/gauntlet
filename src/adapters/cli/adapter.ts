@@ -19,6 +19,7 @@ export interface CLIAdapterOptions {
 }
 
 export class CLIAdapter implements Adapter {
+  readonly name = "cli";
   // Narrow the stdio triple so stdin is a FileSink and stdout/stderr are
   // ReadableStreams. Bun.spawn's return type widens to the full union when
   // the stdio option is only known by value, which loses these guarantees.

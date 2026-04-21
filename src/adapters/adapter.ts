@@ -9,6 +9,7 @@ export function isAdapterType(s: unknown): s is AdapterType {
 }
 
 export interface Adapter {
+  readonly name: string;
   start(target: string): Promise<void>;
   close(): Promise<void>;
   toolDefinitions(): ToolDefinition[];

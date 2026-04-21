@@ -97,10 +97,25 @@ export async function runAgent(
   const systemPrompt = buildSystemPrompt(card, options.contextTree);
   const tools = [...adapter.toolDefinitions(), REPORT_TOOL];
 
+  logger.logRunStart({
+    runId,
+    cardId: card.id,
+    target,
+    provider: "unknown",
+    model: "unknown",
+    adapter: adapter.name ?? "unknown",
+    maxTurns: options.maxTurns ?? DEFAULT_MAX_TURNS,
+    toolTimeoutMs: options.toolTimeoutMs ?? DEFAULT_TOOL_TIMEOUT_MS,
+    contextTreeBytes: options.contextTree ? Buffer.byteLength(options.contextTree, "utf8") : 0,
+  });
+  logger.logSystemPrompt(systemPrompt);
+
   let initialMessage = "Begin testing. Use the available tools to interact with the application.";
   if (target) {
     initialMessage += `\n\nThe application is available at: ${target}`;
   }
+
+  logger.logUserMessage(0, initialMessage);
 
   const messages: unknown[] = [
     client.userMessage(initialMessage),

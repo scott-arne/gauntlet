@@ -24,6 +24,9 @@ function makeMockLogger(): EvidenceLogger {
     logTool: () => {},
     logScreenshot: () => "/tmp/shot.png",
     logAction: () => {},
+    logRunStart: () => {},
+    logSystemPrompt: () => {},
+    logUserMessage: () => {},
   } as unknown as EvidenceLogger;
 }
 
@@ -31,6 +34,7 @@ function makeMockAdapter(
   toolResults: Record<string, string> = {}
 ): Adapter {
   return {
+    name: "test",
     toolDefinitions: () => [
       {
         name: "screenshot",
