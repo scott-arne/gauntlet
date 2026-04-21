@@ -134,6 +134,7 @@ export async function runAgent(
     evidence: {
       screenshots: logger.screenshots,
       log: logger.logPath,
+      artifacts: logger.artifacts.length > 0 ? logger.artifacts : undefined,
     },
     duration_ms: Date.now() - startTime,
     usage: {

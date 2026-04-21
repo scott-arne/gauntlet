@@ -19,6 +19,7 @@ const card: StoryCard = {
 function makeMockLogger(): EvidenceLogger {
   return {
     screenshots: [],
+    artifacts: [],
     logPath: "/tmp/test.log",
     logTool: () => {},
     logScreenshot: () => "/tmp/shot.png",

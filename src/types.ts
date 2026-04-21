@@ -50,6 +50,7 @@ export interface VetResult {
     screenshots: string[];
     log: string;
     video?: string;
+    artifacts?: string[];
   };
   duration_ms: number;
   usage?: {
