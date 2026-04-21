@@ -208,11 +208,9 @@ export class WebAdapter implements Adapter {
       {
         name: "screenshot",
         description:
-          "Capture the rendered pixels of the page or an element. Use this " +
-          "whenever you need to verify visual content — images, icons, " +
-          "charts, SVG graphics, canvas output, colors, layout, or " +
-          "animation state — since `extract` returns text only and will " +
-          "silently miss anything that is not DOM text.",
+          "Capture rendered pixels of the page or an element. Use for " +
+          "anything visual (images, icons, SVG, canvas, layout, color) — " +
+          "`extract` only returns DOM text.",
         parameters: {
           type: "object",
           properties: {
@@ -247,10 +245,8 @@ export class WebAdapter implements Adapter {
             return_screenshot: {
               type: "boolean",
               description:
-                "Take a screenshot after this action and return the image. " +
-                "Set true when the outcome is visual (an image loads, a " +
-                "modal appears, a chart renders, the layout shifts) — " +
-                "`extract` cannot see non-text content.",
+                "Screenshot after the action. Set true when the outcome " +
+                "is visual (image loads, modal/chart appears, layout shifts).",
             },
           },
           required: ["selector"],
@@ -271,10 +267,8 @@ export class WebAdapter implements Adapter {
             return_screenshot: {
               type: "boolean",
               description:
-                "Take a screenshot after this action and return the image. " +
-                "Set true when the outcome is visual (an image loads, a " +
-                "modal appears, a chart renders, the layout shifts) — " +
-                "`extract` cannot see non-text content.",
+                "Screenshot after the action. Set true when the outcome " +
+                "is visual (image loads, modal/chart appears, layout shifts).",
             },
           },
           required: ["text"],
@@ -291,10 +285,8 @@ export class WebAdapter implements Adapter {
             return_screenshot: {
               type: "boolean",
               description:
-                "Take a screenshot after this action and return the image. " +
-                "Set true when the outcome is visual (an image loads, a " +
-                "modal appears, a chart renders, the layout shifts) — " +
-                "`extract` cannot see non-text content.",
+                "Screenshot after the action. Set true when the outcome " +
+                "is visual (image loads, modal/chart appears, layout shifts).",
             },
           },
           required: ["key"],
@@ -316,10 +308,8 @@ export class WebAdapter implements Adapter {
             return_screenshot: {
               type: "boolean",
               description:
-                "Take a screenshot after this action and return the image. " +
-                "Set true when the outcome is visual (an image loads, a " +
-                "modal appears, a chart renders, the layout shifts) — " +
-                "`extract` cannot see non-text content.",
+                "Screenshot after the action. Set true when the outcome " +
+                "is visual (image loads, modal/chart appears, layout shifts).",
             },
           },
           required: ["selector"],
@@ -338,10 +328,8 @@ export class WebAdapter implements Adapter {
             return_screenshot: {
               type: "boolean",
               description:
-                "Take a screenshot after this action and return the image. " +
-                "Set true when the outcome is visual (an image loads, a " +
-                "modal appears, a chart renders, the layout shifts) — " +
-                "`extract` cannot see non-text content.",
+                "Screenshot after the action. Set true when the outcome " +
+                "is visual (image loads, modal/chart appears, layout shifts).",
             },
           },
           required: ["selector"],
@@ -362,10 +350,8 @@ export class WebAdapter implements Adapter {
             return_screenshot: {
               type: "boolean",
               description:
-                "Take a screenshot after this action and return the image. " +
-                "Set true when the outcome is visual (an image loads, a " +
-                "modal appears, a chart renders, the layout shifts) — " +
-                "`extract` cannot see non-text content.",
+                "Screenshot after the action. Set true when the outcome " +
+                "is visual (image loads, modal/chart appears, layout shifts).",
             },
           },
           required: ["selector"],
@@ -399,10 +385,8 @@ export class WebAdapter implements Adapter {
             return_screenshot: {
               type: "boolean",
               description:
-                "Take a screenshot after this action and return the image. " +
-                "Set true when the outcome is visual (an image loads, a " +
-                "modal appears, a chart renders, the layout shifts) — " +
-                "`extract` cannot see non-text content.",
+                "Screenshot after the action. Set true when the outcome " +
+                "is visual (image loads, modal/chart appears, layout shifts).",
             },
           },
           required: ["source_selector"],
@@ -422,10 +406,8 @@ export class WebAdapter implements Adapter {
             return_screenshot: {
               type: "boolean",
               description:
-                "Take a screenshot after this action and return the image. " +
-                "Set true when the outcome is visual (an image loads, a " +
-                "modal appears, a chart renders, the layout shifts) — " +
-                "`extract` cannot see non-text content.",
+                "Screenshot after the action. Set true when the outcome " +
+                "is visual (image loads, modal/chart appears, layout shifts).",
             },
           },
           required: ["x", "y"],
@@ -455,10 +437,8 @@ export class WebAdapter implements Adapter {
             return_screenshot: {
               type: "boolean",
               description:
-                "Take a screenshot after this action and return the image. " +
-                "Set true when the outcome is visual (an image loads, a " +
-                "modal appears, a chart renders, the layout shifts) — " +
-                "`extract` cannot see non-text content.",
+                "Screenshot after the action. Set true when the outcome " +
+                "is visual (image loads, modal/chart appears, layout shifts).",
             },
           },
           required: ["direction"],
@@ -485,10 +465,8 @@ export class WebAdapter implements Adapter {
             return_screenshot: {
               type: "boolean",
               description:
-                "Take a screenshot after this action and return the image. " +
-                "Set true when the outcome is visual (an image loads, a " +
-                "modal appears, a chart renders, the layout shifts) — " +
-                "`extract` cannot see non-text content.",
+                "Screenshot after the action. Set true when the outcome " +
+                "is visual (image loads, modal/chart appears, layout shifts).",
             },
           },
           required: ["selector", "file_paths"],
@@ -504,10 +482,8 @@ export class WebAdapter implements Adapter {
             return_screenshot: {
               type: "boolean",
               description:
-                "Take a screenshot after this action and return the image. " +
-                "Set true when the outcome is visual (an image loads, a " +
-                "modal appears, a chart renders, the layout shifts) — " +
-                "`extract` cannot see non-text content.",
+                "Screenshot after the action. Set true when the outcome " +
+                "is visual (image loads, modal/chart appears, layout shifts).",
             },
           },
           required: ["url"],
@@ -516,10 +492,9 @@ export class WebAdapter implements Adapter {
       {
         name: "extract",
         description:
-          "Extract the text content of the page or an element. Returns DOM " +
-          "text only: images, icons, SVG graphics, canvas output, and CSS " +
-          "background content are NOT captured. For anything visual, use " +
-          "`screenshot` instead.",
+          "Return the DOM text of the page or an element — text only. " +
+          "Images, SVG, canvas, and CSS backgrounds aren't seen; use " +
+          "`screenshot` for visual checks.",
         parameters: {
           type: "object",
           properties: {
@@ -544,10 +519,8 @@ export class WebAdapter implements Adapter {
             return_screenshot: {
               type: "boolean",
               description:
-                "Take a screenshot after this action and return the image. " +
-                "Set true when the outcome is visual (an image loads, a " +
-                "modal appears, a chart renders, the layout shifts) — " +
-                "`extract` cannot see non-text content.",
+                "Screenshot after the action. Set true when the outcome " +
+                "is visual (image loads, modal/chart appears, layout shifts).",
             },
           },
           required: ["expression"],
@@ -574,10 +547,8 @@ export class WebAdapter implements Adapter {
             return_screenshot: {
               type: "boolean",
               description:
-                "Take a screenshot after this action and return the image. " +
-                "Set true when the outcome is visual (an image loads, a " +
-                "modal appears, a chart renders, the layout shifts) — " +
-                "`extract` cannot see non-text content.",
+                "Screenshot after the action. Set true when the outcome " +
+                "is visual (image loads, modal/chart appears, layout shifts).",
             },
           },
         },
