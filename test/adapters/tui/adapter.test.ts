@@ -57,7 +57,7 @@ describe.skipIf(!tmuxAvailable)("TUIAdapter", () => {
     adapter = null; // already closed
   });
 
-  test("executeTool dispatches correctly and logs actions", async () => {
+  test("executeTool dispatches correctly and returns expected results", async () => {
     adapter = new TUIAdapter();
     const logDir = mkdtempSync(join(tmpdir(), "gauntlet-tui-exec-"));
     const logger = new EvidenceLogger(logDir);
@@ -65,18 +65,26 @@ describe.skipIf(!tmuxAvailable)("TUIAdapter", () => {
     await adapter.start("bc -q");
     await new Promise((r) => setTimeout(r, 300));
 
-    await adapter.executeTool("type", { text: "4*5" }, logger);
-    await adapter.executeTool("press", { key: "Enter" }, logger);
+    const typeResult = await adapter.executeTool("type", { text: "4*5" }, logger);
+    expect(typeResult.text).toBe("typed");
+
+    const pressResult = await adapter.executeTool("press", { key: "Enter" }, logger);
+    expect(pressResult.text).toBe("pressed");
+
     await new Promise((r) => setTimeout(r, 300));
 
     const result = await adapter.executeTool("read_screen", {}, logger);
     expect(result.text).toContain("20");
 
-    // Verify logger recorded actions
-    const logContent = readFileSync(join(logDir, "run.jsonl"), "utf-8");
-    expect(logContent).toContain('"action":"type"');
-    expect(logContent).toContain('"action":"press"');
-    expect(logContent).toContain('"action":"read_screen"');
+    // The adapter no longer writes tool-dispatch rows — the agent loop owns
+    // tool_call/tool_result rows. run.jsonl written by the adapter alone
+    // (without the agent) should contain zero tool_call rows.
+    const logPath = join(logDir, "run.jsonl");
+    const logExists = (() => { try { readFileSync(logPath); return true; } catch { return false; } })();
+    if (logExists) {
+      const logContent = readFileSync(logPath, "utf-8");
+      expect(logContent).not.toContain('"type":"tool_call"');
+    }
   });
 
   test("exposes tool definitions for the agent", () => {

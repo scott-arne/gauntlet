@@ -125,7 +125,7 @@ export class WebAdapter implements Adapter {
           mobile: false,
         });
       } catch (err) {
-        this.logger?.logAction("set_viewport_failed", {
+        this.logger?.logEvent("set_viewport_failed", {
           reason: err instanceof Error ? err.message : String(err),
           requested: this.viewport,
         });
@@ -160,7 +160,7 @@ export class WebAdapter implements Adapter {
       } catch (err) {
         // Observer is supplementary. If it fails to start, log and continue.
         const reason = err instanceof Error ? err.message : String(err);
-        logger.logAction("observer_session_failed", { reason });
+        logger.logEvent("observer_session_failed", { reason });
       }
     }
   }
@@ -195,7 +195,7 @@ export class WebAdapter implements Adapter {
         try {
           await rm(dir, { recursive: true, force: true });
         } catch (err) {
-          this.logger?.logAction("chrome_profile_cleanup_failed", {
+          this.logger?.logEvent("chrome_profile_cleanup_failed", {
             dir,
             error: err instanceof Error ? err.message : String(err),
           });
@@ -569,8 +569,6 @@ export class WebAdapter implements Adapter {
     args: Record<string, unknown>,
     logger: EvidenceLogger
   ): Promise<ToolResult> {
-    logger.logAction(name, args);
-
     // Validate the LLM's args shape against the tool schema before dispatch.
     // A bad shape (e.g. `selector: {css: "#foo"}` where string expected)
     // gets reported back to the LLM as a normal tool result so the next
@@ -596,14 +594,14 @@ export class WebAdapter implements Adapter {
       return this.passkeyTool.execute(args);
     }
 
-    const takeReturnScreenshot = async (): Promise<ToolResult["image"]> => {
-      if (!args.return_screenshot) return undefined;
+    const takeReturnScreenshot = async (): Promise<{ image?: ToolResult["image"]; imagePath?: string }> => {
+      if (!args.return_screenshot) return {};
       const tmpFile = join(tmpdir(), `gauntlet-screenshot-${Date.now()}.png`);
       await chrome.screenshot(0, tmpFile, null, false);
       const data = readFileSync(tmpFile);
-      logger.saveScreenshot(Buffer.from(data));
+      const imagePath = logger.saveScreenshot(Buffer.from(data));
       try { unlinkSync(tmpFile); } catch { }
-      return { data: Buffer.from(data).toString("base64"), mediaType: "image/png" };
+      return { image: { data: Buffer.from(data).toString("base64"), mediaType: "image/png" }, imagePath };
     };
 
     switch (name) {
@@ -628,6 +626,7 @@ export class WebAdapter implements Adapter {
         return {
           text: `Screenshot saved to ${saved}`,
           image: { data: Buffer.from(data).toString("base64"), mediaType: "image/png" },
+          imagePath: saved,
         };
       }
       case "click": {
@@ -638,7 +637,7 @@ export class WebAdapter implements Adapter {
             : "";
           return {
             text: `clicked ${args.selector}${note}`,
-            image: await takeReturnScreenshot(),
+            ...await takeReturnScreenshot(),
           };
         } catch (err) {
           // Make failures visible to the agent. A silent "clicked" when
@@ -647,7 +646,7 @@ export class WebAdapter implements Adapter {
           const reason = err instanceof Error ? err.message : String(err);
           return {
             text: `Error: ${reason}`,
-            image: await takeReturnScreenshot(),
+            ...await takeReturnScreenshot(),
           };
         }
       }
@@ -662,37 +661,37 @@ export class WebAdapter implements Adapter {
             await chrome.keyboardPress(0, char);
           }
         }
-        return { text: "typed", image: await takeReturnScreenshot() };
+        return { text: "typed", ...await takeReturnScreenshot() };
       }
       case "press": {
         await chrome.keyboardPress(0, args.key as string);
-        return { text: "pressed", image: await takeReturnScreenshot() };
+        return { text: "pressed", ...await takeReturnScreenshot() };
       }
       case "hover": {
         try {
           await chrome.hover(0, args.selector as string);
-          return { text: `hovered ${args.selector}`, image: await takeReturnScreenshot() };
+          return { text: `hovered ${args.selector}`, ...await takeReturnScreenshot() };
         } catch (err) {
           const reason = err instanceof Error ? err.message : String(err);
-          return { text: `Error: ${reason}`, image: await takeReturnScreenshot() };
+          return { text: `Error: ${reason}`, ...await takeReturnScreenshot() };
         }
       }
       case "double_click": {
         try {
           await chrome.doubleClick(0, args.selector as string);
-          return { text: `double-clicked ${args.selector}`, image: await takeReturnScreenshot() };
+          return { text: `double-clicked ${args.selector}`, ...await takeReturnScreenshot() };
         } catch (err) {
           const reason = err instanceof Error ? err.message : String(err);
-          return { text: `Error: ${reason}`, image: await takeReturnScreenshot() };
+          return { text: `Error: ${reason}`, ...await takeReturnScreenshot() };
         }
       }
       case "right_click": {
         try {
           await chrome.rightClick(0, args.selector as string);
-          return { text: `right-clicked ${args.selector}`, image: await takeReturnScreenshot() };
+          return { text: `right-clicked ${args.selector}`, ...await takeReturnScreenshot() };
         } catch (err) {
           const reason = err instanceof Error ? err.message : String(err);
-          return { text: `Error: ${reason}`, image: await takeReturnScreenshot() };
+          return { text: `Error: ${reason}`, ...await takeReturnScreenshot() };
         }
       }
       case "drag": {
@@ -715,15 +714,15 @@ export class WebAdapter implements Adapter {
         }
         try {
           await chrome.drag(0, sourceSelector, target);
-          return { text: `dragged ${sourceSelector}`, image: await takeReturnScreenshot() };
+          return { text: `dragged ${sourceSelector}`, ...await takeReturnScreenshot() };
         } catch (err) {
           const reason = err instanceof Error ? err.message : String(err);
-          return { text: `Error: ${reason}`, image: await takeReturnScreenshot() };
+          return { text: `Error: ${reason}`, ...await takeReturnScreenshot() };
         }
       }
       case "mouse_move": {
         await chrome.mouseMove(0, args.x as number, args.y as number);
-        return { text: `moved mouse to (${args.x}, ${args.y})`, image: await takeReturnScreenshot() };
+        return { text: `moved mouse to (${args.x}, ${args.y})`, ...await takeReturnScreenshot() };
       }
       case "scroll": {
         const direction = args.direction as "up" | "down" | "left" | "right";
@@ -737,7 +736,7 @@ export class WebAdapter implements Adapter {
           deltaY,
           selector: (args.selector as string) ?? undefined,
         });
-        return { text: `scrolled ${direction} ${amount}px`, image: await takeReturnScreenshot() };
+        return { text: `scrolled ${direction} ${amount}px`, ...await takeReturnScreenshot() };
       }
       case "file_upload": {
         try {
@@ -748,16 +747,16 @@ export class WebAdapter implements Adapter {
           );
           return {
             text: `uploaded ${result.files} file(s) to ${args.selector}`,
-            image: await takeReturnScreenshot(),
+            ...await takeReturnScreenshot(),
           };
         } catch (err) {
           const reason = err instanceof Error ? err.message : String(err);
-          return { text: `Error: ${reason}`, image: await takeReturnScreenshot() };
+          return { text: `Error: ${reason}`, ...await takeReturnScreenshot() };
         }
       }
       case "navigate": {
         await chrome.navigate(0, args.url as string);
-        return { text: "navigated", image: await takeReturnScreenshot() };
+        return { text: "navigated", ...await takeReturnScreenshot() };
       }
       case "extract": {
         const selector = args.selector as string | undefined;
@@ -771,17 +770,17 @@ export class WebAdapter implements Adapter {
       case "eval": {
         const result = await chrome.evaluate(0, args.expression as string);
         const text = result === undefined ? "undefined" : (typeof result === "string" ? result : JSON.stringify(result));
-        return { text, image: await takeReturnScreenshot() };
+        return { text, ...await takeReturnScreenshot() };
       }
       case "wait_for": {
         const timeout = (args.timeout as number) ?? 5000;
         if (args.selector) {
           await chrome.waitForElement(0, args.selector as string, timeout);
-          return { text: "element found", image: await takeReturnScreenshot() };
+          return { text: "element found", ...await takeReturnScreenshot() };
         }
         if (args.text) {
           await chrome.waitForText(0, args.text as string, timeout);
-          return { text: "text found", image: await takeReturnScreenshot() };
+          return { text: "text found", ...await takeReturnScreenshot() };
         }
         return { text: "nothing to wait for — provide selector or text" };
       }

@@ -182,8 +182,6 @@ export class TUIAdapter implements Adapter {
     args: Record<string, unknown>,
     logger: EvidenceLogger
   ): Promise<ToolResult> {
-    logger.logAction(name, args);
-
     // See WebAdapter.executeTool for the rationale: validate the LLM's
     // argument shape once, upfront, before dispatching to a handler that
     // would otherwise `as` the types and crash on bad input.

@@ -185,7 +185,7 @@ export function buildInstallPasskeyTool(
     const path = typeof args.path === "string" ? args.path.trim() : "";
 
     if (!path) {
-      logger?.logAction("install_passkey_failed", {
+      logger?.logEvent("install_passkey_failed", {
         path: "", step: "validate_args", error: "missing path argument",
       });
       return {
@@ -198,7 +198,7 @@ export function buildInstallPasskeyTool(
       resolved = resolveInside(contextRoot, path);
     } catch (err) {
       const error = errorMessage(err);
-      logger?.logAction("install_passkey_failed", {
+      logger?.logEvent("install_passkey_failed", {
         path, step: "resolve_path", error,
       });
       return { text: `Error: ${error}` };
@@ -209,7 +209,7 @@ export function buildInstallPasskeyTool(
       credential = readPasskeyFile(resolved);
     } catch (err) {
       const error = errorMessage(err);
-      logger?.logAction("install_passkey_failed", {
+      logger?.logEvent("install_passkey_failed", {
         path, step: "read_passkey", error,
       });
       return { text: `Error: ${error}` };
@@ -232,7 +232,7 @@ export function buildInstallPasskeyTool(
       step = "add_credential";
       await session.addCredential(authenticatorId, credential);
 
-      logger?.logAction("install_passkey_ok", {
+      logger?.logEvent("install_passkey_ok", {
         path, authenticatorId, ...credentialContext(credential),
       });
       return {
@@ -240,7 +240,7 @@ export function buildInstallPasskeyTool(
       };
     } catch (err) {
       const error = errorMessage(err);
-      logger?.logAction("install_passkey_failed", {
+      logger?.logEvent("install_passkey_failed", {
         path, step, error,
         authenticatorId,
         authenticatorOptions: DEFAULT_AUTHENTICATOR_OPTIONS,

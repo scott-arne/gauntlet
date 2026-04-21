@@ -199,6 +199,9 @@ interface LoggedAction { action: string; params: Record<string, unknown> }
 function makeFakeLogger(): { logger: EvidenceLogger; actions: LoggedAction[] } {
   const actions: LoggedAction[] = [];
   const logger = {
+    logEvent(action: string, params: Record<string, unknown>) {
+      actions.push({ action, params });
+    },
     logAction(action: string, params: Record<string, unknown>) {
       actions.push({ action, params });
     },

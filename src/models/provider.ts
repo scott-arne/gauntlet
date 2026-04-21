@@ -18,6 +18,8 @@ export interface ToolResult {
     data: string;       // base64-encoded
     mediaType: string;  // e.g. "image/png"
   };
+  imagePath?: string;       // relative path if the image has been persisted
+  artifactPath?: string;    // relative path if a large payload was spilled
 }
 
 export interface TokenUsage {
