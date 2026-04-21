@@ -196,4 +196,56 @@ describe("EvidenceLogger", () => {
     expect(existsSync(join(outDir, "log.jsonl"))).toBe(true);
     expect(existsSync(join(outDir, "network-ws.jsonl"))).toBe(true);
   });
+
+  test("logToolResult spills oversize text to an artifact and writes tool_result before diagnostic event", () => {
+    const bigText = "x".repeat(40_000);
+    logger.logToolResult({
+      turn: 1,
+      toolUseId: "tu-1",
+      name: "extract",
+      durationMs: 100,
+      text: bigText,
+      error: false,
+    });
+
+    const rows = readFileSync(join(outDir, "run.jsonl"), "utf-8")
+      .trim()
+      .split("\n")
+      .map((l) => JSON.parse(l));
+
+    // First row should be the tool_result
+    const resultRow = rows[0];
+    expect(resultRow.type).toBe("tool_result");
+    expect(resultRow.textTruncated).toBe(true);
+    expect(resultRow.textBytes).toBe(Buffer.byteLength(bigText, "utf8"));
+    expect(resultRow.artifact).toMatch(/^artifacts\/\d+\.txt$/);
+
+    // Artifact file should exist and contain the full original text
+    expect(existsSync(join(outDir, resultRow.artifact))).toBe(true);
+    expect(readFileSync(join(outDir, resultRow.artifact), "utf-8")).toBe(bigText);
+
+    // Second row should be the diagnostic event
+    const eventRow = rows[1];
+    expect(eventRow.type).toBe("event");
+    expect(eventRow.name).toBe("tool_result_text_oversize");
+  });
+
+  test("logToolCall writes a tool_call row with expected fields", () => {
+    logger.logToolCall({
+      turn: 1,
+      toolUseId: "t1",
+      name: "navigate",
+      arguments: { url: "/" },
+    });
+
+    const [row] = readFileSync(join(outDir, "run.jsonl"), "utf-8")
+      .trim()
+      .split("\n")
+      .map((l) => JSON.parse(l));
+
+    expect(row.type).toBe("tool_call");
+    expect(row.toolUseId).toBe("t1");
+    expect(row.name).toBe("navigate");
+    expect(row.arguments.url).toBe("/");
+  });
 });

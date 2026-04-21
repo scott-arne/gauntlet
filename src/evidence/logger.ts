@@ -94,6 +94,8 @@ export class EvidenceLogger {
     return () => { this.observers.delete(fn); };
   }
 
+  // A misbehaving observer (one that throws) will not prevent other observers
+  // from receiving the action.
   private notifyObservers(action: string, params: Record<string, unknown>): void {
     for (const fn of this.observers) {
       try { fn(action, params); } catch { /* isolated */ }
@@ -156,12 +158,14 @@ export class EvidenceLogger {
         textBytes: bytes,
         artifact: fields.artifact ?? spilled,
       };
+      this.writeEvent("tool_result", body);
       this.logEvent("tool_result_text_oversize", {
         turn: fields.turn,
-        name: fields.name,
+        toolName: fields.name,
         bytes,
         artifact: spilled,
       });
+      return;
     }
     this.writeEvent("tool_result", body);
   }
