@@ -47,6 +47,36 @@ describe("WebAdapter", () => {
     expect(props.return_screenshot).toBeUndefined();
   });
 
+  // Nudge: the agent was defaulting to `extract` and missing visual-only
+  // criteria ("is a flamingo rendered?"). The tool descriptions must
+  // spell out the text-vs-pixels split so the model reaches for
+  // `screenshot` without the story card having to say so.
+  test("screenshot/extract descriptions cue the text-vs-pixels split", () => {
+    const adapter = new WebAdapter();
+    const tools = adapter.toolDefinitions();
+    const screenshotDesc = tools.find((t) => t.name === "screenshot")!.description.toLowerCase();
+    const extractDesc = tools.find((t) => t.name === "extract")!.description.toLowerCase();
+
+    // screenshot: cross-references extract and names visual content.
+    expect(screenshotDesc).toContain("extract");
+    expect(screenshotDesc).toMatch(/image|visual|pixel/);
+
+    // extract: calls out that images/SVG/canvas are not returned and points at screenshot.
+    expect(extractDesc).toContain("screenshot");
+    expect(extractDesc).toMatch(/text only|not captured|not.*text/);
+  });
+
+  test("return_screenshot descriptions cue visual-outcome usage", () => {
+    const adapter = new WebAdapter();
+    const tools = adapter.toolDefinitions();
+    const sampled = ["click", "navigate", "wait_for", "eval"];
+    for (const name of sampled) {
+      const props = (tools.find((t) => t.name === name)!.parameters as any).properties;
+      const desc = String(props.return_screenshot.description).toLowerCase();
+      expect(desc).toMatch(/visual|image loads|modal|chart|layout/);
+    }
+  });
+
   test("omits install_passkey when context root is empty", () => {
     const tmp = mkdtempSync(join(tmpdir(), "gauntlet-web-nopasskey-"));
     try {
