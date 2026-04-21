@@ -13,6 +13,8 @@ export interface RunConfigSnapshot {
   /** `host:port`, omitted when the adapter auto-launched Chrome. */
   chrome?: string;
   turns: number;
+  /** CSS-pixel viewport the browsing tab was pinned to. */
+  viewport?: { width: number; height: number };
 }
 
 export type VetStatus = "pass" | "fail" | "investigate";

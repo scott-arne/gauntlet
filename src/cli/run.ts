@@ -69,6 +69,7 @@ export async function run(opts: RunCommandOptions): Promise<void> {
         contextRoot,
         logger,
         chromeProfileName,
+        viewport: config.defaultViewport,
       });
       await adapter.start(target);
       break;
@@ -84,6 +85,7 @@ export async function run(opts: RunCommandOptions): Promise<void> {
     adapter: adapterType,
     chrome: chromeOptForSnapshot ? `${chromeOptForSnapshot.host}:${chromeOptForSnapshot.port}` : undefined,
     turns: config.defaultTurns,
+    viewport: config.defaultViewport,
   };
 
   try {

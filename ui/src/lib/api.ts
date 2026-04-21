@@ -23,6 +23,7 @@ export interface RunConfigSnapshot {
   adapter: "web" | "cli" | "tui";
   chrome?: string;
   turns: number;
+  viewport?: { width: number; height: number };
 }
 
 export interface VetResult {
@@ -98,6 +99,7 @@ export interface ServerConfig {
   defaultModel: string | null;
   defaultTarget: string | null;
   defaultTurns: number;
+  defaultViewport: { width: number; height: number };
 }
 
 export interface ErrorEntry {
@@ -169,7 +171,7 @@ export const api = {
       request<FanoutResult>(`/fanout/${runId}/failure`, { method: "POST" }),
   },
   run: {
-    start: (cardId: string, body: { target: string; model?: string; adapter?: string; chrome?: string; turns?: number }) =>
+    start: (cardId: string, body: { target: string; model?: string; adapter?: string; chrome?: string; turns?: number; viewport?: { width: number; height: number } }) =>
       request<{ runId: string; cardId: string }>(`/run/${cardId}`, {
         method: "POST",
         body: JSON.stringify(body),

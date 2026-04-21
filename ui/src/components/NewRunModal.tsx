@@ -9,13 +9,21 @@ export interface NewRunPrefill {
   chrome?: string;
   turns?: number;
   adapter?: "web" | "cli" | "tui";
+  viewport?: { width: number; height: number };
 }
 
 interface NewRunModalProps {
   onClose: () => void;
   onStarted: (
     cardId: string,
-    config: { target: string; model?: string; chrome?: string; turns?: number; adapter?: string },
+    config: {
+      target: string;
+      model?: string;
+      chrome?: string;
+      turns?: number;
+      adapter?: string;
+      viewport?: { width: number; height: number };
+    },
   ) => void;
   prefill?: NewRunPrefill;
 }
@@ -83,6 +91,11 @@ export function NewRunModal({ onClose, onStarted, prefill }: NewRunModalProps) {
       chrome: chrome.trim() || undefined,
       turns: turnsNum,
       adapter: prefill?.adapter,
+      // Viewport is not yet a user-visible field — we pass through the
+      // prefill (from "Run Again") so a re-run lands at the same
+      // dimensions as the original. New runs from the button get the
+      // server default via AppConfig.
+      viewport: prefill?.viewport,
     });
   }
 

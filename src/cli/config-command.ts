@@ -8,6 +8,7 @@ interface ConfigOutput {
     defaultChrome: { host: string; port: number };
     defaultTarget: string | null;
     defaultTurns: number;
+    defaultViewport: { width: number; height: number };
     models: {
       agent: string;
       fanout: string | null;
@@ -38,6 +39,7 @@ export function buildConfigOutput(config: AppConfig, env: NodeJS.ProcessEnv): Co
       defaultChrome: config.defaultChrome,
       defaultTarget: config.defaultTarget ?? null,
       defaultTurns: config.defaultTurns,
+      defaultViewport: config.defaultViewport,
       models: {
         agent: config.models.agent,
         fanout: config.models.fanout ?? null,
@@ -73,6 +75,7 @@ export function formatConfigText(output: ConfigOutput): string {
   lines.push(`  defaultChrome:  ${output.gauntlet.defaultChrome.host}:${output.gauntlet.defaultChrome.port}  (${output.gauntlet.sources.defaultChrome})`);
   lines.push(`  defaultTarget:  ${output.gauntlet.defaultTarget ?? "(unset)"}  (${output.gauntlet.sources.defaultTarget})`);
   lines.push(`  defaultTurns:   ${output.gauntlet.defaultTurns}  (${output.gauntlet.sources.defaultTurns})`);
+  lines.push(`  defaultViewport: ${output.gauntlet.defaultViewport.width}x${output.gauntlet.defaultViewport.height}  (${output.gauntlet.sources.defaultViewport})`);
   lines.push(`  models.agent:   ${output.gauntlet.models.agent}  (${output.gauntlet.sources["models.agent"]})`);
   lines.push(`  models.fanout:  ${output.gauntlet.models.fanout ?? "(unset)"}  (${output.gauntlet.sources["models.fanout"]})`);
   lines.push(`  models.available: [${output.gauntlet.models.available.join(", ")}]  (${output.gauntlet.sources["models.available"]})`);

@@ -165,6 +165,7 @@ export function RunDetail({ result, onFanout, onRunAgain }: RunDetailProps) {
                 chrome: result.config!.chrome,
                 turns: result.config!.turns,
                 adapter: result.config!.adapter,
+                viewport: result.config!.viewport,
               })}
             >
               Run Again

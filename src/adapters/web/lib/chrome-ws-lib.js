@@ -1872,6 +1872,11 @@ function buildChromeArgs({ chosenPort, chromeUserDataDir, chromeHeadless }) {
   const args = [
     `--remote-debugging-port=${chosenPort}`,
     `--user-data-dir=${chromeUserDataDir}`,
+    // Pin the browser window so headed runs and the initial headless
+    // framebuffer land at a desktop-typical size. Per-run viewport
+    // overrides via Emulation.setDeviceMetricsOverride still take
+    // precedence for what the page itself sees.
+    '--window-size=1440,900',
     '--no-first-run',
     '--no-default-browser-check',
     '--disable-background-networking',

@@ -5,7 +5,7 @@ import { tmpdir } from "os";
 import type { Adapter } from "../adapter";
 import type { ToolDefinition, ToolResult } from "../../models/provider";
 import type { EvidenceLogger, BrowserEventCategory } from "../../evidence/logger";
-import type { ChromeEndpoint } from "../../config";
+import type { ChromeEndpoint, Viewport } from "../../config";
 import { buildReadTool, type ReadTool } from "../../context/read-tool";
 import {
   buildInstallPasskeyTool,
@@ -56,6 +56,14 @@ export interface WebAdapterOptions {
    * `/^[a-zA-Z0-9_-]+$/` enforced by chrome-ws-lib.setProfileName.
    */
   chromeProfileName?: string;
+  /**
+   * Pins the browsing tab to a specific CSS-pixel viewport via
+   * `Emulation.setDeviceMetricsOverride`. Applied once in `start()`
+   * after the initial navigate. Omit to leave whatever default Chrome
+   * picks — but every production path threads one in (default 1440x900
+   * from AppConfig).
+   */
+  viewport?: Viewport;
 }
 
 export class WebAdapter implements Adapter {
@@ -65,6 +73,7 @@ export class WebAdapter implements Adapter {
   private logger: EvidenceLogger | null;
   private observerSession: ObserverSession | null = null;
   private chromeProfileName: string | null;
+  private viewport: Viewport | null;
   /** Lazy cache of tool name → parameter schema for O(1) validation. */
   private toolSchemas: Map<string, ToolDefinition["parameters"]> | null = null;
 
@@ -79,6 +88,7 @@ export class WebAdapter implements Adapter {
     // or seeded from CHROME_WS_HOST/CHROME_WS_PORT at module load).
     this.logger = options?.logger ?? null;
     this.chromeProfileName = options?.chromeProfileName ?? null;
+    this.viewport = options?.viewport ?? null;
     this.readTool = options?.contextRoot
       ? buildReadTool(options.contextRoot)
       : null;
@@ -100,6 +110,26 @@ export class WebAdapter implements Adapter {
       await chrome.startChrome(true, this.chromeProfileName ?? null); // headless
     }
     await chrome.navigate(0, url);
+
+    // Pin the viewport before the observer opens so any downstream
+    // layout/resize events are captured as initial state. Best-effort:
+    // a failing viewport override should not fail the run, since the
+    // window-size flag already gives us a reasonable default.
+    if (this.viewport) {
+      try {
+        await chrome.setViewport(0, {
+          width: this.viewport.width,
+          height: this.viewport.height,
+          deviceScaleFactor: 1,
+          mobile: false,
+        });
+      } catch (err) {
+        this.logger?.logAction("set_viewport_failed", {
+          reason: err instanceof Error ? err.message : String(err),
+          requested: this.viewport,
+        });
+      }
+    }
 
     // Remote-Chrome state reset (spec §5.1): we cannot delete the
     // remote's --user-data-dir ourselves, so we fall back to a

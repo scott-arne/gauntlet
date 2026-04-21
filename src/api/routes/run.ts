@@ -8,7 +8,7 @@ import { runAgent } from "../../agent/agent";
 import { renderContextTree } from "../../context/tree";
 import { makeRunId } from "../../util/id";
 import { gauntletPath } from "../../paths";
-import { mergeRunConfig, validateRunBody, type AppConfig, type ChromeEndpoint } from "../../config";
+import { mergeRunConfig, validateRunBody, type AppConfig, type ChromeEndpoint, type Viewport } from "../../config";
 import type { Adapter } from "../../adapters/adapter";
 import type { RunBroadcaster } from "../ws";
 import type { ActiveRunRegistry } from "../active-runs";
@@ -24,6 +24,7 @@ function createAdapter(
   contextRoot: string,
   logger: EvidenceLogger,
   chromeProfileName: string | undefined,
+  viewport: Viewport | undefined,
 ): Adapter {
   switch (type) {
     case "cli": {
@@ -36,7 +37,7 @@ function createAdapter(
     }
     case "web": {
       const { WebAdapter } = require("../../adapters/web/adapter");
-      return new WebAdapter({ chrome, contextRoot, logger, chromeProfileName });
+      return new WebAdapter({ chrome, contextRoot, logger, chromeProfileName, viewport });
     }
     default:
       throw new Error(`Unknown adapter type: ${type}`);
@@ -89,13 +90,14 @@ export function runRoutes(
     // §5.1). The cardId is already encoded in runId, so no additional
     // suffix is needed.
     const chromeProfileName = `gauntlet-run-${runId}`;
-    const adapter = createAdapter(effective.adapter, effective.chrome, contextRoot, logger, chromeProfileName);
+    const adapter = createAdapter(effective.adapter, effective.chrome, contextRoot, logger, chromeProfileName, effective.viewport);
     const runConfig: RunConfigSnapshot = {
       target: effective.target,
       model: effective.model,
       adapter: effective.adapter,
       chrome: effective.chrome ? `${effective.chrome.host}:${effective.chrome.port}` : undefined,
       turns: effective.turns,
+      viewport: effective.viewport,
     };
     // Render the tree **once per run** — the immutability invariant
     // (spec §4.2) forbids re-rendering during the run.

@@ -5,6 +5,11 @@ export interface ChromeEndpoint {
   port: number;
 }
 
+export interface Viewport {
+  width: number;
+  height: number;
+}
+
 export interface AppConfig {
   projectRoot: string;
   port: number;
@@ -21,6 +26,12 @@ export interface AppConfig {
    * overrides (request body `turns` or CLI `--turns`) take precedence.
    */
   defaultTurns: number;
+  /**
+   * Viewport applied to the browsing tab on web-adapter runs (via
+   * `Emulation.setDeviceMetricsOverride`). Per-run overrides (request
+   * body `viewport` or CLI `--viewport`) take precedence.
+   */
+  defaultViewport: Viewport;
   models: {
     agent: string;
     fanout?: string;
@@ -36,6 +47,7 @@ export interface AppConfig {
     defaultChrome: "default" | "env" | "flag";
     defaultTarget: "default" | "env" | "flag" | "unset";
     defaultTurns: "default" | "env" | "flag";
+    defaultViewport: "default" | "env" | "flag";
     "models.agent": "default" | "env" | "flag";
     "models.fanout": "default" | "env" | "flag" | "unset";
     "models.available": "default" | "env" | "flag";
@@ -48,6 +60,7 @@ export interface CliArgsInput {
   chrome?: string;
   target?: string;
   turns?: number;
+  viewport?: string;
   models?: { agent?: string; fanout?: string };
 }
 
@@ -57,6 +70,7 @@ export interface RunRequestBody {
   chrome?: string;
   adapter?: AdapterType;
   turns?: number;
+  viewport?: Viewport;
 }
 
 export interface EffectiveRunConfig {
@@ -70,11 +84,33 @@ export interface EffectiveRunConfig {
   chrome: ChromeEndpoint | undefined;
   adapter: AdapterType;
   turns: number;
+  viewport: Viewport;
   projectRoot: string;
 }
 
-const RUN_BODY_ALLOWED = new Set(["target", "model", "chrome", "adapter", "turns"]);
+const RUN_BODY_ALLOWED = new Set(["target", "model", "chrome", "adapter", "turns", "viewport"]);
 export const DEFAULT_MAX_TURNS = 50;
+export const DEFAULT_VIEWPORT: Viewport = { width: 1440, height: 900 };
+
+function parseViewportString(raw: string, label: string): Viewport {
+  const match = /^(\d+)\s*[x×]\s*(\d+)$/i.exec(raw.trim());
+  if (!match) {
+    throw new Error(`Invalid ${label} "${raw}": expected WxH (e.g. 1440x900)`);
+  }
+  const width = parseInt(match[1], 10);
+  const height = parseInt(match[2], 10);
+  assertViewportBounds({ width, height }, label);
+  return { width, height };
+}
+
+function assertViewportBounds(v: Viewport, label: string): void {
+  if (!Number.isInteger(v.width) || v.width < 320 || v.width > 7680) {
+    throw new Error(`Invalid ${label} width ${v.width}: must be an integer in [320, 7680]`);
+  }
+  if (!Number.isInteger(v.height) || v.height < 200 || v.height > 4320) {
+    throw new Error(`Invalid ${label} height ${v.height}: must be an integer in [200, 4320]`);
+  }
+}
 
 export function validateRunBody(body: unknown): RunRequestBody {
   if (!body || typeof body !== "object") {
@@ -102,12 +138,27 @@ export function validateRunBody(body: unknown): RunRequestBody {
     }
     turns = bodyObj.turns;
   }
+  let viewport: Viewport | undefined;
+  if (bodyObj.viewport !== undefined) {
+    const v = bodyObj.viewport;
+    if (!v || typeof v !== "object") {
+      throw new Error("run request body: viewport must be an object with {width, height}");
+    }
+    const vObj = v as Record<string, unknown>;
+    if (typeof vObj.width !== "number" || typeof vObj.height !== "number") {
+      throw new Error("run request body: viewport.width and viewport.height must be numbers");
+    }
+    const candidate = { width: vObj.width, height: vObj.height };
+    assertViewportBounds(candidate, "run request body: viewport");
+    viewport = candidate;
+  }
   return {
     target: bodyObj.target,
     model: typeof bodyObj.model === "string" ? bodyObj.model : undefined,
     chrome: typeof bodyObj.chrome === "string" ? bodyObj.chrome : undefined,
     adapter: bodyObj.adapter,
     turns,
+    viewport,
   };
 }
 
@@ -128,6 +179,7 @@ export function mergeRunConfig(app: AppConfig, body: RunRequestBody): EffectiveR
     chrome,
     adapter: body.adapter ?? "web",
     turns: body.turns ?? app.defaultTurns,
+    viewport: body.viewport ?? app.defaultViewport,
     projectRoot: app.projectRoot,
   };
 }
@@ -230,6 +282,18 @@ export function loadConfig(args: CliArgsInput, env: NodeJS.ProcessEnv): AppConfi
     targetSource = "flag";
   }
 
+  // defaultViewport
+  let defaultViewport: Viewport = DEFAULT_VIEWPORT;
+  let viewportSource: "default" | "env" | "flag" = "default";
+  if (env.GAUNTLET_VIEWPORT) {
+    defaultViewport = parseViewportString(env.GAUNTLET_VIEWPORT, "GAUNTLET_VIEWPORT");
+    viewportSource = "env";
+  }
+  if (args.viewport !== undefined) {
+    defaultViewport = parseViewportString(args.viewport, "--viewport");
+    viewportSource = "flag";
+  }
+
   // defaultTurns — hard cap on agent turns per run.
   let defaultTurns = DEFAULT_MAX_TURNS;
   let turnsSource: "default" | "env" | "flag" = "default";
@@ -295,6 +359,7 @@ export function loadConfig(args: CliArgsInput, env: NodeJS.ProcessEnv): AppConfi
     defaultChrome,
     defaultTarget,
     defaultTurns,
+    defaultViewport,
     models: {
       agent: agentModel,
       fanout: fanoutModel,
@@ -307,6 +372,7 @@ export function loadConfig(args: CliArgsInput, env: NodeJS.ProcessEnv): AppConfi
       defaultChrome: chromeSource,
       defaultTarget: targetSource,
       defaultTurns: turnsSource,
+      defaultViewport: viewportSource,
       "models.agent": agentSource,
       "models.fanout": fanoutSource,
       "models.available": availableSource,
