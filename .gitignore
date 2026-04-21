@@ -39,3 +39,6 @@ report.[0-9]_.[0-9]_.[0-9]_.[0-9]_.json
 .gauntlet/results/
 .gauntlet/context/
 .gauntlet/profiles/
+
+# Claude Code local data (worktrees, agent state, etc.)
+.claude/
