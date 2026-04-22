@@ -9,6 +9,7 @@ import { RunsList } from "./components/RunsList";
 import { RunDetail } from "./components/RunDetail";
 import { NewRunModal, type NewRunPrefill } from "./components/NewRunModal";
 import { LiveRun } from "./components/LiveRun";
+import { TranscriptView } from "./components/transcript";
 import { Spinner } from "./components/shared";
 import { api, type VetResult, type ActiveRun } from "./lib/api";
 import { useCards } from "./hooks/useCards";
@@ -216,12 +217,12 @@ export default function App() {
   const cardIdMatch = location.pathname.match(/^\/cards\/(?!new$)(.+)/);
   const selectedCardId = cardIdMatch?.[1];
 
-  // /runs/:id (but not /runs/live or /runs/live/:id)
-  const runIdMatch = location.pathname.match(/^\/runs\/(?!live(?:\/|$))(.+)/);
+  // /runs/:id (but not /runs/live/* and not /runs/:id/transcript sidebar selection)
+  const runIdMatch = location.pathname.match(/^\/runs\/(?!live(?:\/|$))([^/]+)/);
   const selectedRunId = runIdMatch?.[1];
 
-  // /runs/live/:id
-  const liveIdMatch = location.pathname.match(/^\/runs\/live\/(.+)/);
+  // /runs/live/:id (including /runs/live/:id/transcript)
+  const liveIdMatch = location.pathname.match(/^\/runs\/live\/([^/]+)/);
   const liveRunId = liveIdMatch?.[1];
 
   // Top of the active-runs list = the freshest in-flight run (registry sorts desc).
@@ -313,6 +314,8 @@ export default function App() {
               onRunAgain={(prefill) => setRunModal({ prefill })}
             />
           } />
+          <Route path="/runs/:id/transcript" element={<TranscriptView mode="posthoc" />} />
+          <Route path="/runs/live/:id/transcript" element={<TranscriptView mode="live" />} />
         </Routes>
       </AppShell>
 

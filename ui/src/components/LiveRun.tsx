@@ -1,6 +1,6 @@
 import { useRunStream } from "../hooks/useRunStream";
 import { useEffect, useRef } from "react";
-import { useParams, useNavigate, Navigate } from "react-router-dom";
+import { useParams, useNavigate, Navigate, Link } from "react-router-dom";
 import { type ActiveRun } from "../lib/api";
 import { parseRunId } from "../lib/runId";
 import { Spinner } from "./shared";
@@ -52,15 +52,23 @@ export function LiveRun({ activeRuns, activeRunsLoaded, onComplete }: LiveRunPro
             {connected ? "Connected" : "Connecting..."}
           </span>
         </div>
-        {result && (
-          <span className={`text-sm px-2 py-1 rounded ${
-            result.status === "pass" ? "bg-green-100 text-green-800" :
-            result.status === "fail" ? "bg-red-100 text-red-800" :
-            "bg-yellow-100 text-yellow-800"
-          }`}>
-            {result.status}
-          </span>
-        )}
+        <div className="flex items-center gap-3">
+          <Link
+            to={`/runs/live/${runId}/transcript`}
+            className="text-xs text-teal hover:underline"
+          >
+            View transcript →
+          </Link>
+          {result && (
+            <span className={`text-sm px-2 py-1 rounded ${
+              result.status === "pass" ? "bg-green-100 text-green-800" :
+              result.status === "fail" ? "bg-red-100 text-red-800" :
+              "bg-yellow-100 text-yellow-800"
+            }`}>
+              {result.status}
+            </span>
+          )}
+        </div>
       </div>
 
       {error && (

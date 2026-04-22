@@ -1,4 +1,5 @@
 import { useState } from "react";
+import { Link } from "react-router-dom";
 import { api, type VetResult, type FanoutResult } from "../lib/api";
 import type { NewRunPrefill } from "./NewRunModal";
 import { StatusBadge, formatDuration } from "./shared";
@@ -54,6 +55,12 @@ export function RunDetail({ result, onFanout, onRunAgain }: RunDetailProps) {
       <div className={`flex items-center gap-3 ${when ? "mb-2" : "mb-6"}`}>
         <h1 className="heading-display text-2xl">{result.scenario}</h1>
         <StatusBadge status={result.status} size="md" />
+        <Link
+          to={`/runs/${result.runId}/transcript`}
+          className="text-xs text-teal hover:underline ml-auto"
+        >
+          View transcript →
+        </Link>
       </div>
       {when && (
         <p className="text-sm text-slate mb-6">Run at {when}</p>
