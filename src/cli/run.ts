@@ -1,4 +1,5 @@
 import { readFileSync } from "fs";
+import { join } from "path";
 import { parseStoryCard } from "../format/story-card";
 import { EvidenceLogger } from "../evidence/logger";
 import { writeResultFiles } from "../evidence/writer";
@@ -8,6 +9,7 @@ import { CLIAdapter } from "../adapters/cli/adapter";
 import { renderContextTree } from "../context/tree";
 import { makeRunId } from "../util/id";
 import { gauntletPath } from "../paths";
+import { snapshotRunInputs } from "../runs/snapshot";
 import type { AppConfig } from "../config";
 import type { RunConfigSnapshot } from "../types";
 
@@ -33,11 +35,22 @@ export async function run(opts: RunCommandOptions): Promise<void> {
   // stays available as an explicit override for ad-hoc debugging.
   const runId = makeRunId(card.id);
   const outDir = opts.outDir ?? gauntletPath(config.projectRoot, "results", runId);
+  // Snapshot story + context into <outDir>/inputs/ before anything
+  // reads the context — and before createClient, which can throw on
+  // unsupported models. Every downstream consumer (read-tool, passkey
+  // tool, context-tree renderer) uses the snapshotted root, so the
+  // agent sees a frozen view even if the source files change during
+  // the run.
+  snapshotRunInputs({
+    runDir: outDir,
+    storyPath: scenarioPath,
+    contextRoot: gauntletPath(config.projectRoot, "context"),
+  });
   const logger = new EvidenceLogger(outDir);
   const client = createClient(config.models.agent);
-  const contextRoot = gauntletPath(config.projectRoot, "context");
-  // Render the tree **once per run** — the immutability invariant
-  // (spec §4.2) forbids re-rendering during the run.
+  const contextRoot = join(outDir, "inputs", "context");
+  // Render the tree once per run — the immutability invariant forbids
+  // re-rendering during the run.
   const contextTree = renderContextTree(contextRoot);
 
   let adapter;
