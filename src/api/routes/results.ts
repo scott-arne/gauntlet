@@ -165,6 +165,9 @@ function collectManifestPaths(manifest: unknown): Set<string> {
     }
     if (typeof e.log === "string") paths.add(e.log);
     if (typeof e.video === "string") paths.add(e.video);
+    if (Array.isArray(e.artifacts)) {
+      for (const a of e.artifacts) if (typeof a === "string") paths.add(a);
+    }
   }
 
   if (Array.isArray(m.observations)) {
