@@ -1,0 +1,688 @@
+/* ============================================================
+   Gauntlet · transcript view
+   Scoped stylesheet. All classes prefixed `.tr-` to coexist with
+   Tailwind v4 without collisions. Imported by TranscriptView.tsx
+   (not main.tsx), so it's tree-shaken out of routes that don't
+   render the transcript.
+
+   Tokens and visual language ported verbatim from the mocks at
+   .claude/worktrees/penelope-chat-ux-mocks/mocks/style.css plus
+   the per-page blocks in transcript-rundetail.html (post-hoc),
+   transcript-liverun.html (live), transcript-fail.html (errors),
+   and artifact-drawer.html (drawer). Don't retune values — they
+   were chosen deliberately against the Brainstorm design language.
+   ============================================================ */
+
+:root {
+  /* text */
+  --tr-ink: #1b2631;
+  --tr-ink-light: #374a5e;
+  --tr-slate: #5f6f80;
+  --tr-slate-soft: #8a97a5;
+
+  /* accent: teal family */
+  --tr-teal: #1a6b5a;
+  --tr-teal-dark: #135c4c;
+  --tr-teal-mid: #2d8a7e;
+  --tr-teal-light: #d4ece8;
+  --tr-teal-wash: #eaf5f2;
+
+  /* surfaces: warm cream / stone */
+  --tr-surface: #f7f7f5;
+  --tr-panel: #f0efe9;
+  --tr-panel-recessed: #efede6;
+  --tr-white: #ffffff;
+  --tr-paper: #fdfcf9;
+
+  /* borders */
+  --tr-edge: #ddd9d2;
+  --tr-edge-light: #e8e6e0;
+  --tr-rule: #d0ccc4;
+
+  /* status */
+  --tr-coral: #c0392b;
+  --tr-coral-wash: #fdf0ee;
+  --tr-coral-edge: #f1bdb6;
+  --tr-amber: #c27a2a;
+  --tr-amber-wash: #faf0dc;
+  --tr-success: #15803d;
+  --tr-success-wash: #dcfce7;
+
+  /* tool-error red (from transcript-fail.html) */
+  --tr-red: #b91c1c;
+  --tr-red-dark: #7f1d1d;
+  --tr-red-soft: #fef2f2;
+  --tr-red-edge: #fca5a5;
+
+  /* shadows: warm-brown rgba, three tiers */
+  --tr-shadow-sm: 0 1px 3px rgba(30, 25, 20, 0.07), 0 0 0 1px rgba(30, 25, 20, 0.06);
+  --tr-shadow-md: 0 4px 12px rgba(30, 25, 20, 0.10), 0 0 0 1px rgba(30, 25, 20, 0.05);
+  --tr-shadow-lg: 0 8px 24px rgba(30, 25, 20, 0.14), 0 0 0 1px rgba(30, 25, 20, 0.05);
+
+  /* type */
+  --tr-font-display: "Fraunces", Georgia, serif;
+  --tr-font-body: "DM Sans", -apple-system, system-ui, sans-serif;
+  --tr-font-mono: "JetBrains Mono", "SF Mono", ui-monospace, Consolas, monospace;
+}
+
+/* ============================================================
+   Outer container — sets font stack + base rhythm for every
+   descendant. Prefer a single column, max ~920px like the mock.
+   ============================================================ */
+
+.tr-transcript {
+  font-family: var(--tr-font-body);
+  font-size: 14.5px;
+  line-height: 1.6;
+  color: var(--tr-ink);
+  background: var(--tr-surface);
+  max-width: 920px;
+  margin: 0 auto;
+  padding: 28px 48px 96px;
+  -webkit-font-smoothing: antialiased;
+}
+
+/* ============================================================
+   System prompt — collapsed key-value row, click to expand
+   ============================================================ */
+
+.tr-system-prompt {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 10px 14px;
+  margin-bottom: 10px;
+  background: var(--tr-paper);
+  border: 1px solid var(--tr-edge);
+  border-radius: 8px;
+  cursor: pointer;
+  transition: border-color 0.15s;
+}
+.tr-system-prompt:hover { border-color: var(--tr-teal-light); }
+.tr-system-prompt[data-open="true"] {
+  display: block;
+  cursor: default;
+}
+.tr-system-prompt-label {
+  font-family: var(--tr-font-mono);
+  font-size: 12px;
+  color: var(--tr-ink-light);
+}
+.tr-system-prompt-label b {
+  font-weight: 500;
+  color: var(--tr-slate);
+  text-transform: uppercase;
+  font-size: 10px;
+  letter-spacing: 0.08em;
+  margin-right: 10px;
+}
+.tr-system-prompt-meta {
+  color: var(--tr-slate);
+  font-size: 12px;
+  font-variant-numeric: tabular-nums;
+}
+.tr-system-prompt[data-open="true"] pre {
+  font-family: var(--tr-font-mono);
+  font-size: 12px;
+  color: var(--tr-ink-light);
+  white-space: pre-wrap;
+  word-wrap: break-word;
+  margin: 0;
+  max-height: 220px;
+  overflow: auto;
+  padding: 10px;
+  background: var(--tr-surface);
+  border: 1px solid var(--tr-edge-light);
+  border-radius: 6px;
+}
+
+/* ============================================================
+   User message — italic epigraph, teal left rule
+   ============================================================ */
+
+.tr-user-message {
+  border-left: 3px solid var(--tr-teal-dark);
+  padding: 6px 0 6px 20px;
+  margin: 20px 0 8px;
+  font-family: var(--tr-font-display);
+  font-style: italic;
+  font-size: 18px;
+  color: var(--tr-ink);
+  max-width: 68ch;
+  line-height: 1.55;
+}
+.tr-user-message-label {
+  font-family: var(--tr-font-body);
+  font-style: normal;
+  font-size: 10px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  color: var(--tr-slate);
+  margin-bottom: 4px;
+  display: block;
+}
+
+/* ============================================================
+   Turn — a "chapter" block with a marker on top
+   ============================================================ */
+
+.tr-turn {
+  /* turns stack vertically; marker draws the horizontal rule */
+}
+
+/* Live current turn — subtle teal wash + pulsing caret on marker */
+.tr-turn.tr-current {
+  background: linear-gradient(90deg, var(--tr-teal-wash) 0%, transparent 60%);
+  margin: 0 -16px;
+  padding: 0 16px 12px;
+  border-radius: 6px;
+  position: relative;
+}
+.tr-turn.tr-current .tr-turn-marker {
+  border-top-color: var(--tr-teal-light);
+}
+.tr-turn.tr-current .tr-turn-marker h2::before {
+  content: "\25B8\00A0"; /* ▸ */
+  font-style: normal;
+  color: var(--tr-teal-dark);
+  animation: tr-pulse 1.4s ease-in-out infinite;
+}
+.tr-turn.tr-current .tr-turn-marker .tr-turn-timing::after {
+  content: " · running…";
+  color: var(--tr-teal-dark);
+  font-style: italic;
+}
+
+.tr-turn-marker {
+  display: flex;
+  align-items: baseline;
+  gap: 14px;
+  margin: 36px 0 14px;
+  padding-top: 14px;
+  border-top: 1px solid var(--tr-rule);
+}
+.tr-turn-marker h2 {
+  font-family: var(--tr-font-display);
+  font-style: italic;
+  font-weight: 400;
+  font-size: 19px;
+  color: var(--tr-ink);
+  margin: 0;
+  letter-spacing: -0.01em;
+}
+.tr-turn-marker h2 .tr-turn-n {
+  font-weight: 500;
+  font-style: normal;
+}
+.tr-turn-timing {
+  margin-left: auto;
+  font-family: var(--tr-font-mono);
+  font-size: 11px;
+  color: var(--tr-slate);
+  font-variant-numeric: tabular-nums;
+}
+
+/* ============================================================
+   Thinking — italic marginalia with a soft left rule
+   ============================================================ */
+
+.tr-thinking {
+  margin: 10px 0 14px;
+  padding: 2px 0 2px 20px;
+  border-left: 2px solid var(--tr-slate-soft);
+  color: var(--tr-ink-light);
+  font-style: italic;
+  font-family: var(--tr-font-display);
+  font-weight: 400;
+  font-size: 16px;
+  max-width: 64ch;
+  line-height: 1.55;
+}
+.tr-thinking-label {
+  font-family: var(--tr-font-body);
+  font-style: normal;
+  font-size: 10px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  color: var(--tr-slate-soft);
+  margin-bottom: 4px;
+  display: block;
+}
+
+/* ============================================================
+   Assistant text — plain paragraph at the read width
+   ============================================================ */
+
+.tr-assistant-text {
+  margin: 10px 0 14px;
+  max-width: 68ch;
+  color: var(--tr-ink);
+}
+
+/* ============================================================
+   Tool card — call head + body (args + result + maybe screenshot)
+   ============================================================ */
+
+.tr-tool {
+  border: 1px solid var(--tr-edge);
+  border-radius: 8px;
+  background: var(--tr-white);
+  margin: 12px 0;
+  overflow: hidden;
+  position: relative;
+}
+.tr-tool.tr-error {
+  border-color: var(--tr-red-edge);
+  box-shadow: 0 0 0 1px var(--tr-red-edge) inset;
+}
+.tr-tool.tr-error::before {
+  content: "";
+  position: absolute;
+  top: 0; left: 0; bottom: 0;
+  width: 3px;
+  background: var(--tr-red);
+}
+
+.tr-tool-head {
+  display: flex;
+  align-items: baseline;
+  gap: 12px;
+  padding: 10px 14px;
+  background: var(--tr-paper);
+  border-bottom: 1px solid var(--tr-edge-light);
+}
+.tr-tool.tr-error .tr-tool-head { background: var(--tr-red-soft); }
+
+.tr-tool-name {
+  font-family: var(--tr-font-display);
+  font-weight: 500;
+  font-size: 14px;
+  color: var(--tr-ink);
+}
+.tr-tool.tr-error .tr-tool-name { color: var(--tr-red-dark); }
+
+.tr-tool-id {
+  font-family: var(--tr-font-mono);
+  font-size: 11px;
+  color: var(--tr-slate-soft);
+}
+.tr-tool-duration {
+  margin-left: auto;
+  font-family: var(--tr-font-mono);
+  font-size: 11px;
+  color: var(--tr-slate);
+  font-variant-numeric: tabular-nums;
+}
+.tr-tool-flag {
+  font-size: 10px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  color: var(--tr-red-dark);
+  background: var(--tr-white);
+  border: 1px solid var(--tr-red-edge);
+  border-radius: 4px;
+  padding: 2px 6px;
+}
+
+.tr-tool-body { padding: 10px 14px; }
+
+.tr-tool-args {
+  font-family: var(--tr-font-mono);
+  font-size: 12.5px;
+  color: var(--tr-ink);
+  background: var(--tr-surface);
+  padding: 9px 11px;
+  border-radius: 6px;
+  margin: 0 0 10px;
+  white-space: pre-wrap;
+  word-wrap: break-word;
+  border: 1px solid var(--tr-edge);
+  line-height: 1.5;
+}
+
+.tr-tool-result-label {
+  font-size: 10px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  color: var(--tr-slate);
+  margin: 2px 0 4px;
+}
+.tr-tool-result {
+  font-family: var(--tr-font-body);
+  font-size: 14px;
+  color: var(--tr-ink);
+  white-space: pre-wrap;
+  margin: 0;
+}
+.tr-tool.tr-error .tr-tool-result {
+  color: var(--tr-red-dark);
+  background: var(--tr-red-soft);
+  padding: 10px 12px;
+  border: 1px solid var(--tr-red-edge);
+  border-radius: 6px;
+}
+
+/* ============================================================
+   Artifact chip — paperclip button under tool result
+   ============================================================ */
+
+.tr-artifact-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  padding: 6px 10px;
+  margin-top: 8px;
+  background: var(--tr-panel);
+  border: 1px solid var(--tr-edge);
+  border-radius: 6px;
+  font-size: 12px;
+  color: var(--tr-ink-light);
+  font-family: var(--tr-font-mono);
+  cursor: pointer;
+  transition: border-color 0.15s;
+}
+.tr-artifact-chip:hover { border-color: var(--tr-teal); }
+.tr-artifact-chip.tr-active {
+  background: var(--tr-teal-wash);
+  border-color: var(--tr-teal-dark);
+  box-shadow: 0 0 0 2px color-mix(in srgb, var(--tr-teal-dark) 12%, transparent);
+}
+.tr-artifact-chip svg { flex-shrink: 0; opacity: 0.6; }
+.tr-artifact-chip .tr-artifact-chip-desc { color: var(--tr-slate); }
+.tr-artifact-chip .tr-artifact-chip-size {
+  margin-left: 6px;
+  color: var(--tr-slate-soft);
+  font-variant-numeric: tabular-nums;
+}
+
+/* ============================================================
+   Screenshot — inline rounded image under a tool result
+   ============================================================ */
+
+.tr-screenshot {
+  display: block;
+  margin: 10px 0 4px;
+  max-width: 100%;
+  height: auto;
+  border: 1px solid var(--tr-edge);
+  border-radius: 6px;
+  background: var(--tr-panel);
+}
+
+/* ============================================================
+   Event line — anomaly / out-of-band event between turns
+   ============================================================ */
+
+.tr-event-line {
+  font-family: var(--tr-font-display);
+  font-style: italic;
+  font-size: 14px;
+  color: var(--tr-ink-light);
+  padding: 8px 0 8px 20px;
+  border-left: 2px dotted var(--tr-slate-soft);
+  margin: 10px 0;
+}
+.tr-event-line::before {
+  content: "\22C2\00A0\00A0"; /* ⟂ */
+  font-style: normal;
+  color: var(--tr-slate-soft);
+}
+.tr-event-line.tr-warn::before {
+  content: "\26A0\00A0\00A0"; /* ⚠ */
+  color: var(--tr-amber);
+}
+.tr-event-line .tr-event-name {
+  font-family: var(--tr-font-mono);
+  font-style: normal;
+  font-size: 12px;
+}
+
+/* ============================================================
+   Run-end — verdict panel anchored to the bottom of the transcript
+   ============================================================ */
+
+.tr-run-end {
+  margin: 40px 0 0;
+  padding: 24px 28px;
+  background: var(--tr-paper);
+  border: 1px solid var(--tr-edge);
+  border-radius: 10px;
+  position: relative;
+}
+.tr-run-end::before {
+  content: "";
+  position: absolute;
+  top: 0; left: 20px; right: 20px;
+  height: 3px;
+  background: var(--tr-teal);
+  border-radius: 0 0 3px 3px;
+}
+.tr-run-end.tr-fail::before { background: var(--tr-red); }
+
+.tr-run-end-head {
+  display: flex;
+  align-items: baseline;
+  gap: 12px;
+  margin-bottom: 12px;
+}
+.tr-run-end-head h3 {
+  font-family: var(--tr-font-display);
+  font-style: italic;
+  font-weight: 500;
+  font-size: 20px;
+  color: var(--tr-ink);
+  margin: 0;
+  letter-spacing: -0.01em;
+}
+.tr-run-end-head h3 .tr-run-end-glyph {
+  font-style: normal;
+  color: var(--tr-teal-dark);
+  margin-right: 6px;
+}
+.tr-run-end.tr-fail .tr-run-end-head h3 .tr-run-end-glyph {
+  color: var(--tr-red);
+}
+.tr-run-end-timing {
+  margin-left: auto;
+  font-family: var(--tr-font-mono);
+  font-size: 11px;
+  color: var(--tr-slate);
+  font-variant-numeric: tabular-nums;
+}
+.tr-run-end-summary {
+  font-size: 15.5px;
+  color: var(--tr-ink);
+  margin-bottom: 10px;
+  max-width: 68ch;
+}
+.tr-run-end-reasoning {
+  color: var(--tr-ink-light);
+  font-size: 14px;
+  max-width: 68ch;
+  white-space: pre-wrap;
+}
+.tr-run-end-reasoning .tr-run-end-label {
+  font-family: var(--tr-font-body);
+  font-size: 10px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  color: var(--tr-slate);
+  margin-bottom: 4px;
+  display: block;
+}
+
+/* ============================================================
+   Drawer — right-side slide-over with an artifact's text
+   ============================================================ */
+
+.tr-drawer-backdrop {
+  position: fixed;
+  inset: 0;
+  background: rgba(15, 24, 33, 0.28);
+  z-index: 40;
+  animation: tr-fade-in 0.15s ease-out;
+}
+
+.tr-drawer {
+  position: fixed;
+  top: 0;
+  right: 0;
+  bottom: 0;
+  width: 560px;
+  max-width: 100vw;
+  background: var(--tr-white);
+  border-left: 1px solid var(--tr-edge);
+  box-shadow: var(--tr-shadow-lg);
+  display: grid;
+  grid-template-rows: auto auto 1fr auto;
+  overflow: hidden;
+  z-index: 41;
+  animation: tr-slide-in 0.2s ease-out;
+}
+
+.tr-drawer-head {
+  display: flex;
+  align-items: baseline;
+  gap: 12px;
+  padding: 16px 20px 8px;
+  border-bottom: 1px solid var(--tr-edge-light);
+}
+.tr-drawer-head h2 {
+  font-family: var(--tr-font-display);
+  font-weight: 500;
+  font-size: 18px;
+  color: var(--tr-ink);
+  margin: 0;
+}
+.tr-drawer-path {
+  font-family: var(--tr-font-mono);
+  font-size: 12px;
+  color: var(--tr-teal-dark);
+  background: var(--tr-teal-wash);
+  padding: 2px 8px;
+  border-radius: 4px;
+  border: 1px solid var(--tr-teal-light);
+}
+.tr-drawer-close {
+  margin-left: auto;
+  background: none;
+  border: 1px solid var(--tr-edge);
+  border-radius: 6px;
+  padding: 4px 8px;
+  color: var(--tr-ink-light);
+  font-size: 12px;
+  font-family: inherit;
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  cursor: pointer;
+  transition: border-color 0.15s;
+}
+.tr-drawer-close:hover { border-color: var(--tr-slate); }
+
+.tr-drawer-meta {
+  padding: 10px 20px 14px;
+  display: flex;
+  gap: 20px;
+  font-size: 12px;
+  color: var(--tr-slate);
+  border-bottom: 1px solid var(--tr-edge-light);
+  font-variant-numeric: tabular-nums;
+}
+.tr-drawer-meta .tr-drawer-meta-key {
+  display: block;
+  font-size: 10px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  color: var(--tr-slate-soft);
+  margin-bottom: 2px;
+}
+.tr-drawer-meta .tr-drawer-meta-val {
+  color: var(--tr-ink-light);
+  font-family: var(--tr-font-mono);
+  font-size: 12px;
+}
+
+.tr-drawer-body {
+  overflow: auto;
+  background: var(--tr-surface);
+  padding: 0;
+}
+
+.tr-drawer-foot {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+  padding: 10px 20px;
+  border-top: 1px solid var(--tr-edge-light);
+  background: var(--tr-paper);
+  font-size: 12px;
+  color: var(--tr-slate);
+}
+.tr-drawer-foot button {
+  background: var(--tr-white);
+  border: 1px solid var(--tr-edge);
+  padding: 5px 10px;
+  border-radius: 6px;
+  color: var(--tr-ink-light);
+  font-size: 12px;
+  font-family: inherit;
+  cursor: pointer;
+  transition: border-color 0.15s;
+}
+.tr-drawer-foot button:hover {
+  border-color: var(--tr-teal);
+  color: var(--tr-ink);
+}
+.tr-drawer-foot .tr-drawer-foot-spacer { flex: 1; }
+
+/* ============================================================
+   Line-numbered artifact rendering — CSS grid with an auto-sized
+   gutter column so line numbers align regardless of digit count.
+   ============================================================ */
+
+.tr-artifact-lines {
+  display: grid;
+  grid-template-columns: auto 1fr;
+  column-gap: 14px;
+  margin: 0;
+  padding: 16px 20px;
+  font-family: var(--tr-font-mono);
+  font-size: 12.5px;
+  color: var(--tr-ink);
+  line-height: 1.55;
+  min-width: min-content;
+}
+.tr-artifact-lines .tr-artifact-ln {
+  text-align: right;
+  color: var(--tr-slate-soft);
+  user-select: none;
+  font-variant-numeric: tabular-nums;
+  padding-right: 4px;
+}
+.tr-artifact-lines .tr-artifact-code {
+  white-space: pre;
+}
+
+/* ============================================================
+   Motion
+   ============================================================ */
+
+@keyframes tr-pulse {
+  0%, 100% { opacity: 1; transform: scale(1); }
+  50%      { opacity: 0.5; transform: scale(0.85); }
+}
+@keyframes tr-fade-in {
+  from { opacity: 0; }
+  to   { opacity: 1; }
+}
+@keyframes tr-slide-in {
+  from { transform: translateX(16px); opacity: 0; }
+  to   { transform: translateX(0);    opacity: 1; }
+}
