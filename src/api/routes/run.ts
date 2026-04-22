@@ -8,6 +8,7 @@ import { runAgent } from "../../agent/agent";
 import { renderContextTree } from "../../context/tree";
 import { makeRunId } from "../../util/id";
 import { gauntletPath } from "../../paths";
+import { snapshotRunInputs } from "../../runs/snapshot";
 import { mergeRunConfig, validateRunBody, type AppConfig, type ChromeEndpoint, type Viewport } from "../../config";
 import type { Adapter } from "../../adapters/adapter";
 import type { RunBroadcaster } from "../ws";
@@ -49,9 +50,9 @@ export function runRoutes(
   broadcaster?: RunBroadcaster,
   errorLog?: ErrorLog,
   registry?: ActiveRunRegistry,
+  clientFactory?: (model: string) => LLMClient,
 ) {
   const router = new Hono();
-  const contextRoot = gauntletPath(config.projectRoot, "context");
 
   router.post("/:id", async (c) => {
     const entry = findCard(config.projectRoot, c.req.param("id"), errorLog);
@@ -76,13 +77,26 @@ export function runRoutes(
       return c.json({ error: `model "${effective.model}" is not in GAUNTLET_MODELS allow-list` }, 400);
     }
 
-    const client = createClient(effective.model);
+    const client = clientFactory
+      ? clientFactory(effective.model)
+      : createClient(effective.model);
     // runId is the primary key for the run end to end: results dir,
     // active-runs registry, WS broadcaster channel, and the runId field
     // written into result.json. The cardId is preserved as payload
     // metadata where it matters (the registry, the result manifest).
     const runId = makeRunId(entry.card.id);
     const outDir = gauntletPath(config.projectRoot, "results", runId);
+    // Snapshot story + context into <outDir>/inputs/ synchronously,
+    // before the logger, the adapter, the tree renderer, or the
+    // detached executeRun touch anything. Downstream consumers then
+    // see the snapshotted paths. The story path is composed from the
+    // stories dir + the filename findCard already resolved for us.
+    snapshotRunInputs({
+      runDir: outDir,
+      storyPath: join(gauntletPath(config.projectRoot, "stories"), entry.filename),
+      contextRoot: gauntletPath(config.projectRoot, "context"),
+    });
+    const contextRoot = join(outDir, "inputs", "context");
     // Create the logger *before* the adapter so WebAdapter can open its
     // background observer session against it in start().
     const logger = new EvidenceLogger(outDir);
