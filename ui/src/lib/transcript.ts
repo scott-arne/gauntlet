@@ -271,6 +271,46 @@ export function turnsInOrder(model: TranscriptModel): TurnModel[] {
   return Array.from(model.turns.values()).sort((a, b) => a.turn - b.turn);
 }
 
+// Soft-error detection: a tool_result with error=false whose text output
+// starts with an error-ish prefix. The tool call succeeded (no hard error),
+// but the tool's response tells the agent something went wrong — typically a
+// misused argument or a rejected input. Worth surfacing because the agent
+// usually spends extra turns recovering, which is a signal for improving
+// Gauntlet (tool ergonomics), the system prompt (how to use the tool), or
+// the story (what the run needs the agent to know upfront).
+const SOFT_ERROR_PATTERN = /^\s*(error|failed|cannot|could\s+not|unable\s+to)\b[\s:]/i;
+
+export function isSoftErrorResult(result: ToolResultEvent | undefined): boolean {
+  if (!result) return false;
+  if (result.error) return false; // hard errors render separately
+  return SOFT_ERROR_PATTERN.test(result.text ?? "");
+}
+
+export interface SoftErrorSite {
+  turn: number;
+  toolUseId: string;
+  toolName: string;
+  snippet: string; // first line of the error text, trimmed
+}
+
+export function findSoftErrors(model: TranscriptModel): SoftErrorSite[] {
+  const sites: SoftErrorSite[] = [];
+  for (const turn of turnsInOrder(model)) {
+    for (const pair of turn.tools) {
+      if (!isSoftErrorResult(pair.result)) continue;
+      const firstLine = (pair.result?.text ?? "").split("\n")[0].trim();
+      const snippet = firstLine.length > 140 ? firstLine.slice(0, 140) + "…" : firstLine;
+      sites.push({
+        turn: turn.turn,
+        toolUseId: pair.toolUseId,
+        toolName: pair.call.name,
+        snippet,
+      });
+    }
+  }
+  return sites;
+}
+
 export function totalUsage(model: TranscriptModel): {
   inputTokens: number;
   outputTokens: number;

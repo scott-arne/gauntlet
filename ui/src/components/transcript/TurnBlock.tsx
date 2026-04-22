@@ -1,4 +1,4 @@
-import type { TurnModel } from "../../lib/transcript";
+import { isSoftErrorResult, type TurnModel } from "../../lib/transcript";
 import { ThinkingBlock } from "./ThinkingBlock";
 import { ToolPairCard } from "./ToolPairCard";
 
@@ -31,15 +31,24 @@ export function TurnBlock({ runId, turn, isCurrent, activeArtifact, onOpenArtifa
   const usage = formatUsage(turn);
   const thinking = turn.llmResponse?.thinking ?? [];
   const text = turn.llmResponse?.text?.trim() ?? "";
+  const softErrorCount = turn.tools.filter((p) => isSoftErrorResult(p.result)).length;
 
   return (
-    <section className={`tr-turn${isCurrent ? " tr-current" : ""}`}>
+    <section id={`turn-${turn.turn}`} className={`tr-turn${isCurrent ? " tr-current" : ""}`}>
       <header>
         <div className="tr-turn-marker">Turn {turn.turn}</div>
         <div className="tr-turn-timing">
           {duration && <span>{duration}</span>}
           {duration && usage && <span> · </span>}
           {usage && <span>{usage}</span>}
+          {softErrorCount > 0 && (
+            <>
+              <span> · </span>
+              <span className="tr-turn-warn">
+                {softErrorCount} recoverable error{softErrorCount === 1 ? "" : "s"}
+              </span>
+            </>
+          )}
         </div>
       </header>
 

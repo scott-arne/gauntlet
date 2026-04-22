@@ -4,6 +4,8 @@ import { join } from "path";
 import {
   applyEvent,
   emptyTranscript,
+  findSoftErrors,
+  isSoftErrorResult,
   parseJsonl,
   reduceTranscript,
   turnsInOrder,
@@ -183,6 +185,50 @@ describe("reduceTranscript", () => {
     const model = reduceTranscript(events);
     const ordered = turnsInOrder(model);
     expect(ordered.map((t) => t.turn)).toEqual([1, 2, 3]);
+  });
+});
+
+describe("soft-error detection", () => {
+  function mkResult(text: string, error = false): ToolResultEvent {
+    return {
+      eventId: 1, parentEventId: 0, ts: "x",
+      type: "tool_result", turn: 1, toolUseId: "t", name: "read",
+      durationMs: 0, text, image: null, artifact: null, error,
+    };
+  }
+
+  test("matches common error prefixes", () => {
+    expect(isSoftErrorResult(mkResult("Error: path must not contain .."))).toBe(true);
+    expect(isSoftErrorResult(mkResult("error: something broke"))).toBe(true);
+    expect(isSoftErrorResult(mkResult("Failed to navigate"))).toBe(true);
+    expect(isSoftErrorResult(mkResult("Cannot read property"))).toBe(true);
+    expect(isSoftErrorResult(mkResult("Could not find element"))).toBe(true);
+    expect(isSoftErrorResult(mkResult("Unable to locate selector"))).toBe(true);
+    expect(isSoftErrorResult(mkResult("   Error: leading whitespace"))).toBe(true);
+  });
+
+  test("does not match incidental uses", () => {
+    expect(isSoftErrorResult(mkResult("ok"))).toBe(false);
+    expect(isSoftErrorResult(mkResult("No error occurred"))).toBe(false);
+    expect(isSoftErrorResult(mkResult("The error rate is 0.01%"))).toBe(false);
+    expect(isSoftErrorResult(mkResult(""))).toBe(false);
+  });
+
+  test("does not flag hard errors (those render separately)", () => {
+    expect(isSoftErrorResult(mkResult("Error: boom", true))).toBe(false);
+  });
+
+  test("findSoftErrors picks up the turn 8 fixture case", () => {
+    const text = readFileSync(FIXTURE_PATH, "utf8");
+    const events = parseJsonl(text);
+    const model = reduceTranscript(events);
+    const sites = findSoftErrors(model);
+    // The agent tried read("../../artifacts/001.md") in turn 8 and the tool
+    // returned "Error: path ... must not contain '..' segments".
+    const turn8 = sites.find((s) => s.turn === 8);
+    expect(turn8).toBeDefined();
+    expect(turn8!.toolName).toBe("read");
+    expect(turn8!.snippet.toLowerCase()).toContain("error");
   });
 });
 

@@ -1,10 +1,11 @@
 import type { Observation } from "./RunEndPanel";
-import type { TranscriptEvent, TranscriptModel } from "../../lib/transcript";
+import { findSoftErrors, type TranscriptEvent, type TranscriptModel } from "../../lib/transcript";
 import { SystemPromptPanel } from "./SystemPromptPanel";
 import { UserMessagePanel } from "./UserMessagePanel";
 import { TurnBlock } from "./TurnBlock";
 import { EventLine } from "./EventLine";
 import { RunEndPanel } from "./RunEndPanel";
+import { ErrorBanner } from "./ErrorBanner";
 
 interface Props {
   runId: string;
@@ -45,8 +46,11 @@ export function Transcript({ runId, model, currentTurn, activeArtifact, onOpenAr
     }
   }
 
+  const softErrors = findSoftErrors(model);
+
   return (
     <div className="tr-transcript">
+      <ErrorBanner sites={softErrors} />
       {model.systemPrompt && <SystemPromptPanel content={model.systemPrompt.content} />}
       {model.userMessage && <UserMessagePanel content={model.userMessage.content} />}
       {blocks}

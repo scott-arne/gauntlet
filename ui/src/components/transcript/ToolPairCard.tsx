@@ -1,5 +1,5 @@
 import { useState } from "react";
-import type { ToolPair } from "../../lib/transcript";
+import { isSoftErrorResult, type ToolPair } from "../../lib/transcript";
 import { Screenshot } from "./Screenshot";
 import { ArtifactChip } from "./ArtifactChip";
 
@@ -26,6 +26,7 @@ export function ToolPairCard({ runId, pair, activeArtifact, onOpenArtifact }: Pr
   const [expanded, setExpanded] = useState(false);
   const { call, result } = pair;
   const isError = result?.error === true;
+  const isSoftError = isSoftErrorResult(result);
   const running = !result;
 
   const argsText = JSON.stringify(call.arguments, null, 2);
@@ -35,7 +36,7 @@ export function ToolPairCard({ runId, pair, activeArtifact, onOpenArtifact }: Pr
   const shownText = expanded || !tooLong ? text : text.slice(0, INLINE_CHARS) + "…";
 
   return (
-    <div className={`tr-tool${isError ? " tr-error" : ""}`}>
+    <div className={`tr-tool${isError ? " tr-error" : ""}${isSoftError ? " tr-warn" : ""}`}>
       <div className="tr-tool-head">
         <span className="tr-tool-name">{call.name}</span>
         <span className="tr-tool-id" title={call.toolUseId}>
@@ -46,6 +47,9 @@ export function ToolPairCard({ runId, pair, activeArtifact, onOpenArtifact }: Pr
         )}
         {running && <span className="tr-tool-flag">running…</span>}
         {isError && <span className="tr-tool-flag">error</span>}
+        {isSoftError && !isError && (
+          <span className="tr-tool-flag tr-tool-flag-warn" title="Tool succeeded but returned an error message. The agent likely spent extra turns recovering.">recoverable</span>
+        )}
       </div>
       <div className="tr-tool-body">
         {argsText && argsText !== "{}" && (

@@ -285,6 +285,25 @@
   background: var(--tr-red);
 }
 
+/* Soft-error variant: tool call succeeded but text output begins with
+   "Error:" etc. Amber rather than red — the agent recovered, but this
+   step cost turns. Takes precedence over the hard-error variant when
+   both apply; in practice the detector excludes hard errors first. */
+.tr-tool.tr-warn:not(.tr-error) {
+  border-color: var(--tr-amber);
+  box-shadow: 0 0 0 1px var(--tr-amber) inset;
+}
+.tr-tool.tr-warn:not(.tr-error)::before {
+  content: "";
+  position: absolute;
+  top: 0; left: 0; bottom: 0;
+  width: 3px;
+  background: var(--tr-amber);
+}
+.tr-tool.tr-warn:not(.tr-error) .tr-tool-head {
+  background: var(--tr-amber-wash);
+}
+
 .tr-tool-head {
   display: flex;
   align-items: baseline;
@@ -325,6 +344,11 @@
   border: 1px solid var(--tr-red-edge);
   border-radius: 4px;
   padding: 2px 6px;
+}
+.tr-tool-flag-warn {
+  color: var(--tr-amber);
+  border-color: var(--tr-amber);
+  background: var(--tr-amber-wash);
 }
 
 .tr-tool-body { padding: 10px 14px; }
@@ -685,4 +709,91 @@
 @keyframes tr-slide-in {
   from { transform: translateX(16px); opacity: 0; }
   to   { transform: translateX(0);    opacity: 1; }
+}
+
+/* ====================================================================
+   Soft-error surfacing: inline turn-header badge + top-of-transcript
+   summary banner with anchor jumps.
+   ==================================================================== */
+
+.tr-turn-warn {
+  color: var(--tr-amber);
+  font-weight: 500;
+}
+
+.tr-error-banner {
+  margin: 8px 0 28px;
+  padding: 16px 20px;
+  background: var(--tr-amber-wash);
+  border-left: 3px solid var(--tr-amber);
+  border-radius: 0 8px 8px 0;
+}
+.tr-error-banner-head {
+  display: flex;
+  align-items: baseline;
+  gap: 12px;
+  margin-bottom: 12px;
+}
+.tr-error-banner-count {
+  font-family: var(--tr-font-display);
+  font-style: italic;
+  font-weight: 500;
+  font-size: 28px;
+  line-height: 1;
+  color: var(--tr-amber);
+}
+.tr-error-banner-label {
+  color: var(--tr-ink-light);
+  font-size: 14px;
+  font-weight: 500;
+}
+.tr-error-banner-list {
+  list-style: none;
+  padding: 0;
+  margin: 0;
+  display: grid;
+  gap: 6px;
+}
+.tr-error-banner-list a {
+  display: grid;
+  grid-template-columns: 68px 90px 1fr;
+  gap: 12px;
+  align-items: baseline;
+  padding: 6px 8px;
+  border-radius: 4px;
+  color: var(--tr-ink);
+  text-decoration: none;
+  font-size: 13px;
+  transition: background 0.12s;
+}
+.tr-error-banner-list a:hover {
+  background: rgba(194, 122, 42, 0.14);
+  text-decoration: none;
+}
+.tr-error-banner-turn {
+  font-family: var(--tr-font-display);
+  font-style: italic;
+  color: var(--tr-amber);
+  font-weight: 500;
+}
+.tr-error-banner-tool {
+  font-family: var(--tr-font-mono);
+  font-size: 12px;
+  color: var(--tr-ink-light);
+}
+.tr-error-banner-snippet {
+  color: var(--tr-slate);
+  font-size: 12.5px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* Brief highlight when an anchor-jump lands on a turn. */
+.tr-flash {
+  animation: tr-flash-fade 1.2s ease-out;
+}
+@keyframes tr-flash-fade {
+  0%   { background: rgba(194, 122, 42, 0.25); }
+  100% { background: transparent; }
 }
