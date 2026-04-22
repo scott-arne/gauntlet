@@ -12,6 +12,8 @@ export type ActionObserver = (
   params: Record<string, unknown>,
 ) => void;
 
+export type EventObserver = (event: Record<string, unknown>) => void;
+
 export interface RunStartFields {
   runId: string;
   cardId: string;
@@ -76,6 +78,7 @@ export class EvidenceLogger {
   private _screenshots: string[] = [];
   private _artifacts: string[] = [];
   private observers: Set<ActionObserver> = new Set();
+  private eventObservers: Set<EventObserver> = new Set();
   private eventCounter = 0;
   private lastEventId = 0;
 
@@ -102,6 +105,21 @@ export class EvidenceLogger {
     }
   }
 
+  // Second, independent observer channel (spec §6.3). Delivers the full
+  // structured entry (eventId, parentEventId, ts, type, and body fields)
+  // that was just written to run.jsonl. The legacy action-observer
+  // channel is unchanged — both fire side-by-side.
+  addEventObserver(fn: EventObserver): () => void {
+    this.eventObservers.add(fn);
+    return () => { this.eventObservers.delete(fn); };
+  }
+
+  private notifyEventObservers(event: Record<string, unknown>): void {
+    for (const fn of this.eventObservers) {
+      try { fn(event); } catch { /* isolated */ }
+    }
+  }
+
   private writeEvent(type: string, body: Record<string, unknown>): number {
     this.eventCounter += 1;
     const eventId = this.eventCounter;
@@ -114,6 +132,7 @@ export class EvidenceLogger {
     };
     appendFileSync(join(this.outDir, "run.jsonl"), JSON.stringify(entry) + "\n");
     this.lastEventId = eventId;
+    this.notifyEventObservers(entry);
     return eventId;
   }
 

@@ -248,6 +248,125 @@ describe("EvidenceLogger", () => {
     expect(eventRow.name).toBe("tool_result_text_oversize");
   });
 
+  test("addEventObserver fires for every logXxx call with the full entry", () => {
+    const received: Array<Record<string, unknown>> = [];
+    logger.addEventObserver((event) => {
+      received.push(event);
+    });
+
+    logger.logRunStart({
+      runId: "card-001_20260421T000000Z_aaaa",
+      cardId: "card-001",
+      target: "http://localhost:3000",
+      provider: "anthropic",
+      model: "claude-opus-4-7",
+      adapter: "web",
+      maxTurns: 50,
+      toolTimeoutMs: 30000,
+      contextTreeBytes: 0,
+    });
+    logger.logSystemPrompt("be helpful");
+    logger.logUserMessage(0, "go");
+    logger.logEvent("custom", { foo: 1 });
+
+    expect(received).toHaveLength(4);
+
+    // Every entry has the BaseEvent envelope fields.
+    for (const e of received) {
+      expect(typeof e.eventId).toBe("number");
+      expect(typeof e.parentEventId).toBe("number");
+      expect(typeof e.ts).toBe("string");
+      expect(typeof e.type).toBe("string");
+    }
+
+    // Envelope content matches what the writer put on disk.
+    expect(received[0]!.type).toBe("run_start");
+    expect(received[0]!.eventId).toBe(1);
+    expect(received[0]!.parentEventId).toBe(0);
+    expect(received[0]!.runId).toBe("card-001_20260421T000000Z_aaaa");
+    expect(received[0]!.provider).toBe("anthropic");
+
+    expect(received[1]!.type).toBe("system_prompt");
+    expect(received[1]!.eventId).toBe(2);
+    expect(received[1]!.parentEventId).toBe(1);
+    expect(received[1]!.content).toBe("be helpful");
+
+    expect(received[2]!.type).toBe("user_message");
+    expect(received[2]!.content).toBe("go");
+
+    expect(received[3]!.type).toBe("event");
+    expect(received[3]!.name).toBe("custom");
+    expect(received[3]!.foo).toBe(1);
+  });
+
+  test("addEventObserver delivers the same object that was appended to run.jsonl", () => {
+    const received: Array<Record<string, unknown>> = [];
+    logger.addEventObserver((event) => {
+      received.push(event);
+    });
+
+    logger.logEvent("navigate", { url: "http://localhost:3000" });
+
+    const [onDisk] = readFileSync(join(outDir, "run.jsonl"), "utf-8")
+      .trim()
+      .split("\n")
+      .map((l) => JSON.parse(l));
+
+    expect(received).toHaveLength(1);
+    expect(received[0]).toEqual(onDisk);
+  });
+
+  test("addEventObserver returns an unsubscribe that removes the observer", () => {
+    const received: Array<Record<string, unknown>> = [];
+    const unsubscribe = logger.addEventObserver((event) => {
+      received.push(event);
+    });
+
+    logger.logEvent("first", {});
+    unsubscribe();
+    logger.logEvent("second", {});
+
+    expect(received).toHaveLength(1);
+    expect(received[0]!.name).toBe("first");
+  });
+
+  test("a throwing event-observer doesn't prevent other event-observers from firing", () => {
+    const received: Array<Record<string, unknown>> = [];
+    logger.addEventObserver(() => {
+      throw new Error("boom");
+    });
+    logger.addEventObserver((event) => {
+      received.push(event);
+    });
+
+    logger.logEvent("click", { selector: "#btn" });
+
+    expect(received).toHaveLength(1);
+    expect(received[0]!.name).toBe("click");
+  });
+
+  test("addEventObserver and addObserver fire independently on the same logger", () => {
+    const actionEvents: Array<{ action: string }> = [];
+    const fullEvents: Array<Record<string, unknown>> = [];
+    logger.addObserver((action) => { actionEvents.push({ action }); });
+    logger.addEventObserver((event) => { fullEvents.push(event); });
+
+    logger.logToolCall({
+      turn: 1,
+      toolUseId: "t1",
+      name: "navigate",
+      arguments: { url: "/" },
+    });
+
+    // Action channel: legacy (name, args) shape preserved.
+    expect(actionEvents).toEqual([{ action: "navigate" }]);
+    // Event channel: full structured entry.
+    expect(fullEvents).toHaveLength(1);
+    expect(fullEvents[0]!.type).toBe("tool_call");
+    expect(fullEvents[0]!.toolUseId).toBe("t1");
+    expect(fullEvents[0]!.name).toBe("navigate");
+  });
+
   test("logToolCall writes a tool_call row with expected fields", () => {
     logger.logToolCall({
       turn: 1,
