@@ -2,6 +2,7 @@ import { useState } from "react";
 import { isSoftErrorResult, type ToolPair } from "../../lib/transcript";
 import { Screenshot } from "./Screenshot";
 import { ArtifactChip } from "./ArtifactChip";
+import { TuiCapture } from "./TuiCapture";
 
 interface Props {
   runId: string;
@@ -22,12 +23,24 @@ function shortId(id: string): string {
   return tail.slice(0, 8);
 }
 
+// Tool_result rows for the TUI `read_screen` tool carry the capture path
+// in the `text` field (e.g. `captures/003.ansi`) — not the inline ANSI.
+// Detect that shape so the card renders the grid viewer instead of the
+// path as raw text.
+function isTuiCaptureResult(pair: ToolPair): string | null {
+  if (pair.call.name !== "read_screen") return null;
+  const text = pair.result?.text ?? "";
+  if (/^captures\/\d+\.ansi$/.test(text)) return text;
+  return null;
+}
+
 export function ToolPairCard({ runId, pair, activeArtifact, onOpenArtifact }: Props) {
   const [expanded, setExpanded] = useState(false);
   const { call, result } = pair;
   const isError = result?.error === true;
   const isSoftError = isSoftErrorResult(result);
   const running = !result;
+  const capturePath = isTuiCaptureResult(pair);
 
   const argsText = JSON.stringify(call.arguments, null, 2);
 
@@ -64,10 +77,15 @@ export function ToolPairCard({ runId, pair, activeArtifact, onOpenArtifact }: Pr
               <div className="tr-tool-result-label">
                 result — spilled to artifact ({result.textBytes ? `${(result.textBytes / 1024).toFixed(1)}kB` : "large"})
               </div>
+            ) : capturePath ? (
+              <div className="tr-tool-result-label">screen capture</div>
             ) : text.length > 0 ? (
               <div className="tr-tool-result-label">result</div>
             ) : null}
-            {text.length > 0 && !result.textTruncated && (
+            {capturePath && (
+              <TuiCapture runId={runId} ansiPath={capturePath} />
+            )}
+            {!capturePath && text.length > 0 && !result.textTruncated && (
               <>
                 <pre className="tr-tool-result">{shownText}</pre>
                 {tooLong && (

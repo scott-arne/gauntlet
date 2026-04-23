@@ -98,9 +98,23 @@ export class XtermCaptureParser implements CaptureParser {
       allowProposedApi: true,
       scrollback: 0,
     });
-    // xterm.js processes writes on a microtask queue; the buffer is not
-    // populated until the callback fires. Await it before reading.
-    await new Promise<void>((resolve) => term.write(ansi, resolve));
+    // tmux's `capture-pane -e` emits one line per viewport row with `\n`
+    // as the row separator. Streaming that directly into xterm treats
+    // each `\n` as a cursor advance — if the capture has `rows` lines of
+    // content (common), the final newlines scroll row 0 off the top of
+    // a 0-scrollback terminal and we lose the content we wanted to
+    // render. Feed each line with absolute cursor positioning instead:
+    // for line i, jump to (i+1, 1), write the line bytes, let the next
+    // iteration reposition for the next row. Colour state persists
+    // across iterations because we never issue an SGR reset between
+    // lines.
+    const lines = ansi.split("\n");
+    let seq = "";
+    for (let i = 0; i < Math.min(lines.length, rows); i++) {
+      // CSI y;1H — move cursor to row y (1-indexed), column 1.
+      seq += `\x1b[${i + 1};1H` + lines[i];
+    }
+    await new Promise<void>((resolve) => term.write(seq, resolve));
 
     const buffer = term.buffer.active;
     const grid: Cell[][] = [];

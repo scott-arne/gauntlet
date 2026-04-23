@@ -20,6 +20,7 @@ function makeMockLogger(): EvidenceLogger {
   return {
     screenshots: [],
     artifacts: [],
+    captures: [],
     logPath: "/tmp/test.log",
     logTool: () => {},
     logScreenshot: () => "/tmp/shot.png",

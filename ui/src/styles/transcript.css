@@ -438,6 +438,59 @@
 }
 
 /* ============================================================
+   TUI capture — rendered as a CSS grid of terminal cells. Each
+   cell is its own DOM node; the grid enforces uniform dimensions
+   so CJK / emoji / narrow glyphs all land in the slot the parser
+   counted for them, regardless of browser font metrics.
+   ============================================================ */
+
+.tr-tui-capture {
+  --tui-cell-w: 0.6em;
+  --tui-cell-h: 1.1em;
+  margin: 6px 0 4px;
+}
+.tr-tui-capture-toggle {
+  background: transparent;
+  border: none;
+  color: var(--tr-teal);
+  cursor: pointer;
+  font-family: inherit;
+  font-size: 12px;
+  padding: 4px 0;
+}
+.tr-tui-capture-toggle:hover { text-decoration: underline; }
+.tr-tui-capture-status {
+  font-size: 12px;
+  color: var(--tr-slate);
+  padding: 4px 0;
+}
+.tr-tui-capture-error { color: var(--tr-red-dark); }
+.tr-tui-capture-grid {
+  display: grid;
+  font-family: var(--tr-font-mono);
+  font-size: 13px;
+  line-height: var(--tui-cell-h);
+  background: #0d1117;
+  color: #e6edf3;
+  padding: 8px;
+  border: 1px solid var(--tr-edge);
+  border-radius: 6px;
+  /* Enough to contain a 120-col grid at 0.6em/col ≈ 72em wide.
+     If the container is narrower, horizontal scroll kicks in —
+     better than column-wrap garbling the layout. */
+  overflow-x: auto;
+  width: fit-content;
+  max-width: 100%;
+}
+.tr-tui-cell {
+  /* Fixed slot — width is enforced by the grid template, not the glyph. */
+  display: inline-block;
+  overflow: hidden;
+  white-space: pre;
+  text-align: left;
+}
+
+/* ============================================================
    Event line — anomaly / out-of-band event between turns
    ============================================================ */
 
