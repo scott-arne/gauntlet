@@ -20,6 +20,14 @@ export interface ToolResult {
   };
   imagePath?: string;       // relative path if the image has been persisted
   artifactPath?: string;    // relative path if a large payload was spilled
+  /**
+   * TUI screen capture path (`captures/NNN.ansi`). Populated by the TUI
+   * adapter's `read_screen` handler. When set, the evidence logger
+   * substitutes this path for `text` in the tool_result row — the
+   * in-memory `text` still carries the full ANSI content so the LLM
+   * sees the screen content on its next turn.
+   */
+  capturePath?: string;
 }
 
 export interface TokenUsage {

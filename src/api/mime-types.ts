@@ -11,6 +11,10 @@ export const MIME_TYPES: Record<string, string> = {
   webm: "video/webm",
   webp: "image/webp",
   mp4: "video/mp4",
+  // Raw TUI capture (ANSI-annotated text). Served as plain text so
+  // browsers show the escape sequences verbatim — the parsed `.json`
+  // twin is what the UI actually renders.
+  ansi: "text/plain; charset=utf-8",
 };
 
 export function getMimeType(ext: string): string {

@@ -49,6 +49,11 @@ export interface ToolResultFields {
   text: string;
   image?: string;            // relative path
   artifact?: string;         // relative path
+  /** Relative path to a TUI capture (`captures/NNN.ansi`). When set, the
+   * tool_result row's `text` is replaced with this path to keep
+   * run.jsonl lean; the LLM still receives the full ANSI via the
+   * in-memory ToolResult.text field. */
+  capturePath?: string;
   textTruncated?: true;
   textBytes?: number;
   error: boolean;
@@ -75,8 +80,11 @@ export class EvidenceLogger {
   private outDir: string;
   private screenshotCount = 0;
   private artifactCount = 0;
+  private captureCount = 0;
   private _screenshots: string[] = [];
   private _artifacts: string[] = [];
+  private _captures: string[] = [];
+  private captureDirEnsured = false;
   private observers: Set<ActionObserver> = new Set();
   private eventObservers: Set<EventObserver> = new Set();
   private eventCounter = 0;
@@ -90,6 +98,7 @@ export class EvidenceLogger {
 
   get screenshots(): string[] { return [...this._screenshots]; }
   get artifacts(): string[] { return [...this._artifacts]; }
+  get captures(): string[] { return [...this._captures]; }
   get logPath(): string { return "run.jsonl"; }
 
   addObserver(fn: ActionObserver): () => void {
@@ -170,6 +179,19 @@ export class EvidenceLogger {
   }
 
   logToolResult(fields: ToolResultFields): void {
+    // TUI captures: the adapter has already written captures/NNN.ansi
+    // and populated `capturePath`. Replace the inline text with the path
+    // so run.jsonl stays lean. Consumers (UI, replay) fetch the file.
+    // The LLM, which receives the in-memory ToolResult.text, is unaffected.
+    if (fields.capturePath) {
+      const body: Record<string, unknown> = {
+        ...fields,
+        text: fields.capturePath,
+      };
+      this.writeEvent("tool_result", body);
+      return;
+    }
+
     let body: Record<string, unknown> = { ...fields };
     if (typeof fields.text === "string" && Buffer.byteLength(fields.text, "utf8") > INLINE_TEXT_LIMIT) {
       const bytes = Buffer.byteLength(fields.text, "utf8");
@@ -241,5 +263,28 @@ export class EvidenceLogger {
     writeFileSync(join(this.outDir, relativePath), data);
     this._artifacts.push(relativePath);
     return relativePath;
+  }
+
+  /**
+   * Persists a TUI capture as a two-file pair: the raw `.ansi` (ground
+   * truth, cheap) and the parsed `.json` grid (what the UI renders,
+   * cached so the UI doesn't re-parse on every view). Returns the
+   * `.ansi` relative path — the parsed twin is inferred by swapping the
+   * extension. Only the raw path is tracked in `captures`; the JSON
+   * twin rides along.
+   */
+  saveCapture(ansi: string, parsedJson: string): string {
+    if (!this.captureDirEnsured) {
+      mkdirSync(join(this.outDir, "captures"), { recursive: true });
+      this.captureDirEnsured = true;
+    }
+    this.captureCount++;
+    const name = String(this.captureCount - 1).padStart(3, "0"); // zero-indexed per spec
+    const ansiRel = `captures/${name}.ansi`;
+    const jsonRel = `captures/${name}.json`;
+    writeFileSync(join(this.outDir, ansiRel), ansi);
+    writeFileSync(join(this.outDir, jsonRel), parsedJson);
+    this._captures.push(ansiRel);
+    return ansiRel;
   }
 }

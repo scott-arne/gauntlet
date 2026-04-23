@@ -97,6 +97,40 @@ describe("Manifest-gated file route", () => {
     expect(res.headers.get("Content-Type")).toBe("image/png");
   });
 
+  test("serves a TUI capture .ansi listed in evidence.captures", async () => {
+    const runDir = makeRun("with-capture", {
+      schemaVersion: 2,
+      scenario: "with-capture",
+      status: "pass",
+      evidence: { screenshots: [], log: "run.jsonl", captures: ["captures/000.ansi"] },
+    });
+    mkdirSync(join(runDir, "captures"), { recursive: true });
+    writeFileSync(join(runDir, "captures", "000.ansi"), "raw-ansi");
+
+    const res = await app.request("/api/results/with-capture/file/captures/000.ansi");
+    expect(res.status).toBe(200);
+    expect(res.headers.get("Content-Type")).toBe("text/plain; charset=utf-8");
+    expect(await res.text()).toBe("raw-ansi");
+  });
+
+  test("serves the .json twin of a capture without listing it explicitly", async () => {
+    // The manifest records the .ansi path; the parsed .json twin at the
+    // same stem is an implicit sibling and must also be fetchable.
+    const runDir = makeRun("with-capture-twin", {
+      schemaVersion: 2,
+      scenario: "with-capture-twin",
+      status: "pass",
+      evidence: { screenshots: [], log: "run.jsonl", captures: ["captures/000.ansi"] },
+    });
+    mkdirSync(join(runDir, "captures"), { recursive: true });
+    writeFileSync(join(runDir, "captures", "000.ansi"), "raw-ansi");
+    writeFileSync(join(runDir, "captures", "000.json"), '{"cols":10}');
+
+    const res = await app.request("/api/results/with-capture-twin/file/captures/000.json");
+    expect(res.status).toBe(200);
+    expect(res.headers.get("Content-Type")).toBe("application/json");
+  });
+
   test("404s a traversal path the manifest does not list", async () => {
     makeRun("honest-manifest", {
       schemaVersion: 1,

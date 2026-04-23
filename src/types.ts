@@ -55,6 +55,13 @@ export interface VetResult {
     log: string;
     video?: string;
     artifacts?: string[];
+    /**
+     * TUI screen captures, one per `read_screen` tool call. Each entry is
+     * a path to the raw `.ansi` file; the parsed `.json` twin lives at
+     * the same stem (e.g. `captures/003.ansi` + `captures/003.json`).
+     * Omitted entirely for non-TUI runs.
+     */
+    captures?: string[];
   };
   duration_ms: number;
   usage?: {

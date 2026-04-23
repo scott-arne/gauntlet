@@ -371,6 +371,42 @@ describe("EvidenceLogger", () => {
     expect(fullEvents[0]!.name).toBe("navigate");
   });
 
+  test("saveCapture writes .ansi and .json files, zero-indexed and padded", () => {
+    const first = logger.saveCapture("raw-ansi-1", JSON.stringify({ a: 1 }));
+    const second = logger.saveCapture("raw-ansi-2", JSON.stringify({ a: 2 }));
+
+    expect(first).toBe("captures/000.ansi");
+    expect(second).toBe("captures/001.ansi");
+    expect(readFileSync(join(outDir, "captures/000.ansi"), "utf-8")).toBe("raw-ansi-1");
+    expect(readFileSync(join(outDir, "captures/000.json"), "utf-8")).toBe(JSON.stringify({ a: 1 }));
+    expect(readFileSync(join(outDir, "captures/001.ansi"), "utf-8")).toBe("raw-ansi-2");
+    expect(logger.captures).toEqual(["captures/000.ansi", "captures/001.ansi"]);
+  });
+
+  test("logToolResult with capturePath replaces text with the path on disk", () => {
+    const path = logger.saveCapture("huge-ansi-blob", "{}");
+    logger.logToolResult({
+      turn: 1,
+      toolUseId: "tu-1",
+      name: "read_screen",
+      durationMs: 4,
+      text: "huge-ansi-blob", // what the LLM sees; not written to jsonl
+      capturePath: path,
+      error: false,
+    });
+    const [row] = readFileSync(join(outDir, "run.jsonl"), "utf-8")
+      .trim()
+      .split("\n")
+      .map((l) => JSON.parse(l));
+
+    expect(row.type).toBe("tool_result");
+    expect(row.text).toBe("captures/000.ansi");
+    expect(row.capturePath).toBe("captures/000.ansi");
+    // Oversize-spill heuristic does not apply to captures.
+    expect(row.textTruncated).toBeUndefined();
+    expect(row.artifact).toBeUndefined();
+  });
+
   test("logToolCall writes a tool_call row with expected fields", () => {
     logger.logToolCall({
       turn: 1,

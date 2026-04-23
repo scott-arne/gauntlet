@@ -178,6 +178,17 @@ function collectManifestPaths(manifest: unknown): Set<string> {
     if (Array.isArray(e.artifacts)) {
       for (const a of e.artifacts) if (typeof a === "string") paths.add(a);
     }
+    if (Array.isArray(e.captures)) {
+      // Captures are stored as pairs: the manifest records the `.ansi`
+      // path; the parsed `.json` twin at the same stem is not in the
+      // manifest but is an implicit sibling. Allow both so the UI can
+      // fetch the pre-parsed grid without an extra manifest entry.
+      for (const a of e.captures) {
+        if (typeof a !== "string") continue;
+        paths.add(a);
+        if (a.endsWith(".ansi")) paths.add(a.slice(0, -5) + ".json");
+      }
+    }
   }
 
   if (Array.isArray(m.observations)) {

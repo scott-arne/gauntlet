@@ -155,6 +155,7 @@ export async function runAgent(
         screenshots: logger.screenshots,
         log: logger.logPath,
         artifacts: logger.artifacts.length > 0 ? logger.artifacts : undefined,
+        captures: logger.captures.length > 0 ? logger.captures : undefined,
       },
       duration_ms: Date.now() - startTime,
       usage: {
@@ -315,6 +316,7 @@ export async function runAgent(
           text: result.text ?? "",
           image: (result as any).imagePath,       // populated by T6; undefined today
           artifact: (result as any).artifactPath, // populated by T6/T7
+          capturePath: (result as any).capturePath, // populated by TUIAdapter read_screen
           error: errored,
         });
       }
