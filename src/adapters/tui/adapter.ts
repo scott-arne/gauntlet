@@ -4,6 +4,7 @@ import type { EvidenceLogger } from "../../evidence/logger";
 import { buildReadTool, type ReadTool } from "../../context/read-tool";
 import { validateToolArgs } from "../../agent/validators";
 import type { Viewport } from "../../config";
+import { defaultCaptureParser, type CaptureParser } from "./capture-parser";
 
 /**
  * tmux pane dimensions in character cells. Hardcoded for now — resize
@@ -41,12 +42,16 @@ const AVAILABLE_KEYS = Object.keys(KEY_MAP).join(", ");
 
 export interface TUIAdapterOptions {
   contextRoot?: string;
+  /** Override the capture parser (differential testing, future ghostty
+   * selection). Defaults to xterm. */
+  captureParser?: CaptureParser;
 }
 
 export class TUIAdapter implements Adapter {
   readonly name = "tui";
   private _sessionName: string | null = null;
   private readTool: ReadTool | null;
+  private captureParser: CaptureParser;
   /** Lazy cache of tool name → parameter schema for O(1) validation. */
   private toolSchemas: Map<string, ToolDefinition["parameters"]> | null = null;
 
@@ -54,6 +59,7 @@ export class TUIAdapter implements Adapter {
     this.readTool = options?.contextRoot
       ? buildReadTool(options.contextRoot)
       : null;
+    this.captureParser = options?.captureParser ?? defaultCaptureParser;
   }
 
   get sessionName(): string {
@@ -234,7 +240,28 @@ export class TUIAdapter implements Adapter {
       }
       case "read_screen": {
         const screen = await this.readScreen();
-        return { text: screen };
+        // Parse on the server so the UI can render a layout-correct
+        // 2D grid without re-parsing on every view. Both the raw ANSI
+        // and the parsed JSON land under captures/.
+        const parsed = await this.captureParser.parse(
+          screen,
+          TUI_GRID.width,
+          TUI_GRID.height,
+        );
+        const capturePath = logger.saveCapture(screen, JSON.stringify(parsed));
+        // Stream a `tui_capture` event over the existing WS channel.
+        // Using logEvent (rather than a bespoke broadcaster call) lets
+        // the observer plumbing already wired in run.ts forward this to
+        // any subscribed clients — one mechanism, not two.
+        logger.logEvent("tui_capture", {
+          path: capturePath,
+          cols: parsed.cols,
+          rows: parsed.rows,
+        });
+        // LLM still sees the full ANSI via `text`; the logger will
+        // substitute `capturePath` for `text` when writing the
+        // tool_result row to run.jsonl.
+        return { text: screen, capturePath };
       }
       default:
         throw new Error(`Unknown tool: ${name}`);

@@ -87,6 +87,36 @@ describe.skipIf(!tmuxAvailable)("TUIAdapter", () => {
     }
   });
 
+  test("read_screen writes capture files and returns capturePath", async () => {
+    adapter = new TUIAdapter();
+    const logDir = mkdtempSync(join(tmpdir(), "gauntlet-tui-cap-"));
+    const logger = new EvidenceLogger(logDir);
+
+    await adapter.start("sh -c \"printf 'hello'; sleep 10\"");
+    await new Promise((r) => setTimeout(r, 300));
+
+    const result = await adapter.executeTool("read_screen", {}, logger);
+    expect((result as { capturePath?: string }).capturePath).toBe("captures/000.ansi");
+    // Raw ANSI text still flows to the LLM via result.text.
+    expect(result.text).toContain("hello");
+
+    // Both files on disk.
+    expect(readFileSync(join(logDir, "captures/000.ansi"), "utf-8")).toContain("hello");
+    const parsed = JSON.parse(readFileSync(join(logDir, "captures/000.json"), "utf-8"));
+    expect(parsed.cols).toBe(120);
+    expect(parsed.rows).toBe(40);
+    expect(Array.isArray(parsed.cells)).toBe(true);
+
+    // Second call increments the index.
+    const result2 = await adapter.executeTool("read_screen", {}, logger);
+    expect((result2 as { capturePath?: string }).capturePath).toBe("captures/001.ansi");
+    expect(logger.captures).toEqual(["captures/000.ansi", "captures/001.ansi"]);
+
+    // A tui_capture event row was appended for the broadcaster to pick up.
+    const logContent = readFileSync(join(logDir, "run.jsonl"), "utf-8");
+    expect(logContent).toContain('"name":"tui_capture"');
+  });
+
   test("readScreen preserves ANSI escape sequences", async () => {
     adapter = new TUIAdapter();
     // Print a red "X" and a green "Y", then sleep so the session stays alive.
