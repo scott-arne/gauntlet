@@ -42,3 +42,6 @@ report.[0-9]_.[0-9]_.[0-9]_.[0-9]_.json
 
 # Claude Code local data (worktrees, agent state, etc.)
 .claude/
+
+# superpowers brainstorm sessions (visual companion server state + mockups)
+.superpowers/
