@@ -1,0 +1,29 @@
+──────────────────────────────────────────────────────
+  runId     r-8f21
+  card      login-flow
+  target    https://example.com
+  model     claude-sonnet-4-6
+  adapter   web · viewport 1440×900
+  max turns 50
+  evidence  .gauntlet/results/r-8f21/
+──────────────────────────────────────────────────────
+
+▎ Turn 1 · claude-sonnet-4-6 · turn 1 / 50
+
+  ~ thinking
+    Let me see the page state.
+
+  = assistant
+    I'll take a screenshot first.
+
+  ▸ screenshot {}
+    ↳ ✓ 180ms
+      → screenshots/001.png
+
+─── Run complete ────────────────────────────── ✓ pass
+  runId     r-8f21
+  duration  3.0s
+  turns     1 / 50
+  usage     in 1.2k  out 80
+  summary   Login succeeded
+  evidence  .gauntlet/results/r-8f21/

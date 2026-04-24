@@ -117,7 +117,7 @@ and `colors.ts` are pure utilities.
 The format mirrors the visual discipline of the web transcript compacted
 for a terminal. Rendering rules, per event type:
 
-- **`run_start`** — six-line configured-values block with a dim rule
+- **`run_start`** — seven-line configured-values block with a dim rule
   above and below:
   ```
   ──────────────────────────────────────────────────────

@@ -1,0 +1,18 @@
+──────────────────────────────────────────────────────
+  runId     r-fa01
+  card      login-flow
+  target    https://example.com
+  model     claude-sonnet-4-6
+  adapter   web · viewport 1440×900
+  max turns 50
+  evidence  .gauntlet/results/r-fa01/
+──────────────────────────────────────────────────────
+
+▎ Turn 1 · claude-sonnet-4-6 · turn 1 / 50
+
+  · tool_result_text_oversize turn=1 toolName=read_screen bytes=65536 artifact=artifacts/001.txt
+
+─── Run failed ────────────────────────────────── ✗ error
+  runId     r-fa01
+  turn      1 / 50
+  error     anthropic: rate_limit_error (40s remaining)

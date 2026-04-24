@@ -30,7 +30,11 @@ function parseBoolFlag(raw: string | undefined, label: string): boolean | undefi
   throw new Error(`Invalid ${label} value "${raw}": expected a boolean (true/false, 1/0, yes/no, on/off)`);
 }
 
-const RUN_ALLOWED = new Set(["target", "out", "adapter", "model", "chrome", "project-dir", "turns", "viewport", "save-screencast"]);
+const RUN_ALLOWED = new Set([
+  "target", "out", "adapter", "model", "chrome", "project-dir",
+  "turns", "viewport", "save-screencast",
+  "silent", "format", "no-color",
+]);
 const VALIDATE_ALLOWED = new Set<string>([]);
 const FANOUT_ALLOWED = new Set(["out", "model", "from-result"]);
 const SERVE_ALLOWED = new Set(["port", "project-dir", "chrome", "target", "model", "turns", "viewport", "save-screencast"]);
@@ -55,6 +59,9 @@ export interface RunArgs {
   scenarioPath: string;
   outDir?: string;
   adapter: AdapterType;
+  silent: boolean;
+  format: "pretty" | "jsonl" | undefined;
+  noColor: boolean;
   cli: CliArgsInput;
 }
 
@@ -153,11 +160,22 @@ function parseRunArgs(args: string[]): RunArgs {
     adapter = flags.adapter;
   }
 
+  let format: "pretty" | "jsonl" | undefined;
+  if (flags.format !== undefined) {
+    if (flags.format !== "pretty" && flags.format !== "jsonl") {
+      throw new Error(`Invalid --format value "${flags.format}": must be "pretty" or "jsonl"`);
+    }
+    format = flags.format;
+  }
+
   return {
     command: "run",
     scenarioPath: positional,
     outDir: flags.out,
     adapter,
+    silent: flags.silent === "true",
+    format,
+    noColor: flags["no-color"] === "true",
     cli: {
       projectRoot: flags["project-dir"],
       chrome: flags.chrome,
@@ -303,6 +321,9 @@ Commands:
     --save-screencast    Persist screencast frames to disk (default: off; live WS stream is always on)
     --out <dir>          Evidence output directory (default: <project>/.gauntlet/results/<runId>)
     --project-dir <dir>  Project root (contains .gauntlet/ state dir)
+    --silent             Suppress the streaming transcript (default: stream)
+    --format <mode>      Stream format: pretty | jsonl (default: auto by TTY)
+    --no-color           Disable ANSI color (also respects NO_COLOR env var)
 
   validate <scenario.md>  Validate a scenario file
 

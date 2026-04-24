@@ -39,6 +39,15 @@ export interface AgentOptions {
   provider?: string;
   /** LLM model name (e.g. "claude-opus-4-7"). Surfaced on the run_start log row. */
   model?: string;
+  /** Absolute path to the run's evidence directory. Threaded onto the
+   * run_start / run_end events so the CLI stream can show an `evidence`
+   * line. Optional — older call sites that don't set it simply get no
+   * `evidence` line rendered. */
+  outDir?: string;
+  /** `WxH` viewport string for the web adapter (e.g. `"1440x900"`).
+   * Undefined for non-web adapters. Surfaced on the run_start `adapter`
+   * line in the CLI stream. */
+  viewport?: string;
 }
 
 const REPORT_TOOL: ToolDefinition = {
@@ -111,6 +120,8 @@ export async function runAgent(
     maxTurns: options.maxTurns ?? DEFAULT_MAX_TURNS,
     toolTimeoutMs: options.toolTimeoutMs ?? DEFAULT_TOOL_TIMEOUT_MS,
     contextTreeBytes: options.contextTree ? Buffer.byteLength(options.contextTree, "utf8") : 0,
+    outDir: options.outDir,
+    viewport: options.viewport,
   });
   logger.logSystemPrompt(systemPrompt);
 
@@ -179,6 +190,7 @@ export async function runAgent(
         cacheReadInputTokens: totalCacheRead > 0 ? totalCacheRead : undefined,
         turns,
       },
+      outDir: options.outDir,
     });
     return result;
   };

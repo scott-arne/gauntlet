@@ -13,6 +13,13 @@ import { gauntletPath } from "../paths";
 import { snapshotRunInputs } from "../runs/snapshot";
 import type { AppConfig } from "../config";
 import type { RunConfigSnapshot } from "../types";
+import { resolveStreamOptions } from "./stream/format";
+import { attachRenderer } from "./stream/attach";
+import type { Viewport } from "../config";
+
+function viewportString(v: Viewport | undefined): string | undefined {
+  return v ? `${v.width}x${v.height}` : undefined;
+}
 
 export interface RunCommandOptions {
   scenarioPath: string;
@@ -20,6 +27,9 @@ export interface RunCommandOptions {
   outDir?: string;
   adapterType: "web" | "cli" | "tui";
   config: AppConfig;
+  silent: boolean;
+  format: "pretty" | "jsonl" | undefined;
+  noColor: boolean;
 }
 
 export async function run(opts: RunCommandOptions): Promise<void> {
@@ -48,6 +58,16 @@ export async function run(opts: RunCommandOptions): Promise<void> {
     contextRoot: gauntletPath(config.projectRoot, "context"),
   });
   const logger = new EvidenceLogger(outDir);
+  const streamOpts = resolveStreamOptions({
+    isTTY: Boolean(process.stdout.isTTY),
+    env: process.env as Record<string, string | undefined>,
+    silent: opts.silent,
+    format: opts.format,
+    noColor: opts.noColor,
+    columns: process.stdout.columns ?? 100,
+  });
+  const sink = { write: (s: string) => process.stdout.write(s) };
+  const detachStream = attachRenderer(logger, streamOpts, sink);
   const client = createClient(config.models.agent);
   const contextRoot = join(outDir, "inputs", "context");
   // Render the tree once per run — the immutability invariant forbids
@@ -109,12 +129,25 @@ export async function run(opts: RunCommandOptions): Promise<void> {
       maxTurns: config.defaultTurns,
       provider: resolveProvider(config.models.agent),
       model: config.models.agent,
+      outDir,
+      viewport: adapterType === "web" ? viewportString(snapshotViewport(adapter)) : undefined,
     });
     result.config = runConfig;
     writeResultFiles(outDir, result);
-    console.log(JSON.stringify(result, null, 2));
-    console.error(`runId: ${runId}`);
+    if (streamOpts.silent) {
+      // Silent: one-line stderr pointer, no stdout output.
+      console.error(`runId: ${runId}`);
+    }
+    // Streaming mode: run_end panel already printed the runId via the renderer.
+  } catch (err) {
+    logger.logEvent("run_error", {
+      turn: -1,
+      message: err instanceof Error ? err.message : String(err),
+      stack: err instanceof Error ? err.stack : undefined,
+    });
+    throw err;
   } finally {
+    detachStream();
     await adapter.close();
   }
 }

@@ -1,0 +1,27 @@
+──────────────────────────────────────────────────────
+  runId     r-ff01
+  card      login-flow
+  target    https://example.com
+  model     claude-sonnet-4-6
+  adapter   web · viewport 1440×900
+  max turns 50
+  evidence  .gauntlet/results/r-ff01/
+──────────────────────────────────────────────────────
+
+▎ Turn 1 · claude-sonnet-4-6 · turn 1 / 50
+
+  = assistant
+    Clicking login.
+
+  ▸ click {"selector":".nonexistent"}
+    ↳ ✗ 1180ms
+      ╵ error  element not found: waited 1s for ".nonexistent"
+      ╵ hint   closest match: ".login-button"
+
+─── Run complete ────────────────────────────── ✗ fail
+  runId     r-ff01
+  duration  3.5s
+  turns     1 / 50
+  usage     in 1.2k  out 40
+  summary   Could not find login button
+  evidence  .gauntlet/results/r-ff01/

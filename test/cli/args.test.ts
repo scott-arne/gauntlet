@@ -93,4 +93,41 @@ describe("parseArgs", () => {
   test("fanout throws when neither scenario path nor --from-result provided", () => {
     expect(() => parseArgs(["bun", "index.ts", "fanout"])).toThrow();
   });
+
+  test("accepts --silent as a bareword flag on run", () => {
+    const args = parseArgs(["bun", "index.ts", "run", "story.md", "--target", "x", "--silent"]);
+    if (args.command !== "run") throw new Error("unreachable");
+    expect(args.silent).toBe(true);
+  });
+
+  test("accepts --format pretty", () => {
+    const args = parseArgs(["bun", "index.ts", "run", "story.md", "--target", "x", "--format", "pretty"]);
+    if (args.command !== "run") throw new Error("unreachable");
+    expect(args.format).toBe("pretty");
+  });
+
+  test("accepts --format jsonl", () => {
+    const args = parseArgs(["bun", "index.ts", "run", "story.md", "--target", "x", "--format", "jsonl"]);
+    if (args.command !== "run") throw new Error("unreachable");
+    expect(args.format).toBe("jsonl");
+  });
+
+  test("rejects --format garbage", () => {
+    expect(() => parseArgs(["bun", "index.ts", "run", "story.md", "--target", "x", "--format", "nope"]))
+      .toThrow(/Invalid --format/);
+  });
+
+  test("accepts --no-color as a bareword flag", () => {
+    const args = parseArgs(["bun", "index.ts", "run", "story.md", "--target", "x", "--no-color"]);
+    if (args.command !== "run") throw new Error("unreachable");
+    expect(args.noColor).toBe(true);
+  });
+
+  test("leaves silent/format/noColor undefined or false when omitted", () => {
+    const args = parseArgs(["bun", "index.ts", "run", "story.md", "--target", "x"]);
+    if (args.command !== "run") throw new Error("unreachable");
+    expect(args.silent).toBe(false);
+    expect(args.format).toBeUndefined();
+    expect(args.noColor).toBe(false);
+  });
 });

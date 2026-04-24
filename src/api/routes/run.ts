@@ -19,6 +19,10 @@ import type { StoryCard } from "../../format/story-card";
 import type { LLMClient } from "../../models/provider";
 import type { RunConfigSnapshot } from "../../types";
 
+function viewportString(v: Viewport | undefined): string | undefined {
+  return v ? `${v.width}x${v.height}` : undefined;
+}
+
 function createAdapter(
   type: string,
   chrome: ChromeEndpoint | undefined,
@@ -274,6 +278,8 @@ export async function executeRun(opts: ExecuteRunOpts): Promise<void> {
       maxTurns,
       provider,
       model,
+      outDir,
+      viewport: adapterType === "web" ? viewportString(snapshotViewport(adapter)) : undefined,
     });
     if (runConfig) result.config = runConfig;
     writeResultFiles(outDir, result);
