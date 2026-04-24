@@ -59,4 +59,26 @@ describe("PrettyRenderer", () => {
     expect(sink.out).toContain("✓");
     expect(sink.out).toContain("420ms");
   });
+
+  test("spinner writes waiting line on llm_request and clears on next event (TTY/color on)", () => {
+    const sink = collect();
+    const r = new PrettyRenderer(sink, { color: true, columns: 100 });
+    r.handle({ eventId: 1, parentEventId: 0, ts: "t", type: "run_start", runId: "r", cardId: "c", target: "t", provider: "a", model: "claude-sonnet-4-6", adapter: "web", maxTurns: 50, toolTimeoutMs: 1, contextTreeBytes: 0 } as any);
+    r.handle({ eventId: 2, parentEventId: 1, ts: "t", type: "llm_request", turn: 1, messageCount: 1 } as any);
+    // Spinner writes once synchronously — we don't advance timers in this test
+    expect(sink.out).toContain("waiting for model");
+    r.handle({ eventId: 3, parentEventId: 2, ts: "t", type: "llm_response", turn: 1, stopReason: "end_turn", text: "", thinking: [], toolCalls: [], usage: { inputTokens: 0, outputTokens: 0 }, rawAssistantMessage: null } as any);
+    r.close();
+    // After the next event, a CR+erase sequence should clear the spinner line.
+    expect(sink.out).toContain("\r\x1b[2K");
+  });
+
+  test("spinner is not emitted when color is off", () => {
+    const sink = collect();
+    const r = new PrettyRenderer(sink, { color: false, columns: 100 });
+    r.handle({ eventId: 1, parentEventId: 0, ts: "t", type: "run_start", runId: "r", cardId: "c", target: "t", provider: "a", model: "claude-sonnet-4-6", adapter: "web", maxTurns: 50, toolTimeoutMs: 1, contextTreeBytes: 0 } as any);
+    r.handle({ eventId: 2, parentEventId: 1, ts: "t", type: "llm_request", turn: 1, messageCount: 1 } as any);
+    expect(sink.out).not.toContain("waiting for model");
+    r.close();
+  });
 });

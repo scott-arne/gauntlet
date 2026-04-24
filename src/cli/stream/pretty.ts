@@ -16,18 +16,24 @@ export class PrettyRenderer implements StreamRenderer {
   private runId: string | undefined;
   private model: string | undefined;
   private pendingRewrite: { base: string } | undefined;
+  private spinnerTimer: ReturnType<typeof setInterval> | undefined;
+  private spinnerStartMs = 0;
+  private spinnerActive = false;
 
   constructor(private sink: WriteSink, private opts: PrettyOptions) {
     this.paint = makePaint(opts.color);
   }
 
   handle(event: StreamEvent): void {
+    if (this.spinnerActive && event.type !== "llm_request") {
+      this.clearSpinner();
+    }
     switch (event.type) {
       case "run_start":
         this.renderRunStart(event);
         return;
-      case "run_end":
-        this.renderRunEnd(event);
+      case "llm_request":
+        if (this.opts.color) this.startSpinner();
         return;
       case "llm_response":
         this.renderLlmResponse(event);
@@ -42,13 +48,16 @@ export class PrettyRenderer implements StreamRenderer {
         if (event.name === "run_error") this.renderRunError(event);
         else this.renderEventMeta(event);
         return;
+      case "run_end":
+        this.renderRunEnd(event);
+        return;
       default:
         return;
     }
   }
 
   close(): void {
-    // nothing to flush yet
+    if (this.spinnerActive) this.clearSpinner();
   }
 
   private write(line: string): void {
@@ -188,6 +197,27 @@ export class PrettyRenderer implements StreamRenderer {
     this.write(`  ${p.dim("runId")}     ${this.runId ?? ""}`);
     this.write(`  ${p.dim("turn")}      ${turn} / ${this.maxTurns ?? "?"}`);
     this.write(`  ${p.dim("error")}     ${String(e.message ?? "")}`);
+  }
+
+  private startSpinner(): void {
+    this.spinnerActive = true;
+    this.spinnerStartMs = Date.now();
+    this.renderSpinnerLine();
+    this.spinnerTimer = setInterval(() => this.renderSpinnerLine(), 1000);
+  }
+
+  private clearSpinner(): void {
+    if (this.spinnerTimer) clearInterval(this.spinnerTimer);
+    this.spinnerTimer = undefined;
+    this.spinnerActive = false;
+    this.sink.write("\r\x1b[2K");
+  }
+
+  private renderSpinnerLine(): void {
+    const elapsed = Math.floor((Date.now() - this.spinnerStartMs) / 1000);
+    const mm = String(Math.floor(elapsed / 60)).padStart(2, "0");
+    const ss = String(elapsed % 60).padStart(2, "0");
+    this.sink.write(`\r\x1b[2K${this.paint.dim(`⋯ waiting for model · ${mm}:${ss}`)}`);
   }
 }
 
