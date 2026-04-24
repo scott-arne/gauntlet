@@ -1,5 +1,5 @@
 ──────────────────────────────────────────────────────
-  runId     r-8f21
+  runId     r-ff01
   card      login-flow
   target    https://example.com
   model     claude-sonnet-4-6
@@ -9,19 +9,17 @@
 
 ▎ Turn 1 · claude-sonnet-4-6 · turn 1 / 50
 
-  ~ thinking
-    Let me see the page state.
-
   = assistant
-    I'll take a screenshot first.
+    Clicking login.
 
-  ▸ screenshot {}
-    ↳ ✓ 180ms
-      → screenshots/001.png
+  ▸ click {"selector":".nonexistent"}
+    ↳ ✗ 1180ms
+      ╵ error  element not found: waited 1s for ".nonexistent"
+      ╵ hint   closest match: ".login-button"
 
-─── Run complete ────────────────────────────── ✓ pass
-  runId     r-8f21
-  duration  3.0s
+─── Run complete ────────────────────────────── ✗ fail
+  runId     r-ff01
+  duration  3.5s
   turns     1 / 50
-  usage     in 1.2k  out 80
-  summary   Login succeeded
+  usage     in 1.2k  out 40
+  summary   Could not find login button

@@ -17,17 +17,21 @@ function collect(): { out: string; write: (s: string) => void } {
 }
 
 describe("PrettyRenderer", () => {
-  test("renders full happy fixture excluding tool + llm_request events", () => {
+  test("renders full happy fixture", () => {
     const { events, expected } = loadFixture("happy");
-    const filtered = events.filter((e) =>
-      e.type !== "tool_call" && e.type !== "tool_result" && e.type !== "llm_request"
-    );
-
     const sink = collect();
     const r = new PrettyRenderer(sink, { color: false, columns: 100 });
-    for (const e of filtered) r.handle(e);
+    for (const e of events) r.handle(e);
     r.close();
+    expect(sink.out).toBe(expected);
+  });
 
+  test("renders failing tool call with error + hint lines", () => {
+    const { events, expected } = loadFixture("failing-tool");
+    const sink = collect();
+    const r = new PrettyRenderer(sink, { color: false, columns: 100 });
+    for (const e of events) r.handle(e);
+    r.close();
     expect(sink.out).toBe(expected);
   });
 });

@@ -1,7 +1,7 @@
 import type { StreamEvent, StreamRenderer } from "./renderer";
 import type { WriteSink } from "./jsonl";
 import { makePaint, type Paint } from "./colors";
-import { softWrap } from "./wrap";
+import { softWrap, truncateArgs } from "./wrap";
 
 const RULE = "──────────────────────────────────────────────────────";
 
@@ -30,6 +30,12 @@ export class PrettyRenderer implements StreamRenderer {
         return;
       case "llm_response":
         this.renderLlmResponse(event);
+        return;
+      case "tool_call":
+        this.renderToolCall(event);
+        return;
+      case "tool_result":
+        this.renderToolResult(event);
         return;
       default:
         return;
@@ -110,6 +116,32 @@ export class PrettyRenderer implements StreamRenderer {
       for (const line of softWrap(text, this.opts.columns - 4)) {
         this.write(`    ${line}`);
       }
+    }
+    this.write("");
+  }
+
+  private renderToolCall(e: StreamEvent): void {
+    const p = this.paint;
+    const name = String(e.name ?? "");
+    const args = truncateArgs(JSON.stringify(e.arguments ?? {}), 200);
+    this.write(`  ${p.cyan("▸")} ${p.bold(name)} ${p.dim(args)}`);
+  }
+
+  private renderToolResult(e: StreamEvent): void {
+    const p = this.paint;
+    const ms = Number(e.durationMs ?? 0);
+    const err = Boolean(e.error);
+    const timing = `${ms}ms`;
+    if (err) {
+      this.write(`    ${p.dim("↳")} ${p.red("✗")} ${p.dim(timing)}`);
+      const text = String(e.text ?? "");
+      if (text) this.write(`      ${p.dim("╵ error ")} ${text}`);
+      if (e.hint) this.write(`      ${p.dim("╵ hint  ")} ${String(e.hint)}`);
+    } else {
+      this.write(`    ${p.dim("↳")} ${p.green("✓")} ${p.dim(timing)}`);
+      if (e.image)            this.write(`      ${p.dim("→")} ${p.blue(String(e.image))}`);
+      else if (e.artifact)    this.write(`      ${p.dim("→")} ${p.blue(String(e.artifact))}`);
+      else if (e.capturePath) this.write(`      ${p.dim("→")} ${p.blue(String(e.capturePath))}`);
     }
     this.write("");
   }
