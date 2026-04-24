@@ -1,0 +1,6 @@
+{"eventId":1,"parentEventId":0,"ts":"2026-04-23T10:00:00.000Z","type":"run_start","runId":"r-8f21","cardId":"login-flow","target":"https://example.com","provider":"anthropic","model":"claude-sonnet-4-6","adapter":"web","maxTurns":50,"toolTimeoutMs":30000,"contextTreeBytes":2048}
+{"eventId":2,"parentEventId":1,"ts":"2026-04-23T10:00:00.500Z","type":"llm_request","turn":1,"messageCount":2}
+{"eventId":3,"parentEventId":2,"ts":"2026-04-23T10:00:02.000Z","type":"llm_response","turn":1,"stopReason":"tool_use","text":"I'll take a screenshot first.","thinking":[{"text":"Let me see the page state."}],"toolCalls":[{"id":"t1","name":"screenshot","arguments":{}}],"usage":{"inputTokens":1200,"outputTokens":80},"rawAssistantMessage":null}
+{"eventId":4,"parentEventId":3,"ts":"2026-04-23T10:00:02.100Z","type":"tool_call","turn":1,"toolUseId":"t1","name":"screenshot","arguments":{}}
+{"eventId":5,"parentEventId":4,"ts":"2026-04-23T10:00:02.280Z","type":"tool_result","turn":1,"toolUseId":"t1","name":"screenshot","durationMs":180,"text":"","image":"screenshots/001.png","error":false}
+{"eventId":6,"parentEventId":5,"ts":"2026-04-23T10:00:03.000Z","type":"run_end","status":"pass","summary":"Login succeeded","reasoning":"Saw dashboard after submit","observationCount":3,"durationMs":3000,"usage":{"inputTokens":1200,"outputTokens":80,"turns":1}}
