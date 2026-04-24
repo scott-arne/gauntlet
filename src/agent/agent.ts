@@ -182,6 +182,7 @@ export async function runAgent(
       summary: result.summary,
       reasoning: result.reasoning,
       observationCount: result.observations.length,
+      observations: result.observations,
       durationMs: result.duration_ms,
       usage: {
         inputTokens: totalInputTokens,

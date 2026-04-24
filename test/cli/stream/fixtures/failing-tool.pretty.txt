@@ -9,7 +9,6 @@
 ──────────────────────────────────────────────────────
 
 ▎ Turn 1 · claude-sonnet-4-6 · turn 1 / 50
-
   = assistant
     Clicking login.
 
@@ -23,5 +22,13 @@
   duration  3.5s
   turns     1 / 50
   usage     in 1.2k  out 40
-  summary   Could not find login button
   evidence  .gauntlet/results/r-ff01/
+
+  Summary
+    Could not find login button
+
+  Reasoning
+    Selector did not match
+
+  Observations (1)
+    · [bug] Login button class changed from .login-button to .login_button

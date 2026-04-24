@@ -9,7 +9,6 @@
 ──────────────────────────────────────────────────────
 
 ▎ Turn 1 · claude-sonnet-4-6 · turn 1 / 50
-
   ~ thinking
     Let me see the page state.
 
@@ -25,5 +24,15 @@
   duration  3.0s
   turns     1 / 50
   usage     in 1.2k  out 80
-  summary   Login succeeded
   evidence  .gauntlet/results/r-8f21/
+
+  Summary
+    Login succeeded
+
+  Reasoning
+    Saw dashboard after submit
+
+  Observations (3)
+    · [ux] Email field could autofocus on page load
+    · [suggestion] Offer a password manager hint
+    · [a11y] Submit button lacks an accessible name

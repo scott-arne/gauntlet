@@ -17,6 +17,7 @@ export class PrettyRenderer implements StreamRenderer {
   private model: string | undefined;
   private outDir: string | undefined;
   private pendingRewrite: { base: string } | undefined;
+  private pendingToolBlank = false;
   private spinnerTimer: ReturnType<typeof setInterval> | undefined;
   private spinnerStartMs = 0;
   private spinnerActive = false;
@@ -37,6 +38,13 @@ export class PrettyRenderer implements StreamRenderer {
     // result, but this guard keeps the renderer safe if that ever changes.
     if (this.pendingRewrite && event.type !== "tool_result") {
       this.pendingRewrite = undefined;
+    }
+    // Defer the trailing blank after tool_result: only emit it when the next
+    // event isn't another tool_call, so consecutive tool calls pack tightly
+    // but turn headers / meta / run_end still get breathing room.
+    if (this.pendingToolBlank) {
+      if (event.type !== "tool_call") this.write("");
+      this.pendingToolBlank = false;
     }
     switch (event.type) {
       case "run_start":
@@ -116,9 +124,36 @@ export class PrettyRenderer implements StreamRenderer {
       if (usage.cacheReadInputTokens) parts.push(`cache ${formatThousands(usage.cacheReadInputTokens)}`);
       this.write(`  ${p.dim("usage")}     ${parts.join("  ")}`);
     }
-    if (e.summary) this.write(`  ${p.dim("summary")}   ${e.summary}`);
     const evidence = e.outDir ? String(e.outDir) : this.outDir;
     if (evidence) this.write(`  ${p.dim("evidence")}  ${evidence}`);
+
+    // Full report — summary / reasoning / observations rendered after the
+    // status block so the reader can see why the run ended the way it did.
+    const summary = String(e.summary ?? "").trim();
+    const reasoning = String(e.reasoning ?? "").trim();
+    const observations = (e.observations ?? []) as Array<{ kind: string; description: string }>;
+    const wrapWidth = Math.max(20, this.opts.columns - 4);
+
+    if (summary) {
+      this.write("");
+      this.write(`  ${p.bold("Summary")}`);
+      for (const line of softWrap(summary, wrapWidth)) this.write(`    ${line}`);
+    }
+    if (reasoning) {
+      this.write("");
+      this.write(`  ${p.bold("Reasoning")}`);
+      for (const line of softWrap(reasoning, wrapWidth)) this.write(`    ${line}`);
+    }
+    if (observations.length > 0) {
+      this.write("");
+      this.write(`  ${p.bold(`Observations (${observations.length})`)}`);
+      for (const obs of observations) {
+        const kind = p.dim(`[${obs.kind}]`);
+        const lines = softWrap(String(obs.description ?? ""), Math.max(20, wrapWidth - 4));
+        this.write(`    · ${kind} ${lines[0] ?? ""}`);
+        for (let i = 1; i < lines.length; i++) this.write(`      ${lines[i]}`);
+      }
+    }
   }
 
   private renderLlmResponse(e: StreamEvent): void {
@@ -131,9 +166,13 @@ export class PrettyRenderer implements StreamRenderer {
     const header = `${p.cyan("▎")} ${p.bold(`Turn ${turn}`)} ${p.dim(`· ${modelLabel} · turn ${turn} / ${maxTurnsStr}`)}`;
     this.write(header);
 
+    // First content block sits directly under the turn header (no leading
+    // blank); subsequent blocks get a separator blank.
+    let firstBlock = true;
     const thinking = (e.thinking ?? []) as Array<{ text: string }>;
     for (const th of thinking) {
-      this.write("");
+      if (!firstBlock) this.write("");
+      firstBlock = false;
       this.write(`  ${p.magenta("~ thinking")}`);
       for (const line of softWrap(th.text, this.opts.columns - 4)) {
         this.write(`    ${p.dim(line)}`);
@@ -142,7 +181,8 @@ export class PrettyRenderer implements StreamRenderer {
 
     const text = String(e.text ?? "");
     if (text.length > 0) {
-      this.write("");
+      if (!firstBlock) this.write("");
+      firstBlock = false;
       this.write(`  ${p.yellow("= assistant")}`);
       for (const line of softWrap(text, this.opts.columns - 4)) {
         this.write(`    ${line}`);
@@ -194,7 +234,7 @@ export class PrettyRenderer implements StreamRenderer {
       else if (e.artifact)    this.write(`      ${p.dim("→")} ${p.blue(String(e.artifact))}`);
       else if (e.capturePath) this.write(`      ${p.dim("→")} ${p.blue(String(e.capturePath))}`);
     }
-    this.write(""); // trailing blank — matches the non-color path
+    this.pendingToolBlank = true;
   }
 
   private renderEventMeta(e: StreamEvent): void {

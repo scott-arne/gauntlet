@@ -72,6 +72,7 @@ export interface RunEndFields {
   summary: string;
   reasoning: string;
   observationCount: number;
+  observations: Array<{ kind: string; description: string; evidence?: string[] }>;
   durationMs: number;
   usage: {
     inputTokens: number;

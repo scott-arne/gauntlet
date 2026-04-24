@@ -112,4 +112,30 @@ describe("PrettyRenderer", () => {
     expect(sink.out).toContain("↳");
     expect(sink.out).toContain("420ms");
   });
+
+  test("consecutive tool calls render without a blank line between them", () => {
+    const sink = collect();
+    const r = new PrettyRenderer(sink, { color: false, columns: 100 });
+    r.handle({ eventId: 1, parentEventId: 0, ts: "t", type: "tool_call", turn: 1, toolUseId: "t1", name: "screenshot", arguments: {} } as any);
+    r.handle({ eventId: 2, parentEventId: 1, ts: "t", type: "tool_result", turn: 1, toolUseId: "t1", name: "screenshot", durationMs: 309, text: "", image: "screenshots/001.png", error: false } as any);
+    r.handle({ eventId: 3, parentEventId: 2, ts: "t", type: "tool_call", turn: 1, toolUseId: "t2", name: "read", arguments: { path: "x.md" } } as any);
+    r.handle({ eventId: 4, parentEventId: 3, ts: "t", type: "tool_result", turn: 1, toolUseId: "t2", name: "read", durationMs: 0, text: "", error: false } as any);
+    r.close();
+    // No blank line between the first tool_result's evidence arrow and the next tool_call.
+    expect(sink.out).toContain("→ screenshots/001.png\n  ▸ read");
+    // A trailing blank is still deferred after the final tool_result; the next non-tool event would flush it.
+    const afterFinal = sink.out.split("↳ ✓ 0ms\n").at(-1) ?? "";
+    expect(afterFinal).toBe("");
+  });
+
+  test("deferred blank flushes before a turn header following a tool_result", () => {
+    const sink = collect();
+    const r = new PrettyRenderer(sink, { color: false, columns: 100 });
+    r.handle({ eventId: 1, parentEventId: 0, ts: "t", type: "tool_call", turn: 1, toolUseId: "t1", name: "screenshot", arguments: {} } as any);
+    r.handle({ eventId: 2, parentEventId: 1, ts: "t", type: "tool_result", turn: 1, toolUseId: "t1", name: "screenshot", durationMs: 309, text: "", image: "screenshots/001.png", error: false } as any);
+    r.handle({ eventId: 3, parentEventId: 2, ts: "t", type: "llm_response", turn: 2, stopReason: "end_turn", text: "ok", thinking: [], toolCalls: [], usage: { inputTokens: 0, outputTokens: 0 }, rawAssistantMessage: null } as any);
+    r.close();
+    // Blank line separates the tool_result from the next Turn header.
+    expect(sink.out).toContain("→ screenshots/001.png\n\n▎ Turn 2");
+  });
 });
