@@ -53,6 +53,9 @@ async function main() {
         outDir: args.outDir,
         adapterType: args.adapter,
         config,
+        silent: args.silent,
+        format: args.format,
+        noColor: args.noColor,
       });
       break;
     }
