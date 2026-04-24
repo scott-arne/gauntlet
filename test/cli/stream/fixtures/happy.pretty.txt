@@ -1,0 +1,15 @@
+──────────────────────────────────────────────────────
+  runId     r-8f21
+  card      login-flow
+  target    https://example.com
+  model     claude-sonnet-4-6
+  adapter   web
+  max turns 50
+──────────────────────────────────────────────────────
+
+─── Run complete ────────────────────────────── ✓ pass
+  runId     r-8f21
+  duration  3.0s
+  turns     1 / 50
+  usage     in 1.2k  out 80
+  summary   Login succeeded
