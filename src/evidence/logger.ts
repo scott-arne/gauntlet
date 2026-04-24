@@ -24,6 +24,14 @@ export interface RunStartFields {
   maxTurns: number;
   toolTimeoutMs: number;
   contextTreeBytes: number;
+  /** Absolute path to this run's evidence directory. Optional to keep
+   * older tests and stub call sites compatible; production callers
+   * always populate it. Surfaced in the `evidence` line of the CLI
+   * stream's run_start panel. */
+  outDir?: string;
+  /** `WxH` string (e.g. `"1440x900"`). Web adapter only; other adapters
+   * leave undefined. Surfaced on the `adapter` line of the CLI stream. */
+  viewport?: string;
 }
 
 export interface LlmResponseFields {
@@ -72,6 +80,10 @@ export interface RunEndFields {
     cacheReadInputTokens?: number;
     turns: number;
   };
+  /** Absolute path to this run's evidence directory. Optional for the
+   * same reason as RunStartFields.outDir — surfaced in the `evidence`
+   * line of the CLI stream's run_end panel. */
+  outDir?: string;
 }
 
 const INLINE_TEXT_LIMIT = 32 * 1024;

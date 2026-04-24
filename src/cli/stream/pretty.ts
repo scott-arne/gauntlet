@@ -15,6 +15,7 @@ export class PrettyRenderer implements StreamRenderer {
   private maxTurns: number | undefined;
   private runId: string | undefined;
   private model: string | undefined;
+  private outDir: string | undefined;
   private pendingRewrite: { base: string } | undefined;
   private spinnerTimer: ReturnType<typeof setInterval> | undefined;
   private spinnerStartMs = 0;
@@ -27,6 +28,15 @@ export class PrettyRenderer implements StreamRenderer {
   handle(event: StreamEvent): void {
     if (this.spinnerActive && event.type !== "llm_request") {
       this.clearSpinner();
+    }
+    // An interleaved event would invalidate the cursor-up+erase contract
+    // of the pending tool_call line (we'd erase the wrong line). Drop the
+    // pending state — the eventual tool_result falls through to the
+    // two-line path and the stale `⋯` stays on the call line. The agent
+    // loop today never interleaves other events between a call and its
+    // result, but this guard keeps the renderer safe if that ever changes.
+    if (this.pendingRewrite && event.type !== "tool_result") {
+      this.pendingRewrite = undefined;
     }
     switch (event.type) {
       case "run_start":
@@ -69,13 +79,18 @@ export class PrettyRenderer implements StreamRenderer {
     this.maxTurns = Number(e.maxTurns ?? 0);
     this.runId = String(e.runId ?? "");
     this.model = String(e.model ?? "");
+    this.outDir = e.outDir ? String(e.outDir) : undefined;
+    const adapterLine = e.viewport
+      ? `${e.adapter} · viewport ${String(e.viewport).replace("x", "×")}`
+      : String(e.adapter);
     this.write(p.dim(RULE));
     this.write(`  ${p.dim("runId    ")} ${e.runId}`);
     this.write(`  ${p.dim("card     ")} ${e.cardId}`);
     this.write(`  ${p.dim("target   ")} ${e.target ?? "—"}`);
     this.write(`  ${p.dim("model    ")} ${e.model}`);
-    this.write(`  ${p.dim("adapter  ")} ${e.adapter}`);
+    this.write(`  ${p.dim("adapter  ")} ${adapterLine}`);
     this.write(`  ${p.dim("max turns")} ${e.maxTurns}`);
+    if (this.outDir) this.write(`  ${p.dim("evidence ")} ${this.outDir}`);
     this.write(p.dim(RULE));
     this.write("");
   }
@@ -102,6 +117,8 @@ export class PrettyRenderer implements StreamRenderer {
       this.write(`  ${p.dim("usage")}     ${parts.join("  ")}`);
     }
     if (e.summary) this.write(`  ${p.dim("summary")}   ${e.summary}`);
+    const evidence = e.outDir ? String(e.outDir) : this.outDir;
+    if (evidence) this.write(`  ${p.dim("evidence")}  ${evidence}`);
   }
 
   private renderLlmResponse(e: StreamEvent): void {

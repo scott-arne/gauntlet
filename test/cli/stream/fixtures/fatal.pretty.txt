@@ -3,8 +3,9 @@
   card      login-flow
   target    https://example.com
   model     claude-sonnet-4-6
-  adapter   web
+  adapter   web · viewport 1440×900
   max turns 50
+  evidence  .gauntlet/results/r-fa01/
 ──────────────────────────────────────────────────────
 
 ▎ Turn 1 · claude-sonnet-4-6 · turn 1 / 50

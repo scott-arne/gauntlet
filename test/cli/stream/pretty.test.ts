@@ -81,4 +81,35 @@ describe("PrettyRenderer", () => {
     expect(sink.out).not.toContain("waiting for model");
     r.close();
   });
+
+  test("assistant text longer than columns is soft-wrapped at columns-4", () => {
+    const longText = "alpha beta gamma delta epsilon zeta eta theta iota kappa lambda mu nu xi omicron";
+    const sink = collect();
+    const r = new PrettyRenderer(sink, { color: false, columns: 24 }); // effective wrap width: 20
+    r.handle({ eventId: 1, parentEventId: 0, ts: "t", type: "run_start", runId: "r", cardId: "c", target: "t", provider: "a", model: "m", adapter: "cli", maxTurns: 1, toolTimeoutMs: 1, contextTreeBytes: 0 } as any);
+    r.handle({ eventId: 2, parentEventId: 1, ts: "t", type: "llm_response", turn: 1, stopReason: "end_turn", text: longText, thinking: [], toolCalls: [], usage: { inputTokens: 0, outputTokens: 0 }, rawAssistantMessage: null } as any);
+    r.close();
+    const assistantBlock = sink.out.split("= assistant\n")[1] ?? "";
+    const wrappedLines = assistantBlock.split("\n").filter((l) => l.startsWith("    ") && l.trim().length > 0);
+    expect(wrappedLines.length).toBeGreaterThan(1); // actually wrapped into multiple lines
+    for (const line of wrappedLines) {
+      const content = line.slice(4); // strip the "    " indent
+      expect(content.length).toBeLessThanOrEqual(20);
+    }
+  });
+
+  test("pendingRewrite is invalidated if a non-result event interleaves (defensive)", () => {
+    const sink = collect();
+    const r = new PrettyRenderer(sink, { color: true, columns: 100 });
+    r.handle({ eventId: 1, parentEventId: 0, ts: "t", type: "tool_call", turn: 1, toolUseId: "t1", name: "click", arguments: { selector: ".x" } } as any);
+    // An unexpected event arrives between call and result
+    r.handle({ eventId: 2, parentEventId: 1, ts: "t", type: "event", name: "something_weird", note: "interleaved" } as any);
+    r.handle({ eventId: 3, parentEventId: 2, ts: "t", type: "tool_result", turn: 1, toolUseId: "t1", name: "click", durationMs: 420, text: "", error: false } as any);
+    r.close();
+    // The cursor-up + erase sequence MUST NOT fire — it would have erased the meta line.
+    expect(sink.out).not.toContain("\x1b[1A\x1b[2K");
+    // Result still arrives, via the two-line fallback (↳ + timing).
+    expect(sink.out).toContain("↳");
+    expect(sink.out).toContain("420ms");
+  });
 });

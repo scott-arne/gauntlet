@@ -15,6 +15,11 @@ import type { AppConfig } from "../config";
 import type { RunConfigSnapshot } from "../types";
 import { resolveStreamOptions } from "./stream/format";
 import { attachRenderer } from "./stream/attach";
+import type { Viewport } from "../config";
+
+function viewportString(v: Viewport | undefined): string | undefined {
+  return v ? `${v.width}x${v.height}` : undefined;
+}
 
 export interface RunCommandOptions {
   scenarioPath: string;
@@ -124,6 +129,8 @@ export async function run(opts: RunCommandOptions): Promise<void> {
       maxTurns: config.defaultTurns,
       provider: resolveProvider(config.models.agent),
       model: config.models.agent,
+      outDir,
+      viewport: adapterType === "web" ? viewportString(snapshotViewport(adapter)) : undefined,
     });
     result.config = runConfig;
     writeResultFiles(outDir, result);
