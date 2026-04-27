@@ -9,7 +9,7 @@ function collect(): { out: string; write: (s: string) => void } {
 describe("BatchTableRenderer (append mode)", () => {
   test("emits one append line per state change", () => {
     const sink = collect();
-    const r = new BatchTableRenderer(sink, { isTTY: false, color: false, columns: 100 });
+    const r = new BatchTableRenderer(sink, { isTTY: false, color: false, columns: 100, resultsRoot: "/tmp/.gauntlet/results" });
     r.setQueued("story-a");
     r.setQueued("story-b");
     r.setRunning("story-a", "run-a-1", 20);
@@ -31,18 +31,27 @@ describe("BatchTableRenderer (append mode)", () => {
 
   test("setErrored before start renders without a turn number", () => {
     const sink = collect();
-    const r = new BatchTableRenderer(sink, { isTTY: false, color: false, columns: 100 });
+    const r = new BatchTableRenderer(sink, { isTTY: false, color: false, columns: 100, resultsRoot: "/tmp/.gauntlet/results" });
     r.setQueued("story-x");
     r.setErrored("story-x", null, "card path missing");
     r.finalize();
     expect(sink.out).toContain("story-x: errored before start");
+  });
+
+  test("finalize emits a results line pointing to resultsRoot", () => {
+    const sink = collect();
+    const r = new BatchTableRenderer(sink, { isTTY: false, color: false, columns: 100, resultsRoot: "/some/proj/.gauntlet/results" });
+    r.setQueued("story-a");
+    r.setDone("story-a", "pass", 3);
+    r.finalize();
+    expect(sink.out).toContain("results: /some/proj/.gauntlet/results");
   });
 });
 
 describe("BatchTableRenderer (TTY mode)", () => {
   test("renders the full table on each state change with a cursor-up + erase prefix on subsequent frames", () => {
     const sink = collect();
-    const r = new BatchTableRenderer(sink, { isTTY: true, color: false, columns: 80 });
+    const r = new BatchTableRenderer(sink, { isTTY: true, color: false, columns: 80, resultsRoot: "/tmp/.gauntlet/results" });
     r.setQueued("story-a");
     r.setQueued("story-b");
     // Two frames so far. The second frame must be preceded by a cursor-up
@@ -57,7 +66,7 @@ describe("BatchTableRenderer (TTY mode)", () => {
 
   test("running and done rows render with the right status text and result flag", () => {
     const sink = collect();
-    const r = new BatchTableRenderer(sink, { isTTY: true, color: false, columns: 100 });
+    const r = new BatchTableRenderer(sink, { isTTY: true, color: false, columns: 100, resultsRoot: "/tmp/.gauntlet/results" });
     r.setQueued("story-a");
     r.setRunning("story-a", "run-1", 20);
     r.onTurn("story-a", 7);

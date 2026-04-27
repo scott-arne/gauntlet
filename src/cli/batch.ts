@@ -1,6 +1,7 @@
 import { basename, extname } from "path";
 import type { AppConfig } from "../config";
 import type { EvidenceLogger, EventObserver } from "../evidence/logger";
+import { gauntletPath } from "../paths";
 import { runOne, type RunOneOptions, type RunOneSummary } from "./run-one";
 import { BatchTableRenderer } from "./stream/batch-table";
 import type { WriteSink } from "./stream/jsonl";
@@ -30,12 +31,14 @@ export async function runBatch(
   runOneImpl: RunOneFn = runOne,
 ): Promise<number> {
   const cards = opts.scenarioPaths.map((p) => ({ path: p, cardId: cardIdForPath(p) }));
+  const resultsRoot = gauntletPath(opts.config.projectRoot, "results");
   const useTable = !opts.silent && opts.format !== "jsonl";
   const table = useTable
     ? new BatchTableRenderer(opts.sink, {
         isTTY: opts.isTTY,
         color: !opts.noColor && opts.isTTY,
         columns: 100,
+        resultsRoot,
       })
     : null;
 
@@ -101,6 +104,7 @@ export async function runBatch(
     console.error(
       `batch: ${pass} pass · ${fail} fail · ${investigate} investigate · ${errored} errored`,
     );
+    console.error(`results: ${resultsRoot}`);
   }
 
   return (fail + investigate + errored) === 0 ? 0 : 1;

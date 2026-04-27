@@ -16,6 +16,10 @@ export interface BatchTableOptions {
   isTTY: boolean;
   color: boolean;
   columns: number;
+  /** Path to surface in the final summary so the user knows where evidence
+   * landed (e.g., `<projectRoot>/.gauntlet/results`). batch.ts derives it
+   * from `gauntletPath(config.projectRoot, "results")`. */
+  resultsRoot: string;
 }
 
 export class BatchTableRenderer {
@@ -95,6 +99,7 @@ export class BatchTableRenderer {
     this.sink.write(
       `\nbatch: ${pass} pass · ${fail} fail · ${investigate} investigate · ${errored} errored\n`,
     );
+    this.sink.write(`results: ${this.opts.resultsRoot}\n`);
   }
 
   private emitAppendLine(line: string): void {

@@ -101,7 +101,10 @@ describe("runBatch — error handling", () => {
 
     expect(calls).toEqual(["a.md", "b.md"]);
     expect(exitCode).toBe(1);
-    expect(sink.out).toContain("a: errored");
+    // The stub throws before any onLogger / setRunning call, so the row
+    // never leaves "queued" — the table should render "errored before
+    // start", not "errored on turn N".
+    expect(sink.out).toContain("a: errored before start");
     expect(sink.out).toContain("b: done (pass)");
     expect(sink.out).toContain("batch: 1 pass · 0 fail · 0 investigate · 1 errored");
   });
