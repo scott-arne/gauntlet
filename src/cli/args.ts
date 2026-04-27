@@ -35,6 +35,11 @@ const RUN_ALLOWED = new Set([
   "turns", "viewport", "save-screencast",
   "silent", "format", "no-color",
 ]);
+const BATCH_ALLOWED = new Set([
+  "target", "adapter", "model", "chrome", "project-dir",
+  "turns", "viewport", "save-screencast",
+  "silent", "format", "no-color",
+]);
 const VALIDATE_ALLOWED = new Set<string>([]);
 const FANOUT_ALLOWED = new Set(["out", "model", "from-result"]);
 const SERVE_ALLOWED = new Set(["port", "project-dir", "chrome", "target", "model", "turns", "viewport", "save-screencast"]);
@@ -58,6 +63,16 @@ export interface RunArgs {
   command: "run";
   scenarioPath: string;
   outDir?: string;
+  adapter: AdapterType;
+  silent: boolean;
+  format: "pretty" | "jsonl" | undefined;
+  noColor: boolean;
+  cli: CliArgsInput;
+}
+
+export interface BatchArgs {
+  command: "batch";
+  scenarioPaths: string[];
   adapter: AdapterType;
   silent: boolean;
   format: "pretty" | "jsonl" | undefined;
@@ -89,7 +104,7 @@ export interface ConfigArgs {
   cli: CliArgsInput;
 }
 
-export type ParsedArgs = RunArgs | ValidateArgs | FanoutArgs | ServeArgs | ConfigArgs;
+export type ParsedArgs = RunArgs | BatchArgs | ValidateArgs | FanoutArgs | ServeArgs | ConfigArgs;
 
 export function parseArgs(argv: string[]): ParsedArgs {
   // Skip "bun" and script name
@@ -103,6 +118,8 @@ export function parseArgs(argv: string[]): ParsedArgs {
   switch (command) {
     case "run":
       return parseRunArgs(args.slice(1));
+    case "batch":
+      return parseBatchArgs(args.slice(1));
     case "validate":
       return parseValidateArgs(args.slice(1));
     case "fanout":
@@ -172,6 +189,59 @@ function parseRunArgs(args: string[]): RunArgs {
     command: "run",
     scenarioPath: positional,
     outDir: flags.out,
+    adapter,
+    silent: flags.silent === "true",
+    format,
+    noColor: flags["no-color"] === "true",
+    cli: {
+      projectRoot: flags["project-dir"],
+      chrome: flags.chrome,
+      target: flags.target,
+      turns: parseIntFlag(flags.turns, "--turns"),
+      viewport: flags.viewport,
+      saveScreencast: parseBoolFlag(flags["save-screencast"], "--save-screencast"),
+      models: parseModelFlagArray(flags.model),
+    },
+  };
+}
+
+function parseBatchArgs(args: string[]): BatchArgs {
+  const positionals: string[] = [];
+  for (let i = 0; i < args.length; i++) {
+    if (args[i].startsWith("--")) { i++; continue; }
+    positionals.push(args[i]);
+  }
+  if (positionals.length === 0) {
+    throw new Error("Missing card paths\n\nUsage: gauntlet batch <story.md> [more.md ...] --target <url>\n\nAt least one card path is required.");
+  }
+
+  const flags = parseFlags(args);
+  rejectUnknownFlags(flags, BATCH_ALLOWED, "batch");
+  if (!flags.target) {
+    throw new Error("Missing required flag: --target <url>");
+  }
+
+  let adapter: AdapterType = "web";
+  if (flags.adapter !== undefined) {
+    if (!isAdapterType(flags.adapter)) {
+      throw new Error(
+        `Invalid --adapter value "${flags.adapter}": must be one of ${ADAPTER_TYPES.join(", ")}`,
+      );
+    }
+    adapter = flags.adapter;
+  }
+
+  let format: "pretty" | "jsonl" | undefined;
+  if (flags.format !== undefined) {
+    if (flags.format !== "pretty" && flags.format !== "jsonl") {
+      throw new Error(`Invalid --format value "${flags.format}": must be "pretty" or "jsonl"`);
+    }
+    format = flags.format;
+  }
+
+  return {
+    command: "batch",
+    scenarioPaths: positionals,
     adapter,
     silent: flags.silent === "true",
     format,
@@ -324,6 +394,19 @@ Commands:
     --silent             Suppress the streaming transcript (default: stream)
     --format <mode>      Stream format: pretty | jsonl (default: auto by TTY)
     --no-color           Disable ANSI color (also respects NO_COLOR env var)
+
+  batch <story.md> [more.md ...]  Run multiple cards serially
+    --target <url>       (required) Application under test
+    --model agent=<name> Model for the agent
+    --chrome host:port   Chrome debugging endpoint
+    --adapter <type>     web | cli | tui (default: web)
+    --turns <n>          Max agent turns per run
+    --viewport WxH       Browser viewport
+    --save-screencast    Persist screencast frames to disk
+    --project-dir <dir>  Project root
+    --silent             Suppress the table; only print final summary
+    --format <mode>      pretty | jsonl (default: auto by TTY)
+    --no-color           Disable ANSI color
 
   validate <scenario.md>  Validate a scenario file
 
