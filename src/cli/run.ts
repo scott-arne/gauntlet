@@ -14,6 +14,8 @@ export interface RunCommandOptions {
   noColor: boolean;
 }
 
+// LLM-capable gate is enforced by the dispatch site (src/index.ts via
+// requireLlmCapableOrExit). This function assumes a valid AppConfig.
 export async function run(opts: RunCommandOptions): Promise<void> {
   const streamOpts = resolveStreamOptions({
     isTTY: Boolean(process.stdout.isTTY),
