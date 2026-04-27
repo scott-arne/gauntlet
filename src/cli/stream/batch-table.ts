@@ -139,8 +139,10 @@ export class BatchTableRenderer {
       case "errored":
         if (row.errorTurn === null) return "Errored before start    error";
         return `Errored on turn ${row.errorTurn}    error`;
-      default:
-        throw new Error("unreachable: " + JSON.stringify((row as CardRow).state));
+      default: {
+        const _exhaustive: never = row.state;
+        throw new Error("unreachable: " + JSON.stringify(_exhaustive));
+      }
     }
   }
 }
