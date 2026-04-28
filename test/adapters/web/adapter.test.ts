@@ -95,13 +95,14 @@ describe("WebAdapter", () => {
     }
   });
 
-  test("omits install_passkey when context root is empty", () => {
+  test("omits install_passkey and install_cookies when context root is empty", () => {
     const tmp = mkdtempSync(join(tmpdir(), "gauntlet-web-nopasskey-"));
     try {
       mkdirSync(join(tmp, ".gauntlet", "context"), { recursive: true });
       const adapter = new WebAdapter({ contextRoot: join(tmp, ".gauntlet", "context") });
       const names = adapter.toolDefinitions().map((t) => t.name);
       expect(names).not.toContain("install_passkey");
+      expect(names).not.toContain("install_cookies");
     } finally {
       rmSync(tmp, { recursive: true, force: true });
     }
@@ -139,28 +140,27 @@ describe("WebAdapter", () => {
     }
   });
 
-  test("includes install_passkey whenever context root is non-empty (predicate does not scan filenames)", () => {
+  test("includes install_passkey and install_cookies whenever context root is non-empty (predicate does not scan filenames)", () => {
     // v1.5 (WP1.5) changed the predicate: the adapter registers
-    // install_passkey whenever the context root exists and is non-empty.
-    // It deliberately does NOT scan for `passkey.json` — that would
-    // teach the runner about filename conventions, which spec §2.1
-    // forbids. If the author has no passkeys, the agent sees the tool
-    // in its registry but never calls it.
-    const tmp = mkdtempSync(join(tmpdir(), "gauntlet-web-passkey-"));
+    // credential-installing tools whenever the context root exists and
+    // is non-empty. It deliberately does NOT scan for `passkey.yaml` or
+    // `cookies.yaml` — that would teach the runner about filename
+    // conventions, which spec §2.1 forbids. If the author has no
+    // credentials, the agent sees the tools in its registry but never
+    // calls them.
+    const tmp = mkdtempSync(join(tmpdir(), "gauntlet-web-credentials-"));
     try {
       mkdirSync(join(tmp, ".gauntlet", "context", "matt"), { recursive: true });
+      // A non-credential file is enough to make the directory non-empty;
+      // the predicate doesn't care what's in it (spec §2.1).
       writeFileSync(
-        join(tmp, ".gauntlet", "context", "matt", "passkey.json"),
-        JSON.stringify({
-          credentialId: "dGVzdA",
-          isResidentCredential: true,
-          rpId: "example.test",
-          privateKey: "TEST_KEY",
-        }),
+        join(tmp, ".gauntlet", "context", "matt", "identity.md"),
+        "# matt\n",
       );
       const adapter = new WebAdapter({ contextRoot: join(tmp, ".gauntlet", "context") });
       const names = adapter.toolDefinitions().map((t) => t.name);
       expect(names).toContain("install_passkey");
+      expect(names).toContain("install_cookies");
     } finally {
       rmSync(tmp, { recursive: true, force: true });
     }

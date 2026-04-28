@@ -12,13 +12,20 @@ import {
   type PasskeyTool,
   type WebAuthnDriver,
 } from "./passkey";
+import {
+  buildInstallCookiesTool,
+  type CookiesDriver,
+  type CookiesTool,
+} from "./cookies";
 import { validateToolArgs } from "../../agent/validators";
 
 // The forked CDP library is CommonJS JS — use require for bun compatibility
 const chrome = require("./lib/chrome-ws-lib");
 
-// Passkey tool acts on tab index 0, matching the rest of this adapter.
+// Passkey and cookies tools both act on tab index 0, matching the rest
+// of this adapter.
 const PASSKEY_TAB = 0;
+const COOKIES_TAB = 0;
 
 // The default driver opens a dedicated CDP session (pinned WebSocket) for
 // WebAuthn. See chrome-ws-lib's webAuthnOpenSession comment for why we
@@ -26,6 +33,16 @@ const PASSKEY_TAB = 0;
 const webAuthnDriver: WebAuthnDriver = {
   async openSession(tab) {
     return await chrome.webAuthnOpenSession(tab);
+  },
+};
+
+// Cookies driver — thin pass-through over chrome-ws-lib's `setCookies`,
+// which already aggregates per-entry results into the SetCookieResult
+// shape. No pinned session: cookies live in the browser, not the CDP
+// session.
+const cookiesDriver: CookiesDriver = {
+  async setCookies(tab, cookies) {
+    return await chrome.setCookies(tab, cookies);
   },
 };
 
@@ -71,6 +88,7 @@ export class WebAdapter implements Adapter {
   private remote: boolean;
   private readTool: ReadTool | null;
   private passkeyTool: PasskeyTool | null;
+  private cookiesTool: CookiesTool | null;
   private logger: EvidenceLogger | null;
   private observerSession: ObserverSession | null = null;
   private chromeProfileName: string | null;
@@ -98,6 +116,14 @@ export class WebAdapter implements Adapter {
           options.contextRoot,
           PASSKEY_TAB,
           webAuthnDriver,
+          this.logger,
+        )
+      : null;
+    this.cookiesTool = options?.contextRoot
+      ? buildInstallCookiesTool(
+          options.contextRoot,
+          COOKIES_TAB,
+          cookiesDriver,
           this.logger,
         )
       : null;
@@ -572,6 +598,9 @@ export class WebAdapter implements Adapter {
     if (this.passkeyTool) {
       tools.push(this.passkeyTool.definition);
     }
+    if (this.cookiesTool) {
+      tools.push(this.cookiesTool.definition);
+    }
     return tools;
   }
 
@@ -603,6 +632,10 @@ export class WebAdapter implements Adapter {
 
     if (name === "install_passkey" && this.passkeyTool) {
       return this.passkeyTool.execute(args);
+    }
+
+    if (name === "install_cookies" && this.cookiesTool) {
+      return this.cookiesTool.execute(args);
     }
 
     const takeReturnScreenshot = async (): Promise<{ image?: ToolResult["image"]; imagePath?: string }> => {
