@@ -2,6 +2,7 @@ import { describe, test, expect, beforeEach, afterEach } from "bun:test";
 import { mkdtempSync, mkdirSync, writeFileSync, rmSync } from "fs";
 import { tmpdir } from "os";
 import { join } from "path";
+import * as YAML from "yaml";
 import {
   buildInstallPasskeyTool,
   readPasskeyFile,
@@ -39,11 +40,11 @@ describe("readPasskeyFile", () => {
     rmSync(tmp, { recursive: true, force: true });
   });
 
-  test("parses a valid passkey JSON", () => {
+  test("parses a valid passkey YAML", () => {
     const dir = join(tmp, ".gauntlet", "context", "matt");
     mkdirSync(dir, { recursive: true });
-    const filePath = join(dir, "passkey.json");
-    writeFileSync(filePath, JSON.stringify(SAMPLE_PASSKEY));
+    const filePath = join(dir, "passkey.yaml");
+    writeFileSync(filePath, YAML.stringify(SAMPLE_PASSKEY));
     const pk = readPasskeyFile(filePath);
     expect(pk.credentialId).toBe(SAMPLE_PASSKEY.credentialId);
     expect(pk.rpId).toBe("example.test");
@@ -54,25 +55,27 @@ describe("readPasskeyFile", () => {
   });
 
   test("throws when the passkey file does not exist", () => {
-    const filePath = join(tmp, "ghost", "passkey.json");
+    const filePath = join(tmp, "ghost", "passkey.yaml");
     expect(() => readPasskeyFile(filePath)).toThrow();
   });
 
-  test("throws when the JSON is malformed", () => {
+  test("throws when the YAML is malformed", () => {
     const dir = join(tmp, ".gauntlet", "context", "bad");
     mkdirSync(dir, { recursive: true });
-    const filePath = join(dir, "passkey.json");
-    writeFileSync(filePath, "{not json");
-    expect(() => readPasskeyFile(filePath)).toThrow(/invalid JSON/);
+    const filePath = join(dir, "passkey.yaml");
+    // A YAML document that is structurally invalid: a mapping key with
+    // an unparseable value. yaml's parser raises with line/column info.
+    writeFileSync(filePath, ":\n  : :");
+    expect(() => readPasskeyFile(filePath)).toThrow(/invalid YAML/);
   });
 
   test("throws when required fields are missing", () => {
     const dir = join(tmp, ".gauntlet", "context", "partial");
     mkdirSync(dir, { recursive: true });
-    const filePath = join(dir, "passkey.json");
+    const filePath = join(dir, "passkey.yaml");
     writeFileSync(
       filePath,
-      JSON.stringify({ credentialId: "x", rpId: "example.com" }),
+      YAML.stringify({ credentialId: "x", rpId: "example.com" }),
     );
     expect(() => readPasskeyFile(filePath)).toThrow(/privateKey/);
   });
@@ -80,10 +83,10 @@ describe("readPasskeyFile", () => {
   test("throws when signCount is missing (CDP requires integer)", () => {
     const dir = join(tmp, ".gauntlet", "context", "nocount");
     mkdirSync(dir, { recursive: true });
-    const filePath = join(dir, "passkey.json");
+    const filePath = join(dir, "passkey.yaml");
     writeFileSync(
       filePath,
-      JSON.stringify({
+      YAML.stringify({
         credentialId: "x",
         rpId: "example.test",
         privateKey: "k",
@@ -142,8 +145,8 @@ describe("readPasskeyFile", () => {
     for (const c of cases) {
       const dir = join(root, c.name);
       mkdirSync(dir);
-      const filePath = join(dir, "passkey.json");
-      writeFileSync(filePath, JSON.stringify(c.json));
+      const filePath = join(dir, "passkey.yaml");
+      writeFileSync(filePath, YAML.stringify(c.json));
       const pk = readPasskeyFile(filePath);
       expect(pk.credentialId).toBe(c.expected.credentialId);
       expect(pk.privateKey).toBe(c.expected.privateKey);
@@ -209,14 +212,14 @@ function makeFakeLogger(): { logger: EvidenceLogger; actions: LoggedAction[] } {
   return { logger, actions };
 }
 
-// Creates `<tmp>/.gauntlet/context/<name>/passkey.json` for each name and
+// Creates `<tmp>/.gauntlet/context/<name>/passkey.yaml` for each name and
 // returns the context root directory.
 function setupContext(tmp: string, names: string[]): string {
   const root = join(tmp, ".gauntlet", "context");
   mkdirSync(root, { recursive: true });
   for (const n of names) {
     mkdirSync(join(root, n));
-    writeFileSync(join(root, n, "passkey.json"), JSON.stringify(SAMPLE_PASSKEY));
+    writeFileSync(join(root, n, "passkey.yaml"), YAML.stringify(SAMPLE_PASSKEY));
   }
   return root;
 }
@@ -249,9 +252,9 @@ describe("buildInstallPasskeyTool", () => {
     expect(buildInstallPasskeyTool(root, 0, makeDriver().driver)).toBeNull();
   });
 
-  test("registers when contextRoot is non-empty even without passkey.json files", () => {
+  test("registers when contextRoot is non-empty even without passkey.yaml files", () => {
     // Registration predicate: non-empty directory. The tool does NOT
-    // scan for passkey.json — that's a behavior change from v1 and
+    // scan for passkey.yaml — that's a behavior change from v1 and
     // honors spec §2.1's principle that the runner does not interpret
     // filenames. If the author has no passkeys, the agent sees the
     // tool but never calls it.
@@ -275,7 +278,7 @@ describe("buildInstallPasskeyTool", () => {
     expect(params.required).toEqual(["path"]);
   });
 
-  test("tool description matches spec §3.4 verbatim (load-bearing prose)", () => {
+  test("tool description matches spec §3.2 verbatim (load-bearing prose)", () => {
     // This test guards the "after every navigate() and before any click
     // that triggers WebAuthn" clause. Ponder's field notes confirm the
     // agent learned the ordering from that exact sentence. Any edit to
@@ -286,9 +289,9 @@ describe("buildInstallPasskeyTool", () => {
     const tool = buildInstallPasskeyTool(root, 0, makeDriver().driver)!;
     const expected =
       "Install a passkey credential into the browser's virtual authenticator, " +
-      "reading the credential JSON from a file under the project's context " +
+      "reading the credential YAML from a file under the project's context " +
       "directory. The path is relative to .gauntlet/context/ (example: " +
-      '"alice/passkey.json"). You must re-call this tool after every navigate() ' +
+      '"alice/passkey.yaml"). You must re-call this tool after every navigate() ' +
       "and before any click that triggers WebAuthn — Chrome clears virtual " +
       "authenticators on every same-target navigation, and the authenticator does " +
       "not survive. Calls are safe and cheap to repeat. The tool returns a " +
@@ -303,7 +306,7 @@ describe("buildInstallPasskeyTool", () => {
     const { logger, actions } = makeFakeLogger();
     const tool = buildInstallPasskeyTool(root, 0, driver, logger)!;
 
-    const result = await tool.execute({ path: "matt/passkey.json" });
+    const result = await tool.execute({ path: "matt/passkey.yaml" });
     expect(result.text).toContain("Installed passkey");
     expect(result.text).toContain("example.test");
 
@@ -319,7 +322,7 @@ describe("buildInstallPasskeyTool", () => {
     // install_passkey_ok action log entry present, with sanitized context.
     const ok = actions.find((a) => a.action === "install_passkey_ok");
     expect(ok).toBeDefined();
-    expect(ok!.params.path).toBe("matt/passkey.json");
+    expect(ok!.params.path).toBe("matt/passkey.yaml");
     expect(ok!.params.rpId).toBe("example.test");
     expect(ok!.params.credentialIdLength).toBeGreaterThan(0);
     expect(ok!.params.privateKeyLength).toBeGreaterThan(0);
@@ -333,9 +336,9 @@ describe("buildInstallPasskeyTool", () => {
     const { driver, calls } = makeDriver();
     const tool = buildInstallPasskeyTool(root, 0, driver)!;
 
-    await tool.execute({ path: "matt/passkey.json" });
-    await tool.execute({ path: "alice/passkey.json" });
-    await tool.execute({ path: "matt/passkey.json" });
+    await tool.execute({ path: "matt/passkey.yaml" });
+    await tool.execute({ path: "alice/passkey.yaml" });
+    await tool.execute({ path: "matt/passkey.yaml" });
 
     expect(calls.openSession).toBe(3);
     expect(calls.addAuth).toHaveLength(3);
@@ -386,7 +389,7 @@ describe("buildInstallPasskeyTool", () => {
     const { logger, actions } = makeFakeLogger();
     const tool = buildInstallPasskeyTool(root, 0, driver, logger)!;
 
-    const abs = await tool.execute({ path: join(root, "matt", "passkey.json") });
+    const abs = await tool.execute({ path: join(root, "matt", "passkey.yaml") });
     expect(abs.text.toLowerCase()).toContain("error");
     expect(calls.openSession).toBe(0);
     const failure = actions.find((a) => a.action === "install_passkey_failed");
@@ -400,7 +403,7 @@ describe("buildInstallPasskeyTool", () => {
     const { logger, actions } = makeFakeLogger();
     const tool = buildInstallPasskeyTool(root, 0, driver, logger)!;
 
-    const ghost = await tool.execute({ path: "ghost/passkey.json" });
+    const ghost = await tool.execute({ path: "ghost/passkey.yaml" });
     expect(ghost.text.toLowerCase()).toContain("error");
     expect(calls.openSession).toBe(0);
     const failure = actions.find((a) => a.action === "install_passkey_failed");
@@ -420,7 +423,7 @@ describe("buildInstallPasskeyTool", () => {
       const { logger, actions } = makeFakeLogger();
       const tool = buildInstallPasskeyTool(root, 0, driver, logger)!;
 
-      const result = await tool.execute({ path: "matt/passkey.json" });
+      const result = await tool.execute({ path: "matt/passkey.yaml" });
       expect(result.text.toLowerCase()).toContain("error");
       expect(result.text).toContain(expectedStep);
       expect(result.text).toContain(`${failOn} failed`);
@@ -450,7 +453,7 @@ describe("buildInstallPasskeyTool", () => {
     {
       const { driver, calls } = makeDriver();
       const tool = buildInstallPasskeyTool(root, 0, driver)!;
-      await tool.execute({ path: "matt/passkey.json" });
+      await tool.execute({ path: "matt/passkey.yaml" });
       await tool.teardown();
       expect(calls.close).toBe(1);
     }

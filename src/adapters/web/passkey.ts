@@ -1,4 +1,5 @@
 import { readdirSync, readFileSync, statSync } from "fs";
+import * as YAML from "yaml";
 import type { ToolDefinition, ToolResult } from "../../models/provider";
 import type { EvidenceLogger } from "../../evidence/logger";
 import { resolveInside } from "../../paths";
@@ -50,16 +51,16 @@ const DEFAULT_AUTHENTICATOR_OPTIONS: VirtualAuthenticatorOptions = {
   automaticPresenceSimulation: true,
 };
 
-// Tool description — authoritative prose from Gauntlet v1.5 spec §3.4.
+// Tool description — authoritative prose from Gauntlet v1.5 spec §3.2.
 // DO NOT edit without going through the amendment protocol (spec §13);
 // Ponder's field notes confirm the agent learned the "after every
 // navigate() and before any click that triggers WebAuthn" ordering from
 // this exact sentence.
 const TOOL_DESCRIPTION =
   "Install a passkey credential into the browser's virtual authenticator, " +
-  "reading the credential JSON from a file under the project's context " +
+  "reading the credential YAML from a file under the project's context " +
   "directory. The path is relative to .gauntlet/context/ (example: " +
-  '"alice/passkey.json"). You must re-call this tool after every navigate() ' +
+  '"alice/passkey.yaml"). You must re-call this tool after every navigate() ' +
   "and before any click that triggers WebAuthn — Chrome clears virtual " +
   "authenticators on every same-target navigation, and the authenticator does " +
   "not survive. Calls are safe and cheap to repeat. The tool returns a " +
@@ -72,8 +73,8 @@ const TOOL_DESCRIPTION =
 // with `-` / `_` / no-padding get rejected as
 // "Failed to deserialize params.credential.<field> - BINDINGS: invalid
 // base64 string at position N". We normalize in the forward direction
-// (base64url → standard base64, padding added) so callers can supply JSON
-// in either encoding and the tool passes what Chrome actually expects.
+// (base64url → standard base64, padding added) so callers can supply YAML
+// values in either encoding and the tool passes what Chrome actually expects.
 function toStandardBase64(input: string): string {
   const cleaned = input.replace(/\s+/g, "").replace(/-/g, "+").replace(/_/g, "/");
   const paddingNeeded = (4 - (cleaned.length % 4)) % 4;
@@ -87,14 +88,17 @@ export function readPasskeyFile(absolutePath: string): PasskeyCredential {
   const raw = readFileSync(absolutePath, "utf-8");
   let parsed: unknown;
   try {
-    parsed = JSON.parse(raw);
+    parsed = YAML.parse(raw);
   } catch (err) {
+    // yaml's YAMLParseError already carries `linePos` in its message
+    // (e.g. "at line 3, column 2"), so surfacing the parser error
+    // verbatim gives the agent enough to pinpoint the typo.
     throw new Error(
-      `passkey "${absolutePath}": invalid JSON (${err instanceof Error ? err.message : String(err)})`,
+      `passkey "${absolutePath}": invalid YAML (${err instanceof Error ? err.message : String(err)})`,
     );
   }
   if (!parsed || typeof parsed !== "object") {
-    throw new Error(`passkey "${absolutePath}": expected a JSON object`);
+    throw new Error(`passkey "${absolutePath}": expected a YAML mapping`);
   }
   const p = parsed as Record<string, unknown>;
   if (typeof p.credentialId !== "string" || !p.credentialId) {
@@ -137,7 +141,7 @@ function credentialContext(credential: PasskeyCredential): Record<string, unknow
 // Registration predicate: true when `contextRoot` exists, is a directory,
 // and is non-empty. Matches the `read` tool's predicate and honors
 // spec §2.1's principle that the runner does not interpret filenames.
-// The runner never scans for `passkey.json` — if the author has no
+// The runner never scans for `passkey.yaml` — if the author has no
 // passkeys, the agent sees the tool in its registry but never calls it.
 function contextRootIsPopulated(contextRoot: string): boolean {
   try {
@@ -174,7 +178,7 @@ export function buildInstallPasskeyTool(
         path: {
           type: "string",
           description:
-            "Path to the passkey JSON file, relative to .gauntlet/context/. Example: 'alice/passkey.json'.",
+            "Path to the passkey YAML file, relative to .gauntlet/context/. Example: 'alice/passkey.yaml'.",
         },
       },
       required: ["path"],
