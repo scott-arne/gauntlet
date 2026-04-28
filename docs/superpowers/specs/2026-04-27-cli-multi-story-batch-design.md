@@ -153,49 +153,64 @@ stable key without parsing card bodies up front, and parse-failure rows
 have a sensible label. Reading `card.id` from inside the file and using
 that as the row label is reserved for a future iteration.
 
-Row format, scaled to terminal width:
+Row format (TTY mode — Mock B ticker, settled on after iteration 2):
 
 ```
-Gauntlet running in Batch Mode
-==============================
-  story-id-1       Complete on turn 8 / 20            investigate
-  long-story-id-2  Running turn 7 / 20
-  story-id-3       (queued)
+Gauntlet · 3 cards · target https://app.local
+
+  ✓  login-matt              pass          6 turns · 4.2s
+        → /Users/mw/.gauntlet/results/login-matt_…/
+  !  login-not-logged-in     investigate   9 turns · 8.1s
+        → /Users/mw/.gauntlet/results/login-not-logged-in_…/
+  ⠋ [3/3] login-locked-out   turn 4 / 10
 ```
 
-Three columns: `cardId`, status text, result flag. The result flag column
-shows the literal `VetStatus` value (`pass` / `fail` / `investigate`) for
-completed rows, and `error` for errored rows. The exact layout — column
-widths, separators, whether `pass` is dimmed — is iterable; the contract
-above is what the renderer is built around.
+The active card sits at the bottom as a single redrawing line (spinner +
+`[i/N]` + cardId + turn count). When it finishes, that line is erased
+and replaced by a two-line committed result (status + run-dir hint),
+flush against the previous commit. Result lines never move once written.
 
 State machine: `queued → running → done | errored`, plus `queued →
-errored` (e.g., card path missing or unparseable — the run never starts).
+errored` (card path missing or `parseStoryCard` rejects — runOne throws
+before any event fires).
 
-State → status text:
-- `queued` → `(queued)`
-- `running` → `Running turn N / MAX`
-- `done` → `Complete on turn N / MAX`
-- `errored` (after start) → `Errored on turn N`
-- `errored` (before start) → `Errored before start`
+Glyphs and status text:
+- `queued` → not displayed (tracked silently; cards only appear once
+  they start).
+- `running` → spinner glyph + `[i/N]` + cardId + `turn N / MAX`
+  (single-line redraw).
+- `done` → `✓` (pass) / `!` (investigate) / `✗` (fail) +
+  `<status>` + `<turn count> turns · <elapsed>s` + run-dir hint line.
+- `errored` (after start) → `✗ error — <message>` +
+  `turn N · <elapsed>s` + run-dir hint line.
+- `errored` (before start) → `✗ error — <message>` +
+  `before start · —s` + run-dir hint line (`—`, since no run dir was
+  created).
 
-Initial frame: the table is rendered once with every card as `(queued)`
-before the first `runOne` is awaited, so the user sees the full set
-immediately.
+Redraw mechanics (TTY mode):
+- Spinner line: `\r\x1b[2K<frame>` — single-line redraw. Immune to
+  stderr interleave from inside a run because it only erases the current
+  line.
+- Commit transition: `\r\x1b[2K` to erase the spinner, then (for cards
+  past the first) `\x1b[1A\r\x1b[2K` to erase the blank line above the
+  spinner so the result stacks flush. Then write the two committed
+  lines. The result of this is: every committed line is permanent and
+  never re-rendered.
+- Spinner timer: `setInterval` advances the frame every 80ms. Started
+  at `setRunning`, stopped on `setDone` / `setErrored` / `finalize`.
+  Unref'd so it never holds the process open.
 
-Redraw model (selected by the `isTTY` argument the renderer is constructed
-with — `batch.ts` derives it from `process.stdout.isTTY`, the same way
-`run.ts` does for `resolveStreamOptions`):
-- **TTY:** full table redrawn in place. The renderer tracks how many
-  lines it last wrote (header + separator + N rows) and emits
-  `\x1b[<N>A\x1b[0J` (cursor-up N, erase-to-end-of-screen) before each
-  redraw. These are the same kinds of byte sequences `pretty.ts` uses
-  inline today; the renderer writes its own — there is nothing to
-  reuse-by-import. Redraw fires on every state change (turn tick,
-  setDone, setErrored).
-- **Non-TTY:** falls back to one append-only line per state change
-  (`story-id-1: running turn 7 / 20`). No cursor tricks. The final frozen
-  table is always printed at the end.
+Non-TTY mode: one append-only line per state change
+(`cardId: queued` / `cardId: running turn N / MAX` /
+`cardId: done (status) on turn N` / `cardId: errored on turn N` /
+`cardId: errored before start`). Same compact summary at the end.
+
+Why not the original "redraw the whole table on every event" design from
+iteration 1: stderr from inside a run shares the TTY with stdout. A
+multi-line cursor walk-back assumes nothing else wrote to the TTY since
+the last frame; stderr writes (chrome launch logs, adapter diagnostics)
+violate that and corrupt the next redraw. The single-line redraw + commit
+pattern is robust against that interleave.
 
 ## Operational details
 

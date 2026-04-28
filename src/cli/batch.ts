@@ -38,6 +38,7 @@ export async function runBatch(
         isTTY: opts.isTTY,
         color: !opts.noColor && opts.isTTY,
         columns: 100,
+        target: opts.target,
         resultsRoot,
       })
     : null;
