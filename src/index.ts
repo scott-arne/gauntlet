@@ -59,6 +59,24 @@ async function main() {
       });
       break;
     }
+    case "batch": {
+      const config = await loadConfigOrExit(args.cli);
+      await requireLlmCapableOrExit(config);
+      const { runBatch } = await import("./cli/batch");
+      const exitCode = await runBatch({
+        scenarioPaths: args.scenarioPaths,
+        target: args.cli.target ?? "",
+        adapterType: args.adapter,
+        config,
+        silent: args.silent,
+        format: args.format,
+        noColor: args.noColor,
+        sink: { write: (s: string) => process.stdout.write(s) },
+        isTTY: Boolean(process.stdout.isTTY),
+      });
+      if (exitCode !== 0) process.exit(exitCode);
+      break;
+    }
     case "validate": {
       const { validateScenario } = await import("./cli/validate");
       const result = validateScenario(args.scenarioPath);

@@ -130,4 +130,44 @@ describe("parseArgs", () => {
     expect(args.format).toBeUndefined();
     expect(args.noColor).toBe(false);
   });
+
+  test("parses batch with multiple positional cards", () => {
+    const args = parseArgs([
+      "bun", "index.ts", "batch", "a.md", "b.md",
+      "--target", "http://localhost:3000",
+    ]);
+    expect(args.command).toBe("batch");
+    if (args.command !== "batch") throw new Error("unreachable");
+    expect(args.scenarioPaths).toEqual(["a.md", "b.md"]);
+    expect(args.cli.target).toBe("http://localhost:3000");
+    expect(args.silent).toBe(false);
+    expect(args.format).toBeUndefined();
+    expect(args.noColor).toBe(false);
+  });
+
+  test("batch rejects --out", () => {
+    expect(() =>
+      parseArgs(["bun", "index.ts", "batch", "a.md", "--target", "u", "--out", "/tmp"]),
+    ).toThrow(/Unknown flag/);
+  });
+
+  test("batch requires at least one card", () => {
+    expect(() =>
+      parseArgs(["bun", "index.ts", "batch", "--target", "u"]),
+    ).toThrow(/at least one/i);
+  });
+
+  test("batch requires --target", () => {
+    expect(() => parseArgs(["bun", "index.ts", "batch", "a.md"])).toThrow(/--target/);
+  });
+
+  test("batch parses --silent and --format jsonl", () => {
+    const args = parseArgs([
+      "bun", "index.ts", "batch", "a.md", "--target", "u",
+      "--silent", "--format", "jsonl",
+    ]);
+    if (args.command !== "batch") throw new Error("unreachable");
+    expect(args.silent).toBe(true);
+    expect(args.format).toBe("jsonl");
+  });
 });

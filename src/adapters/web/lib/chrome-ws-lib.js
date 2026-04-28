@@ -38,6 +38,16 @@ let activePort = hostOverride.getPort();
 const { pickFreePort } = require('../../../util/pick-free-port');
 // ===== GAUNTLET DIVERGENCE END =====
 
+// ===== GAUNTLET DIVERGENCE START: silence per-run lifecycle banners =====
+// Upstream prints "Chrome started in <mode> mode (PID: ..., port: ...,
+// profile: ...)" and similar per-run banners on stderr. In Gauntlet those
+// fire once per card during a `gauntlet batch` run and clutter the output
+// without buying anything actionable (the same info is in profile-meta.json
+// and the run_start event). Silenced by default; set GAUNTLET_CHROME_VERBOSE=1
+// to restore the banners for debugging chrome startup.
+const CHROME_VERBOSE = !!process.env.GAUNTLET_CHROME_VERBOSE;
+// ===== GAUNTLET DIVERGENCE END =====
+
 // ===== GAUNTLET DIVERGENCE START: WebSocketClient (standard WebSocket API) =====
 // Upstream uses Node's http.request + 'upgrade' event with a hand-rolled
 // frame parser. We use the standard WebSocket API (works in both Node and
@@ -1937,7 +1947,7 @@ async function startChrome(headless = null, profileName = null, port = null) {
     if (meta && meta.port) {
       if (await isPortAlive(hostOverride.getHost(), meta.port, meta.pid)) {
         activePort = meta.port;
-        console.error(`Reconnected to existing Chrome (port: ${meta.port}, PID: ${meta.pid}, profile: ${chromeProfileName})`);
+        if (CHROME_VERBOSE) console.error(`Reconnected to existing Chrome (port: ${meta.port}, PID: ${meta.pid}, profile: ${chromeProfileName})`);
         return;
       }
       // Stale meta.json — Chrome died without cleanup
@@ -2072,7 +2082,7 @@ async function startChrome(headless = null, profileName = null, port = null) {
   });
 
   const mode = chromeHeadless ? 'headless' : 'headed';
-  console.error(`Chrome started in ${mode} mode (PID: ${proc.pid}, port: ${chosenPort}, profile: ${chromeProfileName})`);
+  if (CHROME_VERBOSE) console.error(`Chrome started in ${mode} mode (PID: ${proc.pid}, port: ${chosenPort}, profile: ${chromeProfileName})`);
 }
 
 async function killChrome() {
@@ -2433,7 +2443,7 @@ function initializeSession() {
     fs.mkdirSync(sessionDir, { recursive: true });
     captureCounter = 0;
 
-    console.error(`Browser session directory: ${sessionDir}`);
+    if (CHROME_VERBOSE) console.error(`Browser session directory: ${sessionDir}`);
 
     // Register cleanup on process exit
     process.on('exit', cleanupSession);

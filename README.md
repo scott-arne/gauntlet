@@ -87,7 +87,7 @@ The frontmatter parser is intentionally minimal: it splits on the first `:` per 
 
 You can validate a card's format with `gauntlet validate scenario.md`.
 
-Each file holds exactly one card: one frontmatter block, one description, one optional `## Acceptance Criteria` list. `gauntlet run` takes a single scenario path and executes it in one agent loop -- there is no built-in batch runner, so to run a suite you either script a shell loop over multiple files or drive `POST /api/run/:id` per card via the HTTP API.
+Each file holds exactly one card: one frontmatter block, one description, one optional `## Acceptance Criteria` list. `gauntlet run` executes one card in one agent loop; `gauntlet batch` (see [Batch mode](#batch-mode) below) takes a set of card paths and runs them serially with a live progress display and an aggregate exit code.
 
 **Copy-paste template** -- a minimal card you can drop into a new `scenario.md` and edit:
 
@@ -185,6 +185,12 @@ gauntlet run scenario.md --target http://localhost:3000 --format jsonl
 # Suppress the run transcript and only print the runId on stderr
 gauntlet run scenario.md --target http://localhost:3000 --silent
 
+# Run a set of cards serially with a live progress display
+gauntlet batch story-a.md story-b.md --target http://localhost:3000
+
+# Glob-expanded set; exit 0 iff every card passes, 1 otherwise
+gauntlet batch stories/*.md --target https://staging.example.com
+
 # Validate a story card's format
 gauntlet validate scenario.md
 
@@ -198,6 +204,47 @@ gauntlet fanout --from-result ./results/run-001 --out ./stories
 # (Gauntlet writes state to <project>/.gauntlet/).
 gauntlet serve --port 4400 --project-dir ../my-app
 ```
+
+### Batch mode
+
+`gauntlet batch <story.md> [more.md ...] --target <url>` runs N cards
+serially. The active card sits at the bottom as a single redrawing
+spinner line; finished cards stack above as committed result rows. The
+final summary tells you where evidence landed.
+
+```
+Gauntlet · 3 cards · target https://app.local
+
+  ✓ login-matt              pass          6 turns · 4.2s
+        → /…/.gauntlet/results/login-matt_…/
+  ! login-not-logged-in     investigate   9 turns · 8.1s
+        → /…/.gauntlet/results/login-not-logged-in_…/
+  ⠋ [3/3] login-locked-out   turn 4 / 10
+
+batch: 1 pass · 0 fail · 1 investigate · 0 errored
+results: /…/.gauntlet/results
+```
+
+Per-card flags (`--target`, `--adapter`, `--model`, `--chrome`,
+`--turns`, `--viewport`, `--save-screencast`, `--project-dir`) apply
+uniformly to every card. `--out` is rejected — each card uses its
+default per-run directory under `<.gauntlet>/results/<runId>/`.
+
+Output modes:
+
+- **Default** (TTY): the live ticker shown above.
+- **`--format jsonl`**: every per-event log line on stdout, with
+  `runId` injected. No table. This is the CI / machine-readable mode.
+- **`--silent`**: stdout is empty; the one-line summary lands on
+  stderr. The exit code (`0` iff every card is `pass`, `1` otherwise)
+  is the only other signal.
+
+Errors don't abort the batch — a card that throws is marked errored
+and the loop moves on. Concurrent execution (`-j N`) isn't implemented
+yet; v1 is strictly serial.
+
+To see Chrome's launch banners (silent by default to keep the ticker
+clean), set `GAUNTLET_CHROME_VERBOSE=1`.
 
 ### Web UI
 
@@ -284,6 +331,12 @@ The web `POST /api/run/:id` body is validated against an explicit allow-list. Un
 | `run` | `--silent` | Suppress the streaming transcript; prints only `runId` on stderr |
 | `run` | `--format pretty\|jsonl` | Streaming transcript format (default: auto by TTY) |
 | `run` | `--no-color` | Disable ANSI color output; `NO_COLOR` is also respected |
+| `batch` | `<story.md> [more.md ...]` | Positional card paths (at least one required) |
+| `batch` | `--target <url>` | (required) Application under test |
+| `batch` | other per-card flags | Same as `run` minus `--out`. Applied uniformly to every card. |
+| `batch` | `--silent` | Suppress the table; print only the final summary on stderr |
+| `batch` | `--format pretty\|jsonl` | Output format (default: auto by TTY); jsonl injects `runId` per event |
+| `batch` | `--no-color` | Disable ANSI color output; `NO_COLOR` is also respected |
 | `serve` | `--port <n>` | Server port |
 | `serve` | `--project-dir <dir>` | Project root (contains `.gauntlet/` state dir) |
 | `serve` | `--chrome host:port` | Default Chrome endpoint for runs |
@@ -408,9 +461,14 @@ src/
     safe-path.ts        Path traversal protection
   cli/
     args.ts             CLI argument parsing
-    run.ts              `run` command
+    run.ts              `run` command (single-card streaming wrapper)
+    run-one.ts          Engine shared by `run` and `batch` (constructs
+                        EvidenceLogger, drives runAgent, owns adapter lifecycle)
+    batch.ts            `batch` command — serial runner + per-card observer
     validate.ts         `validate` command
     fanout.ts           `fanout` command
+    stream/             Streaming-transcript renderers for run/batch
+                        (pretty, jsonl, batch-table)
   fanout/
     generator.ts        AI-powered test variation generation
   evidence/
