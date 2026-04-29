@@ -1,0 +1,34 @@
+# Example passkey.yaml — copy under .gauntlet/context/<author>/passkey.yaml
+# and have the runner agent call install_passkey({ path: "alice/passkey.yaml" })
+# after navigating to the login page and BEFORE clicking the passkey button.
+#
+# Chrome clears virtual authenticators on every same-target navigation, so
+# the agent must re-call install_passkey after every navigate(). The tool
+# description teaches this directly — don't soften it.
+#
+# Required: credentialId, rpId, privateKey, signCount.
+# Optional: userHandle, isResidentCredential.
+#
+# All byte fields (credentialId, privateKey, userHandle) accept either
+# base64url ("-"/"_", optional padding) or standard base64 ("+"/"/", with
+# padding). The loader normalizes to standard base64 with padding before
+# passing to CDP — Chrome's WebAuthn.addCredential rejects base64url
+# despite what the protocol docs say.
+#
+# How to obtain a real passkey for a real account: capture one during a
+# real registration ceremony. There's no DevTools shortcut — you need a
+# WebAuthn dance, save the resulting credential, and reuse it from here.
+# Treat real values as secrets and keep them out of git
+# (.gauntlet/context/ is gitignored).
+
+# All values below are SYNTHETIC — base64 of literal placeholder strings.
+# rpId uses the reserved .test TLD so this can never collide with a live
+# site. Loading this file into a real browser will install the credential
+# but no production WebAuthn challenge will accept the resulting signature.
+
+credentialId: VEVTVENSRURFTlRJQUxJRHh4eHh4eHh4eHg=
+isResidentCredential: true
+rpId: example.test
+userHandle: VEVTVFVTRVJIQU5ETEV4eHh4eHg=
+signCount: 0                         # CDP requires an integer; increment if you replay
+privateKey: VEVTVFBSSVZBVEVLRVl4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHg=

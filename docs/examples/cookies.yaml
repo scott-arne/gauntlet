@@ -1,0 +1,49 @@
+# Example cookies.yaml — copy under .gauntlet/context/<author>/cookies.yaml
+# and have the runner agent call install_cookies({ path: "alice/cookies.yaml" })
+# before navigating to a cookie-gated origin.
+#
+# Each entry mirrors Chrome's CDP Network.setCookie parameters. The runner
+# does not interpret cookie semantics — Chrome does. If a cookie is rejected
+# (wrong domain, missing secure flag for SameSite=None, etc.) the agent
+# learns the per-cookie reason in the install_cookies tool result and can
+# decide whether to retry, fix the file, or proceed without it.
+#
+# Required per entry:
+#   name, value, AND either
+#     - url    (e.g. "https://example.test/")
+#     - domain (with optional path; defaults to "/")
+#
+# Common optional fields: secure, httpOnly, sameSite, expires.
+# Full CDP set also accepts: priority, sameParty, sourceScheme, sourcePort.
+# Unknown fields are rejected (catches typos like "samesite" vs "sameSite").
+#
+# Quick way to populate this from a real session: open DevTools on the
+# target site → Application → Cookies → copy each cookie row by hand.
+# The runner image will use whatever you paste here, so treat real values
+# as secrets and keep them out of git (.gauntlet/context/ is gitignored).
+
+# --- Session cookie (domain form) ---
+- name: _session
+  value: REPLACE_ME_WITH_REAL_SESSION_TOKEN
+  domain: .example.test          # leading dot = sent to all subdomains
+  path: /
+  secure: true                   # HTTPS-only; Chrome rejects non-secure SameSite=None
+  httpOnly: true                 # not readable from JavaScript
+  sameSite: Lax                  # Strict | Lax | None
+  expires: 1798761600            # 2027-01-01 UTC; omit this field for a session cookie
+
+# --- CSRF token (no expires → session-scoped) ---
+- name: _csrf
+  value: REPLACE_ME_WITH_REAL_CSRF_TOKEN
+  domain: .example.test
+  path: /
+  sameSite: Strict
+
+# --- URL form (alternative to domain+path) ---
+# Use when you want Chrome to derive cookie scope from a URL rather than
+# spell out domain + path explicitly. Useful for one-offs where the URL
+# is the same one the agent navigates to anyway.
+- name: marketing_optin
+  value: dismissed
+  url: https://example.test/
+  sameSite: Lax
