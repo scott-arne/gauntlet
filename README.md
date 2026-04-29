@@ -1,6 +1,6 @@
 # Gauntlet
 
-Gauntlet is an AI-powered QA testing framework. It uses large language models (Claude or GPT) to test web applications the way a human tester would: navigating pages, clicking buttons, filling forms, taking screenshots, and reporting bugs. You write test scenarios as markdown "story cards," and Gauntlet's AI agent works through them in a real browser, delivering a verdict (pass/fail/investigate) with evidence.
+Gauntlet is an AI-powered QA testing framework. It uses large language models (Claude or GPT) to test web applications the way a human tester would: navigating pages, clicking buttons, filling forms, taking screenshots, and reporting bugs. You write **story cards** -- markdown files with a title, description, and acceptance criteria -- and Gauntlet's AI agent works through them in a real browser, delivering a verdict (pass/fail/investigate) with evidence.
 
 ## What it does
 
@@ -9,7 +9,7 @@ Gauntlet is an AI-powered QA testing framework. It uses large language models (C
 3. **The agent explores and evaluates** your acceptance criteria, but also reports anything else it notices: bugs, UX issues, typos, accessibility problems, performance issues, and suggestions.
 4. **You get a structured result** with a verdict, reasoning, observations, screenshots, and an action log.
 
-Beyond single-scenario testing, Gauntlet can **generate test variations** ("fanout") from a parent story card -- producing edge-case, error-path, and alternate-persona scenarios automatically. It can also generate follow-up scenarios from observations or failures in previous runs.
+Beyond single-story testing, Gauntlet can **generate variations** ("fanout") from a parent story card -- producing edge-case, error-path, and alternate-persona stories automatically. It can also generate follow-up stories from observations or failures in previous runs.
 
 ## Architecture
 
@@ -44,13 +44,13 @@ Beyond single-scenario testing, Gauntlet can **generate test variations** ("fano
 - **Browser automation**: Chrome DevTools Protocol (custom CDP library)
 - **AI providers**: Anthropic SDK (Claude) and OpenAI SDK
 - **Deployment**: Docker (Debian + Chrome + Bun)
-- **Storage**: File-based (no database) -- markdown for scenarios, JSON for results
+- **Storage**: File-based (no database) -- markdown for stories, JSON for results
 
 ## How it works
 
 ### Story cards
 
-Test scenarios are markdown files (conventionally named `scenario.md`) with YAML-style frontmatter followed by a markdown body:
+Story cards are markdown files (conventionally named `story.md`) with YAML-style frontmatter followed by a markdown body:
 
 ```markdown
 ---
@@ -83,13 +83,13 @@ Test the login flow for a registered user.
 
 The frontmatter parser is intentionally minimal: it splits on the first `:` per line, so values are plain strings -- do not quote them and do not use nested YAML structures.
 
-**Body**: free-form markdown describing the scenario. Everything before the `## Acceptance Criteria` heading is treated as the description and passed to the agent as context. Lines under `## Acceptance Criteria` that begin with `- ` are parsed as individual criteria; the agent evaluates each one and the verdict reflects whether they all hold. The `## Acceptance Criteria` section is optional -- a description-only card is valid.
+**Body**: free-form markdown describing the story. Everything before the `## Acceptance Criteria` heading is treated as the description and passed to the agent as context. Lines under `## Acceptance Criteria` that begin with `- ` are parsed as individual criteria; the agent evaluates each one and the verdict reflects whether they all hold. The `## Acceptance Criteria` section is optional -- a description-only card is valid.
 
-You can validate a card's format with `gauntlet validate scenario.md`.
+You can validate a card's format with `gauntlet validate story.md`.
 
 Each file holds exactly one card: one frontmatter block, one description, one optional `## Acceptance Criteria` list. `gauntlet run` executes one card in one agent loop; `gauntlet batch` (see [Batch mode](#batch-mode) below) takes a set of card paths and runs them serially with a live progress display and an aggregate exit code.
 
-**Copy-paste template** -- a minimal card you can drop into a new `scenario.md` and edit:
+**Copy-paste template** -- a minimal card you can drop into a new `story.md` and edit:
 
 ```markdown
 ---
@@ -100,7 +100,7 @@ tags: smoke
 stakeholder: end-user
 ---
 
-Describe the scenario here: what the tester should do, any setup or context
+Describe the story here: what the tester should do, any setup or context
 they need, and what a successful run looks like.
 
 ## Acceptance Criteria
@@ -151,11 +151,11 @@ Gauntlet supports two providers via a common `LLMClient` interface:
 
 ### Fanout: test variation generation
 
-The fanout system (`src/fanout/generator.ts`) uses an LLM to automatically generate additional test scenarios from a parent card. Three modes:
+The fanout system (`src/fanout/generator.ts`) uses an LLM to automatically generate additional story cards from a parent card. Three modes:
 
 - **Variations**: Edge cases, error paths, alternate personas, boundary conditions (3-5 generated per parent card).
 - **From observations**: Promotes observations from a test run (bugs, UX issues, etc.) into focused follow-up story cards.
-- **From failures**: When a test fails, generates 2-3 root-cause investigation scenarios.
+- **From failures**: When a test fails, generates 2-3 root-cause investigation stories.
 
 Generated cards include `parent` linking back to the source and are validated against the story card format before being saved.
 
@@ -219,17 +219,17 @@ bun unlink
 ### CLI
 
 ```bash
-# Run a test scenario against a target URL
-gauntlet run scenario.md --target http://localhost:3000
+# Run a story against a target URL
+gauntlet run story.md --target http://localhost:3000
 
 # Run with a specific model, adapter, viewport, and turn cap
-gauntlet run scenario.md --target http://localhost:3000 --model agent=claude-sonnet-4-6 --adapter web --viewport 1440x900 --turns 50
+gauntlet run story.md --target http://localhost:3000 --model agent=claude-sonnet-4-6 --adapter web --viewport 1440x900 --turns 50
 
 # Stream machine-readable events instead of the pretty terminal transcript
-gauntlet run scenario.md --target http://localhost:3000 --format jsonl
+gauntlet run story.md --target http://localhost:3000 --format jsonl
 
 # Suppress the run transcript and only print the runId on stderr
-gauntlet run scenario.md --target http://localhost:3000 --silent
+gauntlet run story.md --target http://localhost:3000 --silent
 
 # Run a set of cards serially with a live progress display
 gauntlet batch story-a.md story-b.md --target http://localhost:3000
@@ -238,12 +238,12 @@ gauntlet batch story-a.md story-b.md --target http://localhost:3000
 gauntlet batch stories/*.md --target https://staging.example.com
 
 # Validate a story card's format
-gauntlet validate scenario.md
+gauntlet validate story.md
 
 # Generate test variations from a story card
-gauntlet fanout scenario.md --out ./stories
+gauntlet fanout story.md --out ./stories
 
-# Generate follow-up scenarios from a previous result
+# Generate follow-up stories from a previous result
 gauntlet fanout --from-result ./results/run-001 --out ./stories
 
 # Start the web server — point --project-dir at the project's root
@@ -313,7 +313,7 @@ The HTTP API (Hono) serves at `/api`:
 | `/api/scenarios/:id` | PUT | Update a card |
 | `/api/scenarios/:id` | DELETE | Delete a card |
 | `/api/scenarios/:id/approve` | POST | Set card status to ready |
-| `/api/run/:id` | POST | Execute a scenario; returns `{ runId, cardId }` |
+| `/api/run/:id` | POST | Execute a story; returns `{ runId, cardId }` |
 | `/api/results` | GET | List all results |
 | `/api/results/:runId` | GET | Get result metadata |
 | `/api/results/:runId/file/:path` | GET | Fetch a file from a run (must be listed in result.json) |
@@ -324,14 +324,14 @@ The HTTP API (Hono) serves at `/api`:
 
 ## Docker
 
-Run a scenario from the current directory against a target URL — the container mounts your working directory and reads `scenario.md`:
+Run a story from the current directory against a target URL — the container mounts your working directory and reads `story.md`:
 
 ```bash
 docker run --rm \
   -e OPENAI_API_KEY=sk-... \
   -e GAUNTLET_AGENT_MODEL=gpt-5.4-mini \
   -v "$PWD:/work" -w /work \
-  gauntlet run scenario.md --target https://example.com
+  gauntlet run story.md --target https://example.com
 ```
 
 On macOS/Windows, use `--target http://host.docker.internal:3000` to reach a dev server running on the host.
@@ -340,7 +340,7 @@ The Docker image includes Chrome, Bun, and the pre-built UI. It uses Debian book
 
 ### Docker Compose
 
-For persistent server use — the web UI, repeat runs, multiple scenarios — Compose is more ergonomic, mostly because it reads a `.env` file so API keys and defaults live in one place instead of on every `docker run` invocation:
+For persistent server use — the web UI, repeat runs, multiple stories — Compose is more ergonomic, mostly because it reads a `.env` file so API keys and defaults live in one place instead of on every `docker run` invocation:
 
 ```bash
 cp .env.example .env    # then fill in your API keys
@@ -478,7 +478,7 @@ See the [Configuration](#configuration) section above for the full list. Quick r
 | `GAUNTLET_VIEWPORT` | Default browser viewport | `1440x900` |
 | `GAUNTLET_SAVE_SCREENCAST` | Persist screencast frames to disk | `0` |
 | `GAUNTLET_AGENT_MODEL` | Default model for test execution | `claude-sonnet-4-6` |
-| `GAUNTLET_FANOUT_MODEL` | Model for scenario generation | -- |
+| `GAUNTLET_FANOUT_MODEL` | Model for story generation | -- |
 | `GAUNTLET_MODELS` | Comma-separated model allow-list (opt-in) | `[]` (no restriction) |
 
 ## Project structure

@@ -156,7 +156,7 @@ function parseConfigArgs(args: string[]): ConfigArgs {
 function parseRunArgs(args: string[]): RunArgs {
   const positional = extractPositional(args);
   if (!positional) {
-    throw new Error("Missing scenario path\n\nUsage: gauntlet run <scenario.md> --target <url>");
+    throw new Error("Missing story path\n\nUsage: gauntlet run <story.md> --target <url>");
   }
 
   const flags = parseFlags(args);
@@ -262,7 +262,7 @@ function parseBatchArgs(args: string[]): BatchArgs {
 function parseValidateArgs(args: string[]): ValidateArgs {
   const positional = extractPositional(args);
   if (!positional) {
-    throw new Error("Missing scenario path\n\nUsage: gauntlet validate <scenario.md>");
+    throw new Error("Missing story path\n\nUsage: gauntlet validate <story.md>");
   }
 
   const flags = parseFlags(args);
@@ -281,7 +281,7 @@ function parseFanoutArgs(args: string[]): FanoutArgs {
   const resultDir = flags["from-result"];
 
   if (!positional && !resultDir) {
-    throw new Error("Missing scenario path or --from-result\n\nUsage: gauntlet fanout <scenario.md> | --from-result <result-dir>");
+    throw new Error("Missing story path or --from-result\n\nUsage: gauntlet fanout <story.md> | --from-result <result-dir>");
   }
 
   return {
@@ -382,7 +382,7 @@ function usage(): string {
   return `Usage: gauntlet <command> [options]
 
 Commands:
-  run <scenario.md>    Run a scenario
+  run <story.md>    Run a story
     --target <url>       (required) Application under test
     --model agent=<name> Model for the agent (default: claude-sonnet-4-6)
     --chrome host:port   Chrome debugging endpoint (default: 127.0.0.1:9222)
@@ -409,9 +409,9 @@ Commands:
     --format <mode>      pretty | jsonl (default: auto by TTY)
     --no-color           Disable ANSI color
 
-  validate <scenario.md>  Validate a scenario file
+  validate <story.md>  Validate a story file
 
-  fanout <scenario.md>    Fan out scenario into sub-scenarios
+  fanout <story.md>    Fan out a story into sub-stories
     --out <dir>             Output directory
     --model fanout=<name>   Model for generation
     --from-result <dir>     Generate from an existing result directory
