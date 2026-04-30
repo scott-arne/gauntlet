@@ -21,6 +21,23 @@ export function makeRunId(cardId: string): string {
 }
 
 /**
+ * Compose a run set id from a kind (single or batch), an ISO 8601 basic-format
+ * UTC timestamp, and a 4-char base36 nonce:
+ *
+ *   <kind>_<YYYYMMDDTHHMMSSZ>_<nonce>
+ *
+ * Example: `batch_20260416T142301Z_k3xm`
+ *
+ * The kind is preserved verbatim (single or batch), followed by the timestamp
+ * for chronological ordering, and a 4-char nonce to resolve same-second collisions.
+ */
+export function makeRunSetId(kind: "single" | "batch"): string {
+  const ts = isoBasicNow();
+  const nonce = Math.random().toString(36).slice(2, 6).padEnd(4, "0");
+  return `${kind}_${ts}_${nonce}`;
+}
+
+/**
  * ISO 8601 basic-format UTC timestamp at second precision: `YYYYMMDDTHHMMSSZ`.
  * No hyphens, no colons — safe in path segments and Chrome profile names.
  */

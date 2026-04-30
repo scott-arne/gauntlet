@@ -1,5 +1,5 @@
 import { describe, test, expect } from "bun:test";
-import { makeRunId, sanitizeProfileSegment } from "../../src/util/id";
+import { makeRunId, makeRunSetId, sanitizeProfileSegment } from "../../src/util/id";
 
 describe("makeRunId", () => {
   test("returns a non-empty string", () => {
@@ -44,6 +44,24 @@ describe("makeRunId", () => {
     for (let i = 0; i < 20; i++) {
       expect(makeRunId("card-001")).toMatch(/^[a-zA-Z0-9_-]+$/);
     }
+  });
+});
+
+describe("makeRunSetId", () => {
+  test("kind=single produces single_<ts>_<nonce>", () => {
+    const id = makeRunSetId("single");
+    expect(id).toMatch(/^single_\d{8}T\d{6}Z_[a-z0-9]{4}$/);
+  });
+
+  test("kind=batch produces batch_<ts>_<nonce>", () => {
+    const id = makeRunSetId("batch");
+    expect(id).toMatch(/^batch_\d{8}T\d{6}Z_[a-z0-9]{4}$/);
+  });
+
+  test("two consecutive ids differ", () => {
+    const a = makeRunSetId("single");
+    const b = makeRunSetId("single");
+    expect(a).not.toBe(b);
   });
 });
 
