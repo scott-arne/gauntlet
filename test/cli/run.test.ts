@@ -101,6 +101,15 @@ describe("run — multi-pass RunSet integration", () => {
 
     // Assert: summary reflects consistent_pass for all-pass scripted run.
     expect(setJson.summary.overall.overallStatus).toBe("consistent_pass");
+
+    // Assert: each per-run result.json carries the runSet field with correct setId.
+    const setId = setEntries[0];
+    for (const d of runDirs) {
+      const resultJson = JSON.parse(
+        readFileSync(join(resultsDir, d, "result.json"), "utf8"),
+      );
+      expect(resultJson.runSet?.runSetId).toBe(setId);
+    }
   });
 
   test("gauntlet run --passes 1 does NOT produce a RunSet artifact", async () => {
