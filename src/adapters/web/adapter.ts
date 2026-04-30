@@ -19,8 +19,22 @@ import {
 } from "./cookies";
 import { validateToolArgs } from "../../agent/validators";
 
-// The forked CDP library is CommonJS JS — use require for bun compatibility
-const chrome = require("./lib/chrome-ws-lib");
+// The forked CDP library is CommonJS JS — use require for bun compatibility.
+// PRI-1436: chrome-ws-lib's only top-level export is now `createSession()`.
+// Each WebAdapter instance gets its own session-bag so concurrent web runs
+// in `gauntlet serve` don't share globals (activePort, profile name,
+// connection pool, etc.).
+//
+// The session is dynamically typed (the underlying lib is JS); we model
+// it as a flat record of callable methods. The previous code used a bare
+// `require()` whose return type was `any`, so this type is intentionally
+// loose to preserve that behavior.
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+export type ChromeSession = Record<string, any>;
+// eslint-disable-next-line @typescript-eslint/no-var-requires
+const { createSession } = require("./lib/chrome-ws-lib") as {
+  createSession: (opts?: { host?: string; port?: number }) => ChromeSession;
+};
 
 // Passkey and cookies tools both act on tab index 0, matching the rest
 // of this adapter.
@@ -30,21 +44,25 @@ const COOKIES_TAB = 0;
 // The default driver opens a dedicated CDP session (pinned WebSocket) for
 // WebAuthn. See chrome-ws-lib's webAuthnOpenSession comment for why we
 // bypass the connection pool.
-const webAuthnDriver: WebAuthnDriver = {
-  async openSession(tab) {
-    return await chrome.webAuthnOpenSession(tab);
-  },
-};
+function makeWebAuthnDriver(chrome: ChromeSession): WebAuthnDriver {
+  return {
+    async openSession(tab) {
+      return await chrome.webAuthnOpenSession(tab);
+    },
+  };
+}
 
 // Cookies driver — thin pass-through over chrome-ws-lib's `setCookies`,
 // which already aggregates per-entry results into the SetCookieResult
 // shape. No pinned session: cookies live in the browser, not the CDP
 // session.
-const cookiesDriver: CookiesDriver = {
-  async setCookies(tab, cookies) {
-    return await chrome.setCookies(tab, cookies);
-  },
-};
+function makeCookiesDriver(chrome: ChromeSession): CookiesDriver {
+  return {
+    async setCookies(tab, cookies) {
+      return await chrome.setCookies(tab, cookies);
+    },
+  };
+}
 
 interface ObserverSession {
   close(): void;
@@ -81,6 +99,13 @@ export interface WebAdapterOptions {
    * from AppConfig).
    */
   viewport?: Viewport;
+  /**
+   * PRI-1436: dependency-injection seam for tests. When provided, the
+   * adapter uses this session instead of calling `createSession()`.
+   * Production code never sets this — the adapter constructs its own
+   * session from `options.chrome`.
+   */
+  chromeSession?: ChromeSession;
 }
 
 export class WebAdapter implements Adapter {
@@ -95,12 +120,30 @@ export class WebAdapter implements Adapter {
   private viewport: Viewport | null;
   /** Lazy cache of tool name → parameter schema for O(1) validation. */
   private toolSchemas: Map<string, ToolDefinition["parameters"]> | null = null;
+  /**
+   * PRI-1436: per-WebAdapter chrome-ws-lib session. Concurrent web runs
+   * in `gauntlet serve` each construct their own WebAdapter and therefore
+   * their own session — no shared activePort / chromeProcess / profile
+   * name / connection pool. Tests may inject a stubbed session via
+   * `options.chromeSession`.
+   */
+  private chrome: ChromeSession;
 
   constructor(options?: WebAdapterOptions) {
     this.remote = false;
-    if (options?.chrome) {
-      chrome.setEndpoint(options.chrome.host, options.chrome.port);
+    // PRI-1436: each WebAdapter owns its own chrome-ws-lib session. The
+    // session's hostOverride is seeded from options.chrome at construction
+    // time — no module-level setEndpoint mutation.
+    if (options?.chromeSession) {
+      this.chrome = options.chromeSession;
+      if (options?.chrome) {
+        this.remote = true;
+      }
+    } else if (options?.chrome) {
+      this.chrome = createSession({ host: options.chrome.host, port: options.chrome.port });
       this.remote = true;
+    } else {
+      this.chrome = createSession();
     }
     // If no chrome passed, chrome-ws-lib uses its startup defaults
     // (which come from host-override.js's mutable state — set by setDefaults
@@ -115,7 +158,7 @@ export class WebAdapter implements Adapter {
       ? buildInstallPasskeyTool(
           options.contextRoot,
           PASSKEY_TAB,
-          webAuthnDriver,
+          makeWebAuthnDriver(this.chrome),
           this.logger,
         )
       : null;
@@ -123,10 +166,20 @@ export class WebAdapter implements Adapter {
       ? buildInstallCookiesTool(
           options.contextRoot,
           COOKIES_TAB,
-          cookiesDriver,
+          makeCookiesDriver(this.chrome),
           this.logger,
         )
       : null;
+  }
+
+  /**
+   * PRI-1436: expose the per-instance chrome-ws-lib session so collaborators
+   * (e.g. ScreencastStreamer) can talk to the same Chrome process this
+   * adapter started, without going through a separate session whose
+   * activePort would be unset.
+   */
+  getChromeSession(): ChromeSession {
+    return this.chrome;
   }
 
   async start(url: string): Promise<void> {
@@ -134,9 +187,9 @@ export class WebAdapter implements Adapter {
       // Pass the per-run profile name (spec §5.1) so each run gets its
       // own --user-data-dir. Falls back to chrome-ws-lib's default when
       // the runner did not provide one (kept for test backwards-compat).
-      await chrome.startChrome(true, this.chromeProfileName ?? null); // headless
+      await this.chrome.startChrome(true, this.chromeProfileName ?? null); // headless
     }
-    await chrome.navigate(0, url);
+    await this.chrome.navigate(0, url);
 
     // Pin the viewport before the observer opens so any downstream
     // layout/resize events are captured as initial state. Best-effort:
@@ -144,7 +197,7 @@ export class WebAdapter implements Adapter {
     // window-size flag already gives us a reasonable default.
     if (this.viewport) {
       try {
-        await chrome.setViewport(0, {
+        await this.chrome.setViewport(0, {
           width: this.viewport.width,
           height: this.viewport.height,
           deviceScaleFactor: 1,
@@ -165,7 +218,7 @@ export class WebAdapter implements Adapter {
     // session opens (so the clear is not itself streamed as a noisy
     // first event).
     if (this.remote) {
-      await chrome.clearBrowserData(0);
+      await this.chrome.clearBrowserData(0);
     }
 
     // Open the observer session *after* navigation so the initial page
@@ -173,7 +226,7 @@ export class WebAdapter implements Adapter {
     if (this.logger) {
       const logger = this.logger;
       try {
-        this.observerSession = await chrome.openObserverSession(
+        this.observerSession = await this.chrome.openObserverSession(
           0,
           (category: BrowserEventCategory, payload: Record<string, unknown>) => {
             try {
@@ -221,14 +274,14 @@ export class WebAdapter implements Adapter {
       await this.passkeyTool.teardown();
     }
     if (!this.remote) {
-      await chrome.killChrome();
+      await this.chrome.killChrome();
       // Recursively delete the per-run Chrome profile directory (spec
       // §5.1). Best-effort: failures are logged as an action-log entry
       // but never thrown — a leftover stale dir is preferable to
       // failing the close path. Skipped when no profile name was
       // provided (e.g., legacy/test usage without a runner).
       if (this.chromeProfileName) {
-        const dir = chrome.getChromeProfileDir(this.chromeProfileName);
+        const dir = this.chrome.getChromeProfileDir(this.chromeProfileName);
         try {
           await rm(dir, { recursive: true, force: true });
         } catch (err) {
@@ -641,7 +694,7 @@ export class WebAdapter implements Adapter {
     const takeReturnScreenshot = async (): Promise<{ image?: ToolResult["image"]; imagePath?: string }> => {
       if (!args.return_screenshot) return {};
       const tmpFile = join(tmpdir(), `gauntlet-screenshot-${Date.now()}.png`);
-      await chrome.screenshot(0, tmpFile, null, false);
+      await this.chrome.screenshot(0, tmpFile, null, false);
       const data = readFileSync(tmpFile);
       const imagePath = logger.saveScreenshot(Buffer.from(data));
       try { unlinkSync(tmpFile); } catch { }
@@ -654,7 +707,7 @@ export class WebAdapter implements Adapter {
           tmpdir(),
           `gauntlet-screenshot-${Date.now()}.png`
         );
-        await chrome.screenshot(
+        await this.chrome.screenshot(
           0,
           tmpFile,
           (args.selector as string) ?? null,
@@ -675,7 +728,7 @@ export class WebAdapter implements Adapter {
       }
       case "click": {
         try {
-          const result = await chrome.click(0, args.selector as string);
+          const result = await this.chrome.click(0, args.selector as string);
           const note = result?.fallback
             ? ` (fallback: ${result.fallback})`
             : "";
@@ -698,22 +751,22 @@ export class WebAdapter implements Adapter {
         const selector = args.selector as string | undefined;
         const text = args.text as string;
         if (selector) {
-          await chrome.fill(0, selector, text);
+          await this.chrome.fill(0, selector, text);
         } else {
           // No selector — type via keyboard
           for (const char of text) {
-            await chrome.keyboardPress(0, char);
+            await this.chrome.keyboardPress(0, char);
           }
         }
         return { text: "typed", ...await takeReturnScreenshot() };
       }
       case "press": {
-        await chrome.keyboardPress(0, args.key as string);
+        await this.chrome.keyboardPress(0, args.key as string);
         return { text: "pressed", ...await takeReturnScreenshot() };
       }
       case "hover": {
         try {
-          await chrome.hover(0, args.selector as string);
+          await this.chrome.hover(0, args.selector as string);
           return { text: `hovered ${args.selector}`, ...await takeReturnScreenshot() };
         } catch (err) {
           const reason = err instanceof Error ? err.message : String(err);
@@ -722,7 +775,7 @@ export class WebAdapter implements Adapter {
       }
       case "double_click": {
         try {
-          await chrome.doubleClick(0, args.selector as string);
+          await this.chrome.doubleClick(0, args.selector as string);
           return { text: `double-clicked ${args.selector}`, ...await takeReturnScreenshot() };
         } catch (err) {
           const reason = err instanceof Error ? err.message : String(err);
@@ -731,7 +784,7 @@ export class WebAdapter implements Adapter {
       }
       case "right_click": {
         try {
-          await chrome.rightClick(0, args.selector as string);
+          await this.chrome.rightClick(0, args.selector as string);
           return { text: `right-clicked ${args.selector}`, ...await takeReturnScreenshot() };
         } catch (err) {
           const reason = err instanceof Error ? err.message : String(err);
@@ -757,7 +810,7 @@ export class WebAdapter implements Adapter {
           };
         }
         try {
-          await chrome.drag(0, sourceSelector, target);
+          await this.chrome.drag(0, sourceSelector, target);
           return { text: `dragged ${sourceSelector}`, ...await takeReturnScreenshot() };
         } catch (err) {
           const reason = err instanceof Error ? err.message : String(err);
@@ -765,7 +818,7 @@ export class WebAdapter implements Adapter {
         }
       }
       case "mouse_move": {
-        await chrome.mouseMove(0, args.x as number, args.y as number);
+        await this.chrome.mouseMove(0, args.x as number, args.y as number);
         return { text: `moved mouse to (${args.x}, ${args.y})`, ...await takeReturnScreenshot() };
       }
       case "scroll": {
@@ -775,7 +828,7 @@ export class WebAdapter implements Adapter {
         // +x=right, which matches intuitive direction names.
         const deltaX = direction === "left" ? -amount : direction === "right" ? amount : 0;
         const deltaY = direction === "up" ? -amount : direction === "down" ? amount : 0;
-        await chrome.scroll(0, {
+        await this.chrome.scroll(0, {
           deltaX,
           deltaY,
           selector: (args.selector as string) ?? undefined,
@@ -784,7 +837,7 @@ export class WebAdapter implements Adapter {
       }
       case "file_upload": {
         try {
-          const result = await chrome.fileUpload(
+          const result = await this.chrome.fileUpload(
             0,
             args.selector as string,
             args.file_paths as string[],
@@ -799,13 +852,13 @@ export class WebAdapter implements Adapter {
         }
       }
       case "navigate": {
-        await chrome.navigate(0, args.url as string);
+        await this.chrome.navigate(0, args.url as string);
         return { text: "navigated", ...await takeReturnScreenshot() };
       }
       case "extract": {
         const selector = args.selector as string | undefined;
         if (selector) {
-          const text = await chrome.extractText(0, selector);
+          const text = await this.chrome.extractText(0, selector);
           return { text };
         }
         // Return the full markdown inline so the model can read it. The
@@ -813,22 +866,22 @@ export class WebAdapter implements Adapter {
         // when the text exceeds its inline limit, but that's a
         // reviewer-facing concern — the model has already consumed the
         // content by the time logging happens.
-        const markdown = await chrome.generateMarkdown(0);
+        const markdown = await this.chrome.generateMarkdown(0);
         return { text: markdown };
       }
       case "eval": {
-        const result = await chrome.evaluate(0, args.expression as string);
+        const result = await this.chrome.evaluate(0, args.expression as string);
         const text = result === undefined ? "undefined" : (typeof result === "string" ? result : JSON.stringify(result));
         return { text, ...await takeReturnScreenshot() };
       }
       case "wait_for": {
         const timeout = (args.timeout as number) ?? 5000;
         if (args.selector) {
-          await chrome.waitForElement(0, args.selector as string, timeout);
+          await this.chrome.waitForElement(0, args.selector as string, timeout);
           return { text: "element found", ...await takeReturnScreenshot() };
         }
         if (args.text) {
-          await chrome.waitForText(0, args.text as string, timeout);
+          await this.chrome.waitForText(0, args.text as string, timeout);
           return { text: "text found", ...await takeReturnScreenshot() };
         }
         return { text: "nothing to wait for — provide selector or text" };

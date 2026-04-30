@@ -73,6 +73,42 @@ Grep `chrome-ws-lib.js` for `GAUNTLET DIVERGENCE` to find these in-line.
    - `onCdpEvent(tabIndex, handler)` / `offCdpEvent(tabIndex)` — raw CDP
      event subscription used by screencast streaming.
 
+7. **`createSession()` factory wrap** (PRI-1436). Upstream's
+   `chrome-ws-lib.js` is a CommonJS singleton — the `let activePort`,
+   `let chromeProcess`, `chromeProfileName`, `connectionPool` Map, and
+   `consoleMessages` Map all live at module scope. Under
+   `gauntlet serve` this meant two concurrent web runs shared one
+   activePort and one Chrome process and stomped each other. We wrap
+   the entire file body in
+   `function createSession({ host, port } = {}) { … return { … } }` and
+   change the only top-level export to `{ createSession }`. Each
+   WebAdapter calls `createSession()` from its constructor to get a
+   private state-bag. `host-override.js` got the matching
+   `createOverride({ host, port })` factory — the legacy module-level
+   getters and load-time snapshot constants (CHROME_DEBUG_HOST etc.)
+   are kept verbatim for upstream-compat.
+
+   **Sync recipe note:** paste upstream changes inside the closure.
+   The closure body is intentionally NOT reindented — the `{` and `}`
+   sit at column 0 and the body keeps upstream's column-0 indentation,
+   so a hand-port from upstream is still a near-line-by-line
+   correspondence. The only structural change is the `return { … }`
+   at the bottom (replacing `module.exports = { … }`) and the closing
+   `}` on the line after.
+
+   **What stayed outside the closure** (stateless helpers/classes):
+   the `require(...)` block at the top, the `WebSocketClient` class,
+   `pickFreePort`/`CHROME_VERBOSE` constants. KEY_DEFINITIONS,
+   SHIFT_SYMBOLS, parseContains, charToKeyDef, and chromeHttpAt are
+   inside the closure even though they're stateless — moving them out
+   would have churned line numbers across the rest of the file with
+   no behavioral benefit. Each session gets a fresh closure-bound copy;
+   the cost is negligible.
+
+   **Regression gate:**
+   `test/adapters/web/chrome-ws-lib-isolation.test.ts` exercises this
+   invariant. If it ever fails, we've reintroduced the PRI-1436 bug.
+
 ## Sync recipe
 
 1. **Clone upstream fresh:**

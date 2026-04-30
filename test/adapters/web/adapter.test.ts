@@ -181,19 +181,22 @@ describe("WebAdapter", () => {
   // of the test suite (and the e2e smoke tests that use real Chrome)
   // is unaffected.
   describe("WP1.2 — browser state reset", () => {
-    // eslint-disable-next-line @typescript-eslint/no-var-requires
-    const chromeLib = require("../../../src/adapters/web/lib/chrome-ws-lib");
-
+    // PRI-1436: chrome-ws-lib is now per-session. Each test builds a
+    // record-stub session and injects it into WebAdapter via the
+    // `chromeSession` option. No module-level mutation, so tests are
+    // isolated from each other and from production code paths.
     type Call = [string, unknown[]];
 
-    function stubChrome(overrides: Record<string, (...args: unknown[]) => unknown> = {}) {
+    function makeStubSession(
+      overrides: Record<string, (...args: unknown[]) => unknown> = {},
+    ): { session: Record<string, (...args: unknown[]) => unknown>; calls: Call[] } {
       const calls: Call[] = [];
       const record = (name: string) => (...args: unknown[]) => {
         calls.push([name, args]);
         const o = overrides[name];
         return o ? o(...args) : undefined;
       };
-      const originals: Record<string, unknown> = {};
+      const session: Record<string, (...args: unknown[]) => unknown> = {};
       const keys = [
         "startChrome",
         "navigate",
@@ -201,37 +204,31 @@ describe("WebAdapter", () => {
         "killChrome",
         "openObserverSession",
         "getChromeProfileDir",
+        // Used elsewhere on the session — stubs default to no-op record so
+        // accidental calls don't blow up the test with "not a function".
+        "setEndpoint",
       ];
       for (const k of keys) {
-        originals[k] = chromeLib[k];
-        chromeLib[k] = record(k);
+        session[k] = record(k);
       }
-      return {
-        calls,
-        restore() {
-          for (const k of keys) {
-            chromeLib[k] = originals[k];
-          }
-        },
-      };
+      return { session, calls };
     }
 
     test("local mode: startChrome receives the per-run profile name", async () => {
-      const stub = stubChrome();
-      try {
-        const adapter = new WebAdapter({ chromeProfileName: "gauntlet-run-abc123-card1" });
-        await adapter.start("http://localhost:3000/");
-        const startCall = stub.calls.find((c) => c[0] === "startChrome");
-        expect(startCall).toBeDefined();
-        // signature: startChrome(headless, profileName, port?)
-        expect(startCall![1][0]).toBe(true);
-        expect(startCall![1][1]).toBe("gauntlet-run-abc123-card1");
-        // clearBrowserData must NOT fire in local mode
-        const clear = stub.calls.find((c) => c[0] === "clearBrowserData");
-        expect(clear).toBeUndefined();
-      } finally {
-        stub.restore();
-      }
+      const { session, calls } = makeStubSession();
+      const adapter = new WebAdapter({
+        chromeProfileName: "gauntlet-run-abc123-card1",
+        chromeSession: session,
+      });
+      await adapter.start("http://localhost:3000/");
+      const startCall = calls.find((c) => c[0] === "startChrome");
+      expect(startCall).toBeDefined();
+      // signature: startChrome(headless, profileName, port?)
+      expect(startCall![1][0]).toBe(true);
+      expect(startCall![1][1]).toBe("gauntlet-run-abc123-card1");
+      // clearBrowserData must NOT fire in local mode
+      const clear = calls.find((c) => c[0] === "clearBrowserData");
+      expect(clear).toBeUndefined();
     });
 
     test("local mode: close() deletes the per-run profile dir after killChrome", async () => {
@@ -241,7 +238,7 @@ describe("WebAdapter", () => {
       writeFileSync(join(fakeProfileDir, "sentinel"), "x");
 
       const order: string[] = [];
-      const stub = stubChrome({
+      const { session } = makeStubSession({
         killChrome: () => { order.push("killChrome"); },
         getChromeProfileDir: (name: unknown) => {
           order.push(`getChromeProfileDir:${name}`);
@@ -249,7 +246,10 @@ describe("WebAdapter", () => {
         },
       });
       try {
-        const adapter = new WebAdapter({ chromeProfileName: "gauntlet-run-xyz-cardA" });
+        const adapter = new WebAdapter({
+          chromeProfileName: "gauntlet-run-xyz-cardA",
+          chromeSession: session,
+        });
         await adapter.close();
         // Ordering: killChrome runs BEFORE the profile-dir lookup/cleanup.
         const killIdx = order.indexOf("killChrome");
@@ -259,21 +259,16 @@ describe("WebAdapter", () => {
         // Directory must be gone.
         expect(existsSync(fakeProfileDir)).toBe(false);
       } finally {
-        stub.restore();
         rmSync(tmpRoot, { recursive: true, force: true });
       }
     });
 
     test("local mode without chromeProfileName: close() skips profile cleanup", async () => {
-      const stub = stubChrome();
-      try {
-        const adapter = new WebAdapter();
-        await adapter.close();
-        const lookup = stub.calls.find((c) => c[0] === "getChromeProfileDir");
-        expect(lookup).toBeUndefined();
-      } finally {
-        stub.restore();
-      }
+      const { session, calls } = makeStubSession();
+      const adapter = new WebAdapter({ chromeSession: session });
+      await adapter.close();
+      const lookup = calls.find((c) => c[0] === "getChromeProfileDir");
+      expect(lookup).toBeUndefined();
     });
 
     test("local mode: cleanup of a missing profile dir does not throw (best-effort contract)", async () => {
@@ -281,60 +276,53 @@ describe("WebAdapter", () => {
       // best-effort contract at the adapter level: if the profile dir
       // doesn't exist (e.g., Chrome never actually launched), close()
       // must still succeed.
-      const stub = stubChrome({
+      const { session } = makeStubSession({
         getChromeProfileDir: () => "/nonexistent/should/not/matter/gauntlet-run-ghost",
       });
-      try {
-        const adapter = new WebAdapter({ chromeProfileName: "gauntlet-run-ghost-card" });
-        await adapter.close();
-        // Just having reached here is the contract: no throw.
-        expect(true).toBe(true);
-      } finally {
-        stub.restore();
-      }
+      const adapter = new WebAdapter({
+        chromeProfileName: "gauntlet-run-ghost-card",
+        chromeSession: session,
+      });
+      await adapter.close();
+      // Just having reached here is the contract: no throw.
+      expect(true).toBe(true);
     });
 
     test("remote mode: clearBrowserData is invoked on start() after navigate", async () => {
       const order: string[] = [];
-      const stub = stubChrome({
+      const { session, calls } = makeStubSession({
         navigate: () => { order.push("navigate"); },
         clearBrowserData: () => { order.push("clearBrowserData"); },
       });
-      try {
-        const adapter = new WebAdapter({
-          chrome: { host: "remote-host", port: 9333 },
-          chromeProfileName: "gauntlet-run-remote-card",
-        });
-        await adapter.start("http://localhost:3000/");
-        // startChrome must NOT be called in remote mode.
-        const startCall = stub.calls.find((c) => c[0] === "startChrome");
-        expect(startCall).toBeUndefined();
-        // navigate -> clearBrowserData ordering
-        const navIdx = order.indexOf("navigate");
-        const clearIdx = order.indexOf("clearBrowserData");
-        expect(navIdx).toBeGreaterThanOrEqual(0);
-        expect(clearIdx).toBeGreaterThan(navIdx);
-        // clearBrowserData's argument is the tab index (0)
-        const clearCall = stub.calls.find((c) => c[0] === "clearBrowserData");
-        expect(clearCall![1][0]).toBe(0);
-      } finally {
-        stub.restore();
-      }
+      const adapter = new WebAdapter({
+        chrome: { host: "remote-host", port: 9333 },
+        chromeProfileName: "gauntlet-run-remote-card",
+        chromeSession: session,
+      });
+      await adapter.start("http://localhost:3000/");
+      // startChrome must NOT be called in remote mode.
+      const startCall = calls.find((c) => c[0] === "startChrome");
+      expect(startCall).toBeUndefined();
+      // navigate -> clearBrowserData ordering
+      const navIdx = order.indexOf("navigate");
+      const clearIdx = order.indexOf("clearBrowserData");
+      expect(navIdx).toBeGreaterThanOrEqual(0);
+      expect(clearIdx).toBeGreaterThan(navIdx);
+      // clearBrowserData's argument is the tab index (0)
+      const clearCall = calls.find((c) => c[0] === "clearBrowserData");
+      expect(clearCall![1][0]).toBe(0);
     });
 
     test("remote mode: close() does not kill Chrome or clean up any profile dir", async () => {
-      const stub = stubChrome();
-      try {
-        const adapter = new WebAdapter({
-          chrome: { host: "remote-host", port: 9334 },
-          chromeProfileName: "gauntlet-run-remote-card",
-        });
-        await adapter.close();
-        expect(stub.calls.find((c) => c[0] === "killChrome")).toBeUndefined();
-        expect(stub.calls.find((c) => c[0] === "getChromeProfileDir")).toBeUndefined();
-      } finally {
-        stub.restore();
-      }
+      const { session, calls } = makeStubSession();
+      const adapter = new WebAdapter({
+        chrome: { host: "remote-host", port: 9334 },
+        chromeProfileName: "gauntlet-run-remote-card",
+        chromeSession: session,
+      });
+      await adapter.close();
+      expect(calls.find((c) => c[0] === "killChrome")).toBeUndefined();
+      expect(calls.find((c) => c[0] === "getChromeProfileDir")).toBeUndefined();
     });
   });
 
@@ -343,17 +331,16 @@ describe("WebAdapter", () => {
   // the logger's oversize-text spill — not by the adapter — so the model
   // never ends up with a dangling artifact path it can't resolve.
   describe("extract (no selector)", () => {
-    // eslint-disable-next-line @typescript-eslint/no-var-requires
-    const chromeLib = require("../../../src/adapters/web/lib/chrome-ws-lib");
-
+    // PRI-1436: stub the per-adapter session via the chromeSession option.
     test("full-page markdown is returned inline as tool_result text", async () => {
       const big = "x".repeat(50_000);
-      const origGenerateMarkdown = chromeLib.generateMarkdown;
-      chromeLib.generateMarkdown = async () => big;
+      const session: Record<string, unknown> = {
+        generateMarkdown: async () => big,
+      };
       const outDir = mkdtempSync(join(tmpdir(), "gauntlet-extract-"));
       try {
         const logger = new EvidenceLogger(outDir);
-        const adapter = new WebAdapter();
+        const adapter = new WebAdapter({ chromeSession: session as never });
         const result = await adapter.executeTool("extract", {}, logger);
         expect(result.text).toBe(big);
         expect(result.artifactPath).toBeUndefined();
@@ -362,7 +349,6 @@ describe("WebAdapter", () => {
         // text exceeds its inline limit, covered in logger tests).
         expect(logger.artifacts).toEqual([]);
       } finally {
-        chromeLib.generateMarkdown = origGenerateMarkdown;
         rmSync(outDir, { recursive: true, force: true });
       }
     });
@@ -370,47 +356,39 @@ describe("WebAdapter", () => {
 
   // The whole AppConfig refactor depends on this thread:
   //   AppConfig.defaultChrome → mergeRunConfig → WebAdapter({chrome}) →
-  //   chrome-ws-lib.setEndpoint(host, port) → host-override module state.
+  //   createSession({ host, port }) → host-override per-instance state.
+  // PRI-1436: pre-1436 this went via chrome-ws-lib.setEndpoint() which
+  // mutated module-level state and broke under concurrency. Now each
+  // WebAdapter constructs its own session seeded from the chrome option.
   // Cover it directly so a regression in any link of the chain is caught.
-  describe("constructor → setEndpoint threading", () => {
-    test("explicit chrome calls setEndpoint and sets remote=true", () => {
+  describe("constructor → createSession threading", () => {
+    test("explicit chrome creates a session bound to that endpoint and sets remote=true", () => {
       // eslint-disable-next-line @typescript-eslint/no-var-requires
-      const chromeLib = require("../../../src/adapters/web/lib/chrome-ws-lib");
-      const original = chromeLib.setEndpoint;
-      const calls: Array<[string, number]> = [];
-      chromeLib.setEndpoint = (host: string, port: number) => {
-        calls.push([host, port]);
-        return original.call(chromeLib, host, port);
-      };
-      try {
-        const adapter = new WebAdapter({ chrome: { host: "remote-host", port: 9333 } });
-        expect(calls).toEqual([["remote-host", 9333]]);
-        // remote=true is private, but we can verify the side effect: close()
-        // on a remote adapter is a no-op (does not call killChrome).
-        // We do this implicitly by checking the call list above and trusting
-        // the implementation's own branch.
-        expect(adapter).toBeDefined();
-      } finally {
-        chromeLib.setEndpoint = original;
-      }
+      const { createSession } = require("../../../src/adapters/web/lib/chrome-ws-lib");
+      const adapter = new WebAdapter({ chrome: { host: "remote-host", port: 9333 } });
+      // The adapter must have a session whose hostOverride sees the
+      // endpoint we passed in. We can't reach inside, but the session it
+      // constructed has a getChromeSession() escape hatch — round-trip
+      // a probe through it.
+      const session = adapter.getChromeSession();
+      expect(session).toBeDefined();
+      // Compare against a fresh session built with the same options:
+      // both should report the same host and port via getActivePort()
+      // and (indirectly) via the host-override they hold.
+      const reference = createSession({ host: "remote-host", port: 9333 });
+      expect(session.getActivePort()).toBe(reference.getActivePort());
     });
 
-    test("no chrome option does not call setEndpoint", () => {
+    test("no chrome option produces a session with default endpoint", () => {
       // eslint-disable-next-line @typescript-eslint/no-var-requires
-      const chromeLib = require("../../../src/adapters/web/lib/chrome-ws-lib");
-      const original = chromeLib.setEndpoint;
-      let called = false;
-      chromeLib.setEndpoint = () => {
-        called = true;
-      };
-      try {
-        new WebAdapter({});
-        expect(called).toBe(false);
-        new WebAdapter();
-        expect(called).toBe(false);
-      } finally {
-        chromeLib.setEndpoint = original;
-      }
+      const { createSession } = require("../../../src/adapters/web/lib/chrome-ws-lib");
+      const adapter = new WebAdapter({});
+      const adapter2 = new WebAdapter();
+      const reference = createSession();
+      // Both no-arg adapters should share the default port that a fresh
+      // no-arg session reports.
+      expect(adapter.getChromeSession().getActivePort()).toBe(reference.getActivePort());
+      expect(adapter2.getChromeSession().getActivePort()).toBe(reference.getActivePort());
     });
   });
 });

@@ -21,12 +21,10 @@
  * - JRV-129: Multi-element selector warnings
  */
 
-const hostOverride = require('./host-override');
-const { rewriteWsUrl } = hostOverride;
-
-// Dynamic port: updated by startChrome() when Chrome launches or reconnects.
-// Defaults to host-override's port (which itself defaults to env or 9222).
-let activePort = hostOverride.getPort();
+// PRI-1436: per-session imports moved inside `createSession()` below.
+// `hostOverride` and `activePort` are now per-instance — see the
+// `GAUNTLET DIVERGENCE: createSession() factory` block.
+const { createOverride } = require('./host-override');
 
 // ===== GAUNTLET DIVERGENCE START: pickFreePort import =====
 // Free-port picker used in launch mode. When no endpoint is configured
@@ -118,6 +116,29 @@ class WebSocketClient {
   }
 }
 // ===== GAUNTLET DIVERGENCE END =====
+
+// ===== GAUNTLET DIVERGENCE START: createSession() factory =====
+// PRI-1436: Wraps the entire file body in a factory so each WebAdapter gets
+// a private state-bag — fixes concurrent web runs in `gauntlet serve` that
+// were sharing module-level globals (activePort, chromeProcess, profile
+// name, connection pool, console messages, hostOverride). Future upstream
+// syncs: paste upstream changes inside this closure. The internal API
+// shape is unchanged from upstream — `module.exports` at the bottom is now
+// `return { ... }` with the same flat shape, and the factory itself is the
+// sole top-level export.
+//
+// Indentation: the closure body is intentionally NOT reindented. Diff
+// readability against upstream matters more than indentation cosmetics —
+// the closure's `{` and `}` sit at column 0 and the body keeps its
+// original indentation. When syncing, paste upstream changes inside this
+// closure exactly as they appear upstream.
+function createSession({ host, port } = {}) {
+const hostOverride = createOverride({ host, port });
+const { rewriteWsUrl } = hostOverride;
+
+// Dynamic port: updated by startChrome() when Chrome launches or reconnects.
+// Defaults to host-override's port (which itself defaults to env or 9222).
+let activePort = hostOverride.getPort();
 
 // =============================================================================
 // CONNECTION POOL (JRV-130: Fix focus lost between eval calls)
@@ -3380,7 +3401,7 @@ async function offCdpEvent(tabIndex) {
 }
 // ===== GAUNTLET DIVERGENCE END =====
 
-module.exports = {
+return {
   // Core browser actions (click/fill now use CDP events by default for React compatibility)
   getTabs,
   newTab,
@@ -3495,3 +3516,7 @@ module.exports = {
   cdpClick: click,
   insertText: fill,
 };
+}
+// ===== GAUNTLET DIVERGENCE END (createSession factory) =====
+
+module.exports = { createSession };

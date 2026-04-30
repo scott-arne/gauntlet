@@ -5,8 +5,14 @@ import { join } from "path";
 import { ScreencastStreamer } from "../../src/streaming/screencast";
 
 describe("ScreencastStreamer", () => {
+  // PRI-1436: streamer requires a chrome-ws-lib session. Construction-only
+  // tests pass a stub — the session is only exercised inside `start()`,
+  // which these tests don't call.
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const stubSession = {} as any;
+
   test("can be constructed", () => {
-    const streamer = new ScreencastStreamer(0, () => {});
+    const streamer = new ScreencastStreamer(0, () => {}, stubSession);
     expect(streamer).toBeDefined();
   });
 
@@ -23,7 +29,7 @@ describe("ScreencastStreamer", () => {
     try {
       const framesDir = join(root, "frames");
       expect(existsSync(framesDir)).toBe(false);
-      const streamer = new ScreencastStreamer(0, () => {}, undefined);
+      const streamer = new ScreencastStreamer(0, () => {}, stubSession, undefined);
       expect(streamer).toBeDefined();
       // No saveDir => constructor must not touch disk.
       expect(existsSync(framesDir)).toBe(false);
@@ -37,7 +43,7 @@ describe("ScreencastStreamer", () => {
     try {
       const framesDir = join(root, "frames");
       expect(existsSync(framesDir)).toBe(false);
-      const streamer = new ScreencastStreamer(0, () => {}, framesDir);
+      const streamer = new ScreencastStreamer(0, () => {}, stubSession, framesDir);
       expect(streamer).toBeDefined();
       expect(existsSync(framesDir)).toBe(true);
     } finally {

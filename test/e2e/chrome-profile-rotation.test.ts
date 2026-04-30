@@ -29,9 +29,14 @@ describe("chrome profile rotation (PRI-1280)", () => {
   test(
     "two startChrome calls with different profile names use different user-data-dirs",
     async () => {
+      // PRI-1436: chrome-ws-lib's only top-level export is now createSession().
+      // The rotation invariant — successive startChrome calls with different
+      // profile names use different --user-data-dirs — must hold within a
+      // single session (same WebAdapter, multiple runs).
       let chrome: any;
       try {
-        chrome = require("../../src/adapters/web/lib/chrome-ws-lib");
+        const { createSession } = require("../../src/adapters/web/lib/chrome-ws-lib");
+        chrome = createSession();
       } catch {
         console.log("Skipping: chrome-ws-lib not available");
         return;

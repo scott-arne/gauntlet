@@ -1,4 +1,9 @@
-const chrome = require("../adapters/web/lib/chrome-ws-lib");
+// PRI-1436: chrome-ws-lib is now a per-session factory. The screencast must
+// share the WebAdapter's session (so it talks to the same Chrome on the same
+// activePort), so the session is a required constructor argument. Constructing
+// a streamer without one was previously possible via a fresh-session fallback;
+// that fallback was a footgun (the fresh session has no Chrome behind it) so
+// callers must now pass the WebAdapter's session explicitly.
 import { writeFileSync, mkdirSync } from "fs";
 import { join } from "path";
 
@@ -7,17 +12,29 @@ export interface ScreencastFrame {
   metadata: { width: number; height: number };
 }
 
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+type ChromeSession = Record<string, any>;
+
 export class ScreencastStreamer {
   private running = false;
   private onFrame: (frame: ScreencastFrame) => void;
   private tabIndex: number;
   private saveDir?: string;
   private frameCount = 0;
+  private chrome: ChromeSession;
 
-  constructor(tabIndex: number, onFrame: (frame: ScreencastFrame) => void, saveDir?: string) {
+  constructor(
+    tabIndex: number,
+    onFrame: (frame: ScreencastFrame) => void,
+    chromeSession: ChromeSession,
+    saveDir?: string,
+  ) {
     this.tabIndex = tabIndex;
     this.onFrame = onFrame;
     this.saveDir = saveDir;
+    // PRI-1436: required — must be the WebAdapter's session so the streamer
+    // talks to the same Chrome the adapter started.
+    this.chrome = chromeSession;
     if (saveDir) {
       mkdirSync(saveDir, { recursive: true });
     }
@@ -30,11 +47,11 @@ export class ScreencastStreamer {
   }) {
     this.running = true;
 
-    const tabs = await chrome.getTabs();
+    const tabs = await this.chrome.getTabs();
     if (!tabs[this.tabIndex]) throw new Error(`Tab ${this.tabIndex} not found`);
     const wsUrl = tabs[this.tabIndex].webSocketDebuggerUrl;
 
-    await chrome.onCdpEvent(this.tabIndex, async (event: any) => {
+    await this.chrome.onCdpEvent(this.tabIndex, async (event: any) => {
       if (!this.running) return;
       if (event.method !== "Page.screencastFrame") return;
 
@@ -54,7 +71,7 @@ export class ScreencastStreamer {
       }
 
       // Acknowledge frame so Chrome sends the next one
-      await chrome.sendCdpCommand(wsUrl, "Page.screencastFrameAck", {
+      await this.chrome.sendCdpCommand(wsUrl, "Page.screencastFrameAck", {
         sessionId: params.sessionId,
       });
     });
@@ -67,7 +84,7 @@ export class ScreencastStreamer {
     // and accommodates the 1440×900 default viewport without scaling.
     // Revisit if Gauntlet ever runs against a remote Chrome where
     // bandwidth matters.
-    await chrome.sendCdpCommand(wsUrl, "Page.startScreencast", {
+    await this.chrome.sendCdpCommand(wsUrl, "Page.startScreencast", {
       format: "jpeg",
       quality: options?.quality ?? 92,
       maxWidth: options?.maxWidth ?? 1920,
@@ -79,12 +96,12 @@ export class ScreencastStreamer {
   async stop() {
     this.running = false;
     try {
-      const tabs = await chrome.getTabs();
+      const tabs = await this.chrome.getTabs();
       if (tabs[this.tabIndex]) {
         const wsUrl = tabs[this.tabIndex].webSocketDebuggerUrl;
-        await chrome.sendCdpCommand(wsUrl, "Page.stopScreencast");
+        await this.chrome.sendCdpCommand(wsUrl, "Page.stopScreencast");
       }
-      await chrome.offCdpEvent(this.tabIndex);
+      await this.chrome.offCdpEvent(this.tabIndex);
     } catch {
       // Ignore errors during cleanup
     }

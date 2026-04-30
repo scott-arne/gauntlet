@@ -284,6 +284,11 @@ describe("Run API", () => {
       readOutput: () => "",
       describeTarget: (t: string) => `running: ${t}`,
       defaultViewport: () => null,
+      // PRI-1436: executeRun reads getChromeSession() to thread the
+      // session into the streamer. Stub returns an empty session — the
+      // streamer's constructor mkdirs synchronously before the session
+      // is ever exercised.
+      getChromeSession: () => ({}),
     } as unknown as Adapter;
     const stubClient: LLMClient = {} as unknown as LLMClient;
     const card: StoryCard = {
