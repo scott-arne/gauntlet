@@ -154,7 +154,7 @@ export class WebAdapter implements Adapter {
     this.remote = false;
     // PRI-1436: each WebAdapter owns its own chrome-ws-lib session. The
     // session's hostOverride is seeded from options.chrome at construction
-    // time — no module-level setEndpoint mutation.
+    // time.
     if (options?.chromeSession) {
       this.chrome = options.chromeSession;
       if (options?.chrome) {
