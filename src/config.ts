@@ -83,6 +83,7 @@ export interface RunRequestBody {
   turns?: number;
   viewport?: Viewport;
   saveScreencast?: boolean;
+  passes?: number;
 }
 
 export interface EffectiveRunConfig {
@@ -106,7 +107,7 @@ export interface EffectiveRunConfig {
   projectRoot: string;
 }
 
-const RUN_BODY_ALLOWED = new Set(["target", "model", "chrome", "adapter", "turns", "viewport", "saveScreencast"]);
+const RUN_BODY_ALLOWED = new Set(["target", "model", "chrome", "adapter", "turns", "viewport", "saveScreencast", "passes"]);
 export const DEFAULT_MAX_TURNS = 50;
 export const DEFAULT_VIEWPORT: Viewport = { width: 1440, height: 900 };
 
@@ -177,6 +178,13 @@ export function validateRunBody(body: unknown): RunRequestBody {
     }
     saveScreencast = bodyObj.saveScreencast;
   }
+  let passes: number | undefined;
+  if (bodyObj.passes !== undefined) {
+    if (!Number.isInteger(bodyObj.passes) || (bodyObj.passes as number) < 1 || (bodyObj.passes as number) > 50) {
+      throw new Error("passes must be an integer in [1, 50]");
+    }
+    passes = bodyObj.passes as number;
+  }
   return {
     target: bodyObj.target,
     model: typeof bodyObj.model === "string" ? bodyObj.model : undefined,
@@ -185,6 +193,7 @@ export function validateRunBody(body: unknown): RunRequestBody {
     turns,
     viewport,
     saveScreencast,
+    passes,
   };
 }
 

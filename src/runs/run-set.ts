@@ -42,7 +42,17 @@ export interface RunSetResult {
   } | null;
 }
 
-export async function runRunSet(cfg: RunSetConfig): Promise<RunSetResult> {
+export interface RunSetHandle {
+  runSetId: string;
+  kind: RunSetKind;
+  passes: number;
+  cards: string[];
+  runs: Array<{ runId: string; cardId: string; attemptNumber: number }>;
+  completion: Promise<RunSetResult>;
+}
+
+export async function runRunSet(cfg: RunSetConfig): Promise<RunSetHandle> {
+  // ── Prep phase (fast: id gen, eager runIds, set.json stub) ──
   const runSetId = makeRunSetId(cfg.kind);
   const gen = cfg.generateRunId ?? ((cardId, _i) => makeRunId(cardId));
 
@@ -57,7 +67,6 @@ export async function runRunSet(cfg: RunSetConfig): Promise<RunSetResult> {
       });
     }
   }
-  cfg.onAllRunsKnown?.(allRuns);
 
   const ctx0: RunSetCtx = {
     runSetId,
@@ -69,6 +78,22 @@ export async function runRunSet(cfg: RunSetConfig): Promise<RunSetResult> {
   };
   const writer = new RunSetWriter(cfg.resultsRoot, ctx0);
   writer.start(allRuns);
+  cfg.onAllRunsKnown?.(allRuns);
+
+  // ── Run phase (slow: cards × passes loop). Started but not awaited. ──
+  const completion = runLoop({ cfg, writer, ctx0, allRuns, runSetId });
+
+  return { runSetId, kind: cfg.kind, passes: cfg.passes, cards: cfg.cards, runs: allRuns, completion };
+}
+
+async function runLoop(args: {
+  cfg: RunSetConfig;
+  writer: RunSetWriter;
+  ctx0: RunSetCtx;
+  allRuns: Array<{ runId: string; cardId: string; attemptNumber: number }>;
+  runSetId: string;
+}): Promise<RunSetResult> {
+  const { cfg, writer, ctx0, allRuns, runSetId } = args;
 
   const resultsByRunId = new Map<string, VetResult>();
   const processedRunIds = new Set<string>();

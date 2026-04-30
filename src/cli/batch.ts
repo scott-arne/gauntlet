@@ -110,7 +110,7 @@ export async function runBatch(
     const detach = installSigintHandler(cancelToken);
     let setResult;
     try {
-      setResult = await runRunSet({
+      const handle = await runRunSet({
         resultsRoot: gauntletRoot,
         cards: cardIds,
         passes: opts.passes,
@@ -144,6 +144,7 @@ export async function runBatch(
           }
         },
       });
+      setResult = await handle.completion;
     } finally {
       detach();
     }

@@ -32,13 +32,14 @@ describe("runRunSet — orchestrator loop", () => {
   test("executes all attempts of one card in order", async () => {
     const cfg = baseConfig({ passes: 3 });
     const calls: Array<{ cardId: string; ctx: RunSetCtx }> = [];
-    const result = await runRunSet({
+    const handle = await runRunSet({
       ...cfg,
       executor: async ({ cardId, runSetCtx }) => {
         calls.push({ cardId, ctx: runSetCtx });
         return { runId: runSetCtx.runSetId + "/x", outDir: "x", result: fakeResult("pass") };
       },
     });
+    const result = await handle.completion;
 
     expect(calls).toHaveLength(3);
     expect(calls[0].ctx.attemptNumber).toBe(1);
@@ -50,25 +51,27 @@ describe("runRunSet — orchestrator loop", () => {
   test("card-major serial: card[0] all attempts before card[1]", async () => {
     const cfg = baseConfig({ cards: ["a", "b"], passes: 2, kind: "batch" as const });
     const order: string[] = [];
-    await runRunSet({
+    const handle = await runRunSet({
       ...cfg,
       executor: async ({ cardId, runSetCtx }) => {
         order.push(`${cardId}/${runSetCtx.attemptNumber}`);
         return { runId: "x", outDir: "x", result: fakeResult("pass") };
       },
     });
+    await handle.completion;
     expect(order).toEqual(["a/1", "a/2", "b/1", "b/2"]);
   });
 
   test("an attempt that throws is recorded as errored; loop continues", async () => {
     const cfg = baseConfig({ passes: 3 });
-    const result = await runRunSet({
+    const handle = await runRunSet({
       ...cfg,
       executor: async ({ runSetCtx }) => {
         if (runSetCtx.attemptNumber === 2) throw new Error("kapow");
         return { runId: "x", outDir: "x", result: fakeResult("pass") };
       },
     });
+    const result = await handle.completion;
     expect(result.summary?.perCard[0].byStatus.pass).toBe(2);
     expect(result.summary?.perCard[0].byStatus.errored).toBe(1);
     expect(result.summary?.perCard[0].cardStatus).toBe("mixed_with_errors");
@@ -76,10 +79,11 @@ describe("runRunSet — orchestrator loop", () => {
 
   test("writes set.json and summary.md", async () => {
     const cfg = baseConfig({ passes: 2 });
-    const result = await runRunSet({
+    const handle = await runRunSet({
       ...cfg,
       executor: async () => ({ runId: "x", outDir: "x", result: fakeResult("pass") }),
     });
+    const result = await handle.completion;
     expect(existsSync(join(cfg.resultsRoot, "run-sets", result.runSetId, "set.json"))).toBe(true);
     expect(existsSync(join(cfg.resultsRoot, "run-sets", result.runSetId, "summary.md"))).toBe(true);
   });
@@ -87,7 +91,7 @@ describe("runRunSet — orchestrator loop", () => {
   test("cancel signal aborts after current attempt; remaining attempts marked cancelled", async () => {
     const cfg = baseConfig({ passes: 4 });
     const cancelToken = { cancelled: false };
-    const result = await runRunSet({
+    const handle = await runRunSet({
       ...cfg,
       cancelToken,
       executor: async ({ runSetCtx }) => {
@@ -95,8 +99,34 @@ describe("runRunSet — orchestrator loop", () => {
         return { runId: "x", outDir: "x", result: fakeResult("pass") };
       },
     });
+    const result = await handle.completion;
     // Attempts 1 and 2 completed (pass); 3 and 4 cancelled.
     expect(result.summary?.perCard[0].byStatus.pass).toBe(2);
     expect(result.summary?.perCard[0].byStatus.cancelled).toBe(2);
+  });
+
+  test("runRunSet resolves with the id and runs before the loop completes", async () => {
+    let executorStarted = false;
+    const config = baseConfig({ passes: 2 });
+
+    const handle = await runRunSet({
+      ...config,
+      executor: async () => {
+        executorStarted = true;
+        return { runId: "x", outDir: "x", result: fakeResult("pass") };
+      },
+    });
+
+    // Immediately after the await, we have the id and runs but the loop hasn't necessarily started.
+    expect(handle.runSetId).toMatch(/^single_/);
+    expect(handle.runs).toHaveLength(2);
+
+    // set.json stub must exist on disk before completion resolves.
+    expect(existsSync(join(config.resultsRoot, "run-sets", handle.runSetId, "set.json"))).toBe(true);
+
+    // Now wait for the loop to actually finish.
+    const result = await handle.completion;
+    expect(executorStarted).toBe(true);
+    expect(result.summary?.overall.overallStatus).toBe("consistent_pass");
   });
 });

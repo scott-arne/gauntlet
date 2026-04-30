@@ -1,5 +1,6 @@
 import { Hono } from "hono";
 import { join } from "path";
+import { readFileSync } from "fs";
 import { findCard } from "../../cards/store";
 import { createClient, resolveProvider } from "../../models/resolve";
 import { EvidenceLogger } from "../../evidence/logger";
@@ -11,8 +12,11 @@ import { gauntletPath } from "../../paths";
 import { snapshotRunInputs } from "../../runs/snapshot";
 import { mergeRunConfig, validateRunBody, type AppConfig, type ChromeEndpoint, type Viewport } from "../../config";
 import { snapshotViewport, type Adapter } from "../../adapters/adapter";
+import { runRunSet } from "../../runs/run-set";
 import type { RunBroadcaster } from "../ws";
 import type { ActiveRunRegistry } from "../active-runs";
+import type { RunSetBroadcaster } from "../run-set-broadcaster";
+import type { CancelTokenRegistry } from "../run-cancel";
 import type { ScreencastStreamer as ScreencastStreamerType } from "../../streaming/screencast";
 import type { ErrorLog } from "./errors";
 import type { StoryCard } from "../../format/story-card";
@@ -55,6 +59,8 @@ export function runRoutes(
   broadcaster?: RunBroadcaster,
   errorLog?: ErrorLog,
   registry?: ActiveRunRegistry,
+  setBroadcaster?: RunSetBroadcaster,
+  cancelTokens?: CancelTokenRegistry,
   clientFactory?: (model: string) => LLMClient,
 ) {
   const router = new Hono();
@@ -85,85 +91,222 @@ export function runRoutes(
     const client = clientFactory
       ? clientFactory(effective.model)
       : createClient(effective.model);
-    // runId is the primary key for the run end to end: results dir,
-    // active-runs registry, WS broadcaster channel, and the runId field
-    // written into result.json. The cardId is preserved as payload
-    // metadata where it matters (the registry, the result manifest).
-    const runId = makeRunId(entry.card.id);
-    const outDir = gauntletPath(config.projectRoot, "results", runId);
-    // Snapshot story + context into <outDir>/inputs/ synchronously,
-    // before the logger, the adapter, the tree renderer, or the
-    // detached executeRun touch anything. Downstream consumers then
-    // see the snapshotted paths. The story path is composed from the
-    // stories dir + the filename findCard already resolved for us.
-    snapshotRunInputs({
-      runDir: outDir,
-      storyPath: join(gauntletPath(config.projectRoot, "stories"), entry.filename),
-      contextRoot: gauntletPath(config.projectRoot, "context"),
-    });
-    const contextRoot = join(outDir, "inputs", "context");
-    // Create the logger *before* the adapter so WebAdapter can open its
-    // background observer session against it in start().
-    const logger = new EvidenceLogger(outDir);
-    // Per-run Chrome profile name for browser state isolation (spec
-    // §5.1). The cardId is already encoded in runId, so no additional
-    // suffix is needed.
-    const chromeProfileName = `gauntlet-run-${runId}`;
-    const adapter = createAdapter(effective.adapter, effective.chrome, contextRoot, logger, chromeProfileName, effective.viewport);
-    const runConfig: RunConfigSnapshot = {
-      target: effective.target,
-      model: effective.model,
-      adapter: effective.adapter,
-      chrome: effective.chrome ? `${effective.chrome.host}:${effective.chrome.port}` : undefined,
-      turns: effective.turns,
-      viewport: snapshotViewport(adapter),
-    };
-    // Render the tree **once per run** — the immutability invariant
-    // (spec §4.2) forbids re-rendering during the run.
-    const contextTree = renderContextTree(contextRoot);
 
-    const startedAt = Date.now();
-    if (registry) {
-      registry.register({
-        id: runId,
-        cardId: entry.card.id,
-        title: entry.card.title,
+    const passes = body.passes ?? 1;
+
+    if (passes === 1) {
+      // ── Solo path (unchanged behavior, new response shape) ──
+      // runId is the primary key for the run end to end: results dir,
+      // active-runs registry, WS broadcaster channel, and the runId field
+      // written into result.json. The cardId is preserved as payload
+      // metadata where it matters (the registry, the result manifest).
+      const runId = makeRunId(entry.card.id);
+      const outDir = gauntletPath(config.projectRoot, "results", runId);
+      // Snapshot story + context into <outDir>/inputs/ synchronously,
+      // before the logger, the adapter, the tree renderer, or the
+      // detached executeRun touch anything. Downstream consumers then
+      // see the snapshotted paths. The story path is composed from the
+      // stories dir + the filename findCard already resolved for us.
+      snapshotRunInputs({
+        runDir: outDir,
+        storyPath: join(gauntletPath(config.projectRoot, "stories"), entry.filename),
+        contextRoot: gauntletPath(config.projectRoot, "context"),
+      });
+      const contextRoot = join(outDir, "inputs", "context");
+      // Create the logger *before* the adapter so WebAdapter can open its
+      // background observer session against it in start().
+      const logger = new EvidenceLogger(outDir);
+      // Per-run Chrome profile name for browser state isolation (spec
+      // §5.1). The cardId is already encoded in runId, so no additional
+      // suffix is needed.
+      const chromeProfileName = `gauntlet-run-${runId}`;
+      const adapter = createAdapter(effective.adapter, effective.chrome, contextRoot, logger, chromeProfileName, effective.viewport);
+      const runConfig: RunConfigSnapshot = {
         target: effective.target,
         model: effective.model,
+        adapter: effective.adapter,
+        chrome: effective.chrome ? `${effective.chrome.host}:${effective.chrome.port}` : undefined,
+        turns: effective.turns,
+        viewport: snapshotViewport(adapter),
+      };
+      // Render the tree **once per run** — the immutability invariant
+      // (spec §4.2) forbids re-rendering during the run.
+      const contextTree = renderContextTree(contextRoot);
+
+      const startedAt = Date.now();
+      if (registry) {
+        registry.register({
+          id: runId,
+          cardId: entry.card.id,
+          title: entry.card.title,
+          target: effective.target,
+          model: effective.model,
+          startedAt,
+          status: "running",
+        });
+      }
+
+      // Detach: run the agent in the background. The HTTP request returns now.
+      executeRun({
+        runId,
+        card: entry.card,
+        adapter,
+        adapterType: effective.adapter,
+        client,
+        target: effective.target,
+        outDir,
+        logger,
+        broadcaster,
+        registry,
+        errorLog,
         startedAt,
-        status: "running",
+        contextTree,
+        maxTurns: effective.turns,
+        runConfig,
+        saveScreencast: effective.saveScreencast,
+        provider: resolveProvider(effective.model),
+        model: effective.model,
+      }).catch((err) => {
+        const message = err instanceof Error ? err.message : String(err);
+        errorLog?.add("run", `${runId}: ${message}`);
       });
+
+      return c.json({
+        runSetId: null,
+        kind: "single",
+        passes: 1,
+        runs: [{ runId, attemptNumber: 1, status: "running" as const }],
+      }, 202);
     }
 
-    // Detach: run the agent in the background. The HTTP request returns now.
-    executeRun({
-      runId,
-      card: entry.card,
-      adapter,
-      adapterType: effective.adapter,
-      client,
-      target: effective.target,
-      outDir,
-      logger,
-      broadcaster,
-      registry,
-      errorLog,
-      startedAt,
-      contextTree,
-      maxTurns: effective.turns,
-      runConfig,
-      saveScreencast: effective.saveScreencast,
-      provider: resolveProvider(effective.model),
-      model: effective.model,
-    }).catch((err) => {
-      const message = err instanceof Error ? err.message : String(err);
-      errorLog?.add("run", `${runId}: ${message}`);
+    // ── Multi-pass path ──
+    const cancelToken = { cancelled: false };
+
+    const handle = await runRunSet({
+      resultsRoot: gauntletPath(config.projectRoot),
+      cards: [entry.card.id],
+      passes,
+      kind: "single",
+      cancelToken,
+      executor: async ({ runSetCtx, runId }) => {
+        if (registry) registry.setStatus(runId, "running");
+        if (setBroadcaster) {
+          setBroadcaster.send(runSetCtx.runSetId, {
+            kind: "pass_start", runId, attemptNumber: runSetCtx.attemptNumber, passes,
+          });
+        }
+
+        const outDir = gauntletPath(config.projectRoot, "results", runId);
+        snapshotRunInputs({
+          runDir: outDir,
+          storyPath: join(gauntletPath(config.projectRoot, "stories"), entry.filename),
+          contextRoot: gauntletPath(config.projectRoot, "context"),
+        });
+        const contextRoot = join(outDir, "inputs", "context");
+        const logger = new EvidenceLogger(outDir);
+        const chromeProfileName = `gauntlet-run-${runId}`;
+        const adapter = createAdapter(effective.adapter, effective.chrome, contextRoot, logger, chromeProfileName, effective.viewport);
+        const runConfig: RunConfigSnapshot = {
+          target: effective.target,
+          model: effective.model,
+          adapter: effective.adapter,
+          chrome: effective.chrome ? `${effective.chrome.host}:${effective.chrome.port}` : undefined,
+          turns: effective.turns,
+          viewport: snapshotViewport(adapter),
+        };
+        const contextTree = renderContextTree(contextRoot);
+        const startedAt = Date.now();
+
+        await executeRun({
+          runId,
+          card: entry.card,
+          adapter,
+          adapterType: effective.adapter,
+          client,
+          target: effective.target,
+          outDir,
+          logger,
+          broadcaster,
+          registry,
+          errorLog,
+          startedAt,
+          contextTree,
+          maxTurns: effective.turns,
+          runConfig,
+          saveScreencast: effective.saveScreencast,
+          provider: resolveProvider(effective.model),
+          model: effective.model,
+          runSetCtx,
+        });
+
+        // executeRun writes result.json and unregisters from registry.
+        // Read the result back for orchestrator bookkeeping.
+        let result;
+        try {
+          result = JSON.parse(readFileSync(join(outDir, "result.json"), "utf8"));
+        } catch {
+          // If result.json is missing (errored run), construct a minimal error result.
+          result = { status: "fail" };
+        }
+
+        if (setBroadcaster) {
+          setBroadcaster.send(runSetCtx.runSetId, {
+            kind: "pass_end", runId, attemptNumber: runSetCtx.attemptNumber,
+            finalStatus: result.status,
+          });
+        }
+
+        return { runId, outDir, result };
+      },
     });
 
-    // Callers (e.g. the UI) need runId to subscribe to the WS channel
-    // and to look up results on disk. cardId is included so a caller
-    // that previously keyed by it still has the value at hand.
-    return c.json({ runId, cardId: entry.card.id }, 202);
+    // Pre-register all attempts as queued (before the loop starts).
+    if (registry) {
+      for (const r of handle.runs) {
+        registry.register({
+          id: r.runId,
+          cardId: entry.card.id,
+          title: entry.card.title,
+          target: effective.target,
+          model: effective.model,
+          startedAt: Date.now(),
+          status: "queued",
+          attemptNumber: r.attemptNumber,
+          passes,
+          runSetId: handle.runSetId,
+        });
+      }
+    }
+
+    if (cancelTokens) cancelTokens.register(handle.runSetId, cancelToken);
+
+    handle.completion
+      .then((setResult) => {
+        if (setBroadcaster) {
+          setBroadcaster.send(handle.runSetId, { kind: "set_done", summary: setResult.summary });
+        }
+      })
+      .catch((e) => {
+        const message = e instanceof Error ? e.message : String(e);
+        errorLog?.add("run", `run-set ${handle.runSetId}: ${message}`);
+      })
+      .finally(() => {
+        if (cancelTokens) cancelTokens.unregister(handle.runSetId);
+        if (registry) {
+          for (const r of handle.runs) registry.unregister(r.runId);
+        }
+      });
+
+    return c.json({
+      runSetId: handle.runSetId,
+      kind: handle.kind,
+      passes: handle.passes,
+      runs: handle.runs.map((r) => ({
+        runId: r.runId,
+        attemptNumber: r.attemptNumber,
+        status: "queued" as const,
+      })),
+    }, 202);
   });
 
   return router;

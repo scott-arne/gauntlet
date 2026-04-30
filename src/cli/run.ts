@@ -129,7 +129,7 @@ export async function run(opts: RunCommandOptions): Promise<void> {
   const detach = installSigintHandler(cancelToken);
   let setResult;
   try {
-    setResult = await runRunSet({
+    const handle = await runRunSet({
       resultsRoot: gauntletRoot,
       cards: [card.id],
       passes: opts.passes,
@@ -162,6 +162,7 @@ export async function run(opts: RunCommandOptions): Promise<void> {
         }
       },
     });
+    setResult = await handle.completion;
   } finally {
     detach();
   }

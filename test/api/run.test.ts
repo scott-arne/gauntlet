@@ -70,7 +70,7 @@ describe("Run API", () => {
     expect(body.error).toContain("target");
   });
 
-  test("POST /api/run/:id returns 202 with { runId, cardId } and registers by runId", async () => {
+  test("POST /api/run/:id returns 202 with uniform shape and registers by runId", async () => {
     // createClient reads ANTHROPIC_API_KEY from process.env directly.
     // Stub it just for this test so the createClient call doesn't throw
     // before we reach the registry assertion.
@@ -92,13 +92,13 @@ describe("Run API", () => {
     });
     expect(res.status).toBe(202);
     const body = await res.json();
-    // Response shape: runId is the primary identity; cardId echoes the
-    // path param so callers don't have to re-parse the URL.
-    expect(body.cardId).toBe("story-001");
-    expect(typeof body.runId).toBe("string");
-    expect(body.runId).toMatch(/^story-001_\d{8}T\d{6}Z_[a-z0-9]{4}$/);
+    // New uniform response shape: runSetId is null for solo runs.
+    expect(body.runSetId).toBeNull();
+    expect(body.passes).toBe(1);
+    expect(body.runs).toHaveLength(1);
+    expect(body.runs[0].runId).toMatch(/^story-001_\d{8}T\d{6}Z_[a-z0-9]{4}$/);
     // Registered synchronously before detach, keyed by runId (not cardId).
-    expect(registry.has(body.runId)).toBe(true);
+    expect(registry.has(body.runs[0].runId)).toBe(true);
     expect(registry.has("story-001")).toBe(false);
 
     // Give the detached task time to finish writing before afterEach rm's the dir.

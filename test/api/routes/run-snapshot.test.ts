@@ -53,7 +53,7 @@ describe("POST /run/:id — snapshot", () => {
       const app = new Hono();
       app.route(
         "/run",
-        runRoutes(config, undefined, undefined, undefined, () => stubClient()),
+        runRoutes(config, undefined, undefined, undefined, undefined, undefined, () => stubClient()),
       );
 
       const res = await app.request("/run/snap-story", {
@@ -62,12 +62,12 @@ describe("POST /run/:id — snapshot", () => {
         body: JSON.stringify({ target: "cli:echo", adapter: "cli" }),
       });
       expect(res.status).toBe(202);
-      const body = (await res.json()) as { runId: string };
+      const body = (await res.json()) as { runs: Array<{ runId: string }> };
 
       // Snapshot is synchronous in the request handler — so it MUST be
       // present as soon as the 202 is returned, regardless of what the
       // detached executeRun goes on to do (including failing).
-      const runDir = gauntletPath(projectRoot, "results", body.runId);
+      const runDir = gauntletPath(projectRoot, "results", body.runs[0].runId);
       expect(existsSync(join(runDir, "inputs", "story.md"))).toBe(true);
       expect(readFileSync(join(runDir, "inputs", "story.md"), "utf-8")).toBe(storyBody);
       expect(readFileSync(join(runDir, "inputs", "context", "matt", "identity.md"), "utf-8"))
