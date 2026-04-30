@@ -4,7 +4,8 @@ import { tmpdir } from "os";
 import { join } from "path";
 import { RunBroadcaster } from "../../src/api/ws";
 import { ActiveRunRegistry } from "../../src/api/active-runs";
-import { handleWsOpen } from "../../src/api/ws-handlers";
+import { handleWsOpen, handleSetWsOpen } from "../../src/api/ws-handlers";
+import { RunSetBroadcaster } from "../../src/api/run-set-broadcaster";
 
 function makeWs() {
   const sent: string[] = [];
@@ -197,5 +198,44 @@ describe("handleWsOpen", () => {
       expect(sent).toHaveLength(1);
       expect(JSON.parse(sent[0])).toEqual({ type: "gone" });
     });
+  });
+});
+
+describe("handleSetWsOpen", () => {
+  test("subscribes the ws and sends snapshot if manifest exists", () => {
+    const projectRoot = mkdtempSync(join(tmpdir(), "gauntlet-set-ws-"));
+    const gauntletRoot = join(projectRoot, ".gauntlet");
+    const id = "single_20260430T000000Z_test";
+    mkdirSync(join(gauntletRoot, "run-sets", id), { recursive: true });
+    const manifest = { schemaVersion: 1, runSetId: id, kind: "single", passes: 1, cards: ["c"], runs: [], summary: null, createdAt: "x", completedAt: null };
+    writeFileSync(join(gauntletRoot, "run-sets", id, "set.json"), JSON.stringify(manifest));
+
+    const broadcaster = new RunSetBroadcaster();
+    const sent: string[] = [];
+    const ws = { readyState: 1, send: (s: string) => sent.push(s) };
+
+    handleSetWsOpen(broadcaster, id, ws as any, gauntletRoot);
+
+    // Subscribed
+    broadcaster.send(id, { kind: "test_event" });
+    expect(sent).toHaveLength(2); // 1 snapshot + 1 event
+    expect(JSON.parse(sent[0])).toEqual({ kind: "snapshot", manifest });
+    expect(JSON.parse(sent[1])).toEqual({ kind: "test_event" });
+  });
+
+  test("subscribes the ws but sends nothing if manifest doesn't exist yet", () => {
+    const projectRoot = mkdtempSync(join(tmpdir(), "gauntlet-set-ws-"));
+    const gauntletRoot = join(projectRoot, ".gauntlet");
+    const id = "single_20260430T000000Z_inflight";
+
+    const broadcaster = new RunSetBroadcaster();
+    const sent: string[] = [];
+    const ws = { readyState: 1, send: (s: string) => sent.push(s) };
+
+    handleSetWsOpen(broadcaster, id, ws as any, gauntletRoot);
+
+    expect(sent).toHaveLength(0);
+    broadcaster.send(id, { kind: "test_event" });
+    expect(sent).toHaveLength(1);
   });
 });

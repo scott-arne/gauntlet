@@ -2,6 +2,7 @@ import { existsSync, readFileSync } from "fs";
 import { join } from "path";
 import type { RunBroadcaster } from "./ws";
 import type { ActiveRunRegistry } from "./active-runs";
+import type { RunSetBroadcaster } from "./run-set-broadcaster";
 
 interface WsLike {
   send(data: string): void;
@@ -60,5 +61,28 @@ export function handleWsOpen(
         // silent; this is best-effort
       }
     }
+  }
+}
+
+/**
+ * Handle a new WebSocket connection for a run set. Subscribes the client to
+ * the setBroadcaster first, then sends a `snapshot` of the current set
+ * manifest if one already exists on disk.
+ */
+export function handleSetWsOpen(
+  setBroadcaster: RunSetBroadcaster,
+  runSetId: string,
+  ws: WsLike,
+  gauntletRoot: string,
+): void {
+  setBroadcaster.addClient(runSetId, ws);
+
+  // Send initial snapshot if the set already has a manifest on disk.
+  const path = join(gauntletRoot, "run-sets", runSetId, "set.json");
+  if (existsSync(path)) {
+    try {
+      const manifest = JSON.parse(readFileSync(path, "utf8"));
+      ws.send(JSON.stringify({ kind: "snapshot", manifest }));
+    } catch { /* ignore */ }
   }
 }
