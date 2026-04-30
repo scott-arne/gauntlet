@@ -12,6 +12,7 @@ export interface RunCommandOptions {
   silent: boolean;
   format: "pretty" | "jsonl" | undefined;
   noColor: boolean;
+  passes: number;
 }
 
 // LLM-capable gate is enforced by the dispatch site (src/index.ts via
