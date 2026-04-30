@@ -123,4 +123,52 @@ describe("buildSystemPrompt", () => {
       expect(prompt).toContain("you do not\nneed to — and cannot — re-list the directory");
     });
   });
+
+  // PRI-1439 — side-trip guidance is web-only. The prompt must teach the
+  // agent that signin flows often require a side trip, that new_tab is
+  // the right answer, and that `navigate` is a trap.
+  describe("side-trip tab guidance (PRI-1439)", () => {
+    const baseCard: StoryCard = {
+      id: "story-001",
+      title: "A test story",
+      status: "ready",
+      tags: [],
+      description: "Do the thing.",
+      acceptanceCriteria: [],
+      raw: "",
+    };
+
+    test("web adapter prompt mentions new_tab, close_tab, and side trips", () => {
+      const prompt = buildSystemPrompt(baseCard, undefined, "web");
+      expect(prompt).toContain("new_tab");
+      expect(prompt).toContain("close_tab");
+      expect(prompt.toLowerCase()).toContain("side trip");
+    });
+
+    test("web prompt warns off `navigate` for side trips", () => {
+      const prompt = buildSystemPrompt(baseCard, undefined, "web");
+      // The agent's natural instinct is `navigate(url)`. The prompt has
+      // to flag this explicitly or the side-trip guidance is just noise
+      // alongside a more familiar tool.
+      expect(prompt).toMatch(/do not use `navigate`|navigate.*resets/i);
+    });
+
+    test("non-web adapters (cli, tui) do not get side-trip guidance", () => {
+      // cli/tui adapters don't expose new_tab — telling the agent to
+      // call it would be a hallucination invitation.
+      for (const name of ["cli", "tui", undefined]) {
+        const prompt = buildSystemPrompt(baseCard, undefined, name);
+        expect(prompt).not.toContain("new_tab");
+        expect(prompt).not.toContain("close_tab");
+      }
+    });
+
+    test("web side-trip section sits before the context section", () => {
+      const prompt = buildSystemPrompt(baseCard, "  alice.md  (5 bytes)", "web");
+      const sideTripIdx = prompt.indexOf("Side trips");
+      const contextIdx = prompt.indexOf("## Context");
+      expect(sideTripIdx).toBeGreaterThan(0);
+      expect(contextIdx).toBeGreaterThan(sideTripIdx);
+    });
+  });
 });

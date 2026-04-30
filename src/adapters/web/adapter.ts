@@ -36,10 +36,17 @@ const { createSession } = require("./lib/chrome-ws-lib") as {
   createSession: (opts?: { host?: string; port?: number }) => ChromeSession;
 };
 
-// Passkey and cookies tools both act on tab index 0, matching the rest
-// of this adapter.
+// Passkey and cookies tools both act on tab index 0 (the original tab),
+// because they manipulate browser-wide / origin-scoped state rather than
+// tab state. They are unaffected by the side-trip focus stack (PRI-1439).
 const PASSKEY_TAB = 0;
 const COOKIES_TAB = 0;
+
+// PRI-1439: cap on side-trip nesting depth. 1 = original tab only;
+// each `new_tab` pushes; each `close_tab` pops. Typical use is 1–2 levels
+// (signin → email; signin → password manager → 2FA portal). The cap is
+// a guardrail against runaway tab creation, not a tuning knob.
+const MAX_TAB_DEPTH = 5;
 
 // The default driver opens a dedicated CDP session (pinned WebSocket) for
 // WebAuthn. See chrome-ws-lib's webAuthnOpenSession comment for why we
@@ -128,6 +135,15 @@ export class WebAdapter implements Adapter {
    * `options.chromeSession`.
    */
   private chrome: ChromeSession;
+  /**
+   * PRI-1439: side-trip tab focus stack. Bottom of the stack is the
+   * original tab opened during start(); each new_tab call pushes a new
+   * entry, each close_tab pops. The top of the stack is the active tab
+   * — the WS URL passed to every chrome-ws-lib dispatch. Empty until
+   * start() seeds it; pre-start dispatches fall back to tab index 0
+   * (legacy test compatibility — production never exercises that path).
+   */
+  private tabStack: string[] = [];
 
   constructor(options?: WebAdapterOptions) {
     this.remote = false;
@@ -182,6 +198,17 @@ export class WebAdapter implements Adapter {
     return this.chrome;
   }
 
+  /**
+   * PRI-1439: top of the focus stack — the WS URL or numeric index that
+   * every dispatch routes to. Falls back to numeric 0 when the stack is
+   * empty (legacy tests construct WebAdapter without calling start()).
+   */
+  private activeTab(): string | number {
+    return this.tabStack.length > 0
+      ? this.tabStack[this.tabStack.length - 1]
+      : 0;
+  }
+
   async start(url: string): Promise<void> {
     if (!this.remote) {
       // Pass the per-run profile name (spec §5.1) so each run gets its
@@ -190,6 +217,19 @@ export class WebAdapter implements Adapter {
       await this.chrome.startChrome(true, this.chromeProfileName ?? null); // headless
     }
     await this.chrome.navigate(0, url);
+
+    // PRI-1439: seed the focus stack with the original tab's stable WS
+    // URL. Numeric tab indices are not stable when tabs close, so all
+    // subsequent dispatches address tabs by WS URL.
+    try {
+      const tabs = await this.chrome.getTabs();
+      if (Array.isArray(tabs) && tabs[0]?.webSocketDebuggerUrl) {
+        this.tabStack.push(tabs[0].webSocketDebuggerUrl);
+      }
+    } catch {
+      // Best-effort; if we can't seed, dispatches fall back to numeric
+      // index 0 (the legacy behavior).
+    }
 
     // Pin the viewport before the observer opens so any downstream
     // layout/resize events are captured as initial state. Best-effort:
@@ -265,6 +305,18 @@ export class WebAdapter implements Adapter {
         // best-effort
       }
       this.observerSession = null;
+    }
+    // PRI-1439: pop and close any side-trip tabs the agent left open
+    // (anything pushed above the original). The original tab is left
+    // alone — it'll go away when killChrome() runs (local) or be reset
+    // by the next run via clearBrowserData (remote).
+    while (this.tabStack.length > 1) {
+      const wsUrl = this.tabStack.pop()!;
+      try {
+        await this.chrome.closeTab(wsUrl);
+      } catch {
+        // best-effort
+      }
     }
     // Tear the virtual authenticator down before killing Chrome so that
     // remote Chrome sessions (where we didn't start the process) don't
@@ -644,6 +696,50 @@ export class WebAdapter implements Adapter {
           },
         },
       },
+      {
+        name: "new_tab",
+        description:
+          "Open a new browser tab in the foreground for a side trip — " +
+          "fetching an OTP from email, retrieving a credential from a " +
+          "password manager, completing a 2FA portal handoff. Subsequent " +
+          "tool calls operate on the new tab. Use `close_tab` when done " +
+          "to return to the original page with its form values, cookies, " +
+          "and scroll position intact. Do NOT use `navigate` for side " +
+          "trips — it resets the original page state.",
+        parameters: {
+          type: "object",
+          properties: {
+            url: {
+              type: "string",
+              description: "Absolute URL to open in the new tab.",
+            },
+            return_screenshot: {
+              type: "boolean",
+              description:
+                "Screenshot the new tab after it loads.",
+            },
+          },
+          required: ["url"],
+        },
+      },
+      {
+        name: "close_tab",
+        description:
+          "Close the current side-trip tab and return focus to the " +
+          "previous tab. Use this when finished with a side trip opened " +
+          "via `new_tab`. Cannot close the original tab — for primary " +
+          "navigation use `navigate` instead.",
+        parameters: {
+          type: "object",
+          properties: {
+            return_screenshot: {
+              type: "boolean",
+              description:
+                "Screenshot the now-active tab after closing.",
+            },
+          },
+        },
+      },
     ];
     if (this.readTool) {
       tools.push(this.readTool.definition);
@@ -691,10 +787,12 @@ export class WebAdapter implements Adapter {
       return this.cookiesTool.execute(args);
     }
 
+    const tab = this.activeTab();
+
     const takeReturnScreenshot = async (): Promise<{ image?: ToolResult["image"]; imagePath?: string }> => {
       if (!args.return_screenshot) return {};
       const tmpFile = join(tmpdir(), `gauntlet-screenshot-${Date.now()}.png`);
-      await this.chrome.screenshot(0, tmpFile, null, false);
+      await this.chrome.screenshot(tab, tmpFile, null, false);
       const data = readFileSync(tmpFile);
       const imagePath = logger.saveScreenshot(Buffer.from(data));
       try { unlinkSync(tmpFile); } catch { }
@@ -708,7 +806,7 @@ export class WebAdapter implements Adapter {
           `gauntlet-screenshot-${Date.now()}.png`
         );
         await this.chrome.screenshot(
-          0,
+          tab,
           tmpFile,
           (args.selector as string) ?? null,
           (args.fullPage as boolean) ?? false
@@ -728,7 +826,7 @@ export class WebAdapter implements Adapter {
       }
       case "click": {
         try {
-          const result = await this.chrome.click(0, args.selector as string);
+          const result = await this.chrome.click(tab, args.selector as string);
           const note = result?.fallback
             ? ` (fallback: ${result.fallback})`
             : "";
@@ -751,22 +849,22 @@ export class WebAdapter implements Adapter {
         const selector = args.selector as string | undefined;
         const text = args.text as string;
         if (selector) {
-          await this.chrome.fill(0, selector, text);
+          await this.chrome.fill(tab, selector, text);
         } else {
           // No selector — type via keyboard
           for (const char of text) {
-            await this.chrome.keyboardPress(0, char);
+            await this.chrome.keyboardPress(tab, char);
           }
         }
         return { text: "typed", ...await takeReturnScreenshot() };
       }
       case "press": {
-        await this.chrome.keyboardPress(0, args.key as string);
+        await this.chrome.keyboardPress(tab, args.key as string);
         return { text: "pressed", ...await takeReturnScreenshot() };
       }
       case "hover": {
         try {
-          await this.chrome.hover(0, args.selector as string);
+          await this.chrome.hover(tab, args.selector as string);
           return { text: `hovered ${args.selector}`, ...await takeReturnScreenshot() };
         } catch (err) {
           const reason = err instanceof Error ? err.message : String(err);
@@ -775,7 +873,7 @@ export class WebAdapter implements Adapter {
       }
       case "double_click": {
         try {
-          await this.chrome.doubleClick(0, args.selector as string);
+          await this.chrome.doubleClick(tab, args.selector as string);
           return { text: `double-clicked ${args.selector}`, ...await takeReturnScreenshot() };
         } catch (err) {
           const reason = err instanceof Error ? err.message : String(err);
@@ -784,7 +882,7 @@ export class WebAdapter implements Adapter {
       }
       case "right_click": {
         try {
-          await this.chrome.rightClick(0, args.selector as string);
+          await this.chrome.rightClick(tab, args.selector as string);
           return { text: `right-clicked ${args.selector}`, ...await takeReturnScreenshot() };
         } catch (err) {
           const reason = err instanceof Error ? err.message : String(err);
@@ -810,7 +908,7 @@ export class WebAdapter implements Adapter {
           };
         }
         try {
-          await this.chrome.drag(0, sourceSelector, target);
+          await this.chrome.drag(tab, sourceSelector, target);
           return { text: `dragged ${sourceSelector}`, ...await takeReturnScreenshot() };
         } catch (err) {
           const reason = err instanceof Error ? err.message : String(err);
@@ -818,7 +916,7 @@ export class WebAdapter implements Adapter {
         }
       }
       case "mouse_move": {
-        await this.chrome.mouseMove(0, args.x as number, args.y as number);
+        await this.chrome.mouseMove(tab, args.x as number, args.y as number);
         return { text: `moved mouse to (${args.x}, ${args.y})`, ...await takeReturnScreenshot() };
       }
       case "scroll": {
@@ -828,7 +926,7 @@ export class WebAdapter implements Adapter {
         // +x=right, which matches intuitive direction names.
         const deltaX = direction === "left" ? -amount : direction === "right" ? amount : 0;
         const deltaY = direction === "up" ? -amount : direction === "down" ? amount : 0;
-        await this.chrome.scroll(0, {
+        await this.chrome.scroll(tab, {
           deltaX,
           deltaY,
           selector: (args.selector as string) ?? undefined,
@@ -838,7 +936,7 @@ export class WebAdapter implements Adapter {
       case "file_upload": {
         try {
           const result = await this.chrome.fileUpload(
-            0,
+            tab,
             args.selector as string,
             args.file_paths as string[],
           );
@@ -852,13 +950,13 @@ export class WebAdapter implements Adapter {
         }
       }
       case "navigate": {
-        await this.chrome.navigate(0, args.url as string);
+        await this.chrome.navigate(tab, args.url as string);
         return { text: "navigated", ...await takeReturnScreenshot() };
       }
       case "extract": {
         const selector = args.selector as string | undefined;
         if (selector) {
-          const text = await this.chrome.extractText(0, selector);
+          const text = await this.chrome.extractText(tab, selector);
           return { text };
         }
         // Return the full markdown inline so the model can read it. The
@@ -866,25 +964,77 @@ export class WebAdapter implements Adapter {
         // when the text exceeds its inline limit, but that's a
         // reviewer-facing concern — the model has already consumed the
         // content by the time logging happens.
-        const markdown = await this.chrome.generateMarkdown(0);
+        const markdown = await this.chrome.generateMarkdown(tab);
         return { text: markdown };
       }
       case "eval": {
-        const result = await this.chrome.evaluate(0, args.expression as string);
+        const result = await this.chrome.evaluate(tab, args.expression as string);
         const text = result === undefined ? "undefined" : (typeof result === "string" ? result : JSON.stringify(result));
         return { text, ...await takeReturnScreenshot() };
       }
       case "wait_for": {
         const timeout = (args.timeout as number) ?? 5000;
         if (args.selector) {
-          await this.chrome.waitForElement(0, args.selector as string, timeout);
+          await this.chrome.waitForElement(tab, args.selector as string, timeout);
           return { text: "element found", ...await takeReturnScreenshot() };
         }
         if (args.text) {
-          await this.chrome.waitForText(0, args.text as string, timeout);
+          await this.chrome.waitForText(tab, args.text as string, timeout);
           return { text: "text found", ...await takeReturnScreenshot() };
         }
         return { text: "nothing to wait for — provide selector or text" };
+      }
+      case "new_tab": {
+        if (this.tabStack.length >= MAX_TAB_DEPTH) {
+          return {
+            text: `Error: too many side-trip tabs (max ${MAX_TAB_DEPTH})`,
+          };
+        }
+        try {
+          const created = await this.chrome.newTab(args.url as string);
+          const wsUrl = created?.webSocketDebuggerUrl as string | undefined;
+          if (!wsUrl) {
+            return { text: "Error: chrome did not return a tab WebSocket URL" };
+          }
+          this.tabStack.push(wsUrl);
+          logger.logEvent("tab_focus_changed", {
+            action: "push",
+            depth: this.tabStack.length,
+            ws_url: wsUrl,
+            url: args.url as string,
+          });
+          return {
+            text: `opened tab (depth ${this.tabStack.length})`,
+            ...await takeReturnScreenshot(),
+          };
+        } catch (err) {
+          const reason = err instanceof Error ? err.message : String(err);
+          return { text: `Error: ${reason}` };
+        }
+      }
+      case "close_tab": {
+        if (this.tabStack.length <= 1) {
+          return {
+            text: "Error: cannot close the original tab — use navigate to change the page",
+          };
+        }
+        const popped = this.tabStack.pop()!;
+        logger.logEvent("tab_focus_changed", {
+          action: "pop",
+          depth: this.tabStack.length,
+          ws_url: popped,
+        });
+        try {
+          await this.chrome.closeTab(popped);
+        } catch {
+          // Best-effort — the tab is already gone from the agent's mental
+          // model. A failure to close on Chrome's side is logged below
+          // implicitly via the next dispatch's outcome.
+        }
+        return {
+          text: `closed tab (depth ${this.tabStack.length})`,
+          ...await takeReturnScreenshot(),
+        };
       }
       default:
         throw new Error(`Unknown tool: ${name}`);

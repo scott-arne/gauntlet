@@ -107,7 +107,7 @@ export async function runAgent(
 ): Promise<VetResult> {
   const startTime = Date.now();
   const { runId } = options;
-  const systemPrompt = buildSystemPrompt(card, options.contextTree);
+  const systemPrompt = buildSystemPrompt(card, options.contextTree, adapter.name);
   const tools = [...adapter.toolDefinitions(), REPORT_TOOL];
 
   logger.logRunStart({

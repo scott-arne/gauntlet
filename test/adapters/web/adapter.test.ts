@@ -354,6 +354,293 @@ describe("WebAdapter", () => {
     });
   });
 
+  // PRI-1439 — side-trip tabs (new_tab/close_tab). The adapter exposes a
+  // tight two-tool surface for opening a side tab during a sign-in flow
+  // (OTP retrieval, password manager, 2FA portal handoff) and returning
+  // to the original tab with its form state intact. Existing tools'
+  // schemas are unchanged; their dispatches transparently target the
+  // top of the focus stack.
+  describe("PRI-1439 — side-trip tabs", () => {
+    type Call = [string, unknown[]];
+
+    interface SideTripStub {
+      session: Record<string, (...args: unknown[]) => unknown>;
+      calls: Call[];
+      tabs: { webSocketDebuggerUrl: string }[];
+      // Allow tests to override newTab/closeTab/getTabs behavior.
+      setNewTabError: (err: Error | null) => void;
+    }
+
+    function makeSideTripStub(): SideTripStub {
+      // Initial state: chrome has one tab (the original) at index 0.
+      const tabs: { webSocketDebuggerUrl: string }[] = [
+        { webSocketDebuggerUrl: "ws://stub/0" },
+      ];
+      let newTabCounter = 1;
+      let newTabError: Error | null = null;
+      const calls: Call[] = [];
+      const record = (name: string) => (...args: unknown[]) => {
+        calls.push([name, args]);
+        return undefined;
+      };
+      const session: Record<string, (...args: unknown[]) => unknown> = {
+        // Lifecycle stubs.
+        startChrome: record("startChrome"),
+        clearBrowserData: record("clearBrowserData"),
+        killChrome: record("killChrome"),
+        openObserverSession: record("openObserverSession"),
+        getChromeProfileDir: record("getChromeProfileDir"),
+        // Tab management.
+        getTabs: (...args: unknown[]) => {
+          calls.push(["getTabs", args]);
+          return Promise.resolve([...tabs]);
+        },
+        newTab: (...args: unknown[]) => {
+          calls.push(["newTab", args]);
+          if (newTabError) return Promise.reject(newTabError);
+          const wsUrl = `ws://stub/${newTabCounter++}`;
+          const tab = { webSocketDebuggerUrl: wsUrl };
+          tabs.push(tab);
+          return Promise.resolve(tab);
+        },
+        closeTab: (...args: unknown[]) => {
+          calls.push(["closeTab", args]);
+          const target = args[0] as string;
+          const idx = tabs.findIndex((t) => t.webSocketDebuggerUrl === target);
+          if (idx >= 0) tabs.splice(idx, 1);
+          return Promise.resolve();
+        },
+        // Navigation + dispatch stubs — record call args (especially the
+        // tab specifier passed as the first arg) so tests can assert
+        // routing.
+        navigate: record("navigate"),
+        click: record("click"),
+        fill: record("fill"),
+        keyboardPress: record("keyboardPress"),
+        hover: record("hover"),
+        doubleClick: record("doubleClick"),
+        rightClick: record("rightClick"),
+        drag: record("drag"),
+        mouseMove: record("mouseMove"),
+        scroll: record("scroll"),
+        fileUpload: record("fileUpload"),
+        extractText: record("extractText"),
+        generateMarkdown: record("generateMarkdown"),
+        evaluate: record("evaluate"),
+        waitForElement: record("waitForElement"),
+        waitForText: record("waitForText"),
+        screenshot: record("screenshot"),
+      };
+      return {
+        session,
+        calls,
+        tabs,
+        setNewTabError: (err) => { newTabError = err; },
+      };
+    }
+
+    function tmpLogger() {
+      const dir = mkdtempSync(join(tmpdir(), "gauntlet-side-trip-"));
+      const logger = new EvidenceLogger(dir);
+      return { logger, dir };
+    }
+
+    test("toolDefinitions exposes new_tab and close_tab with expected shapes", () => {
+      const adapter = new WebAdapter();
+      const tools = adapter.toolDefinitions();
+      const names = tools.map((t) => t.name);
+      expect(names).toContain("new_tab");
+      expect(names).toContain("close_tab");
+
+      const newTab = tools.find((t) => t.name === "new_tab")!;
+      const newTabProps = (newTab.parameters as any).properties;
+      const newTabRequired = (newTab.parameters as any).required;
+      expect(newTabProps.url).toBeDefined();
+      expect(newTabProps.url.type).toBe("string");
+      expect(newTabRequired).toContain("url");
+
+      const closeTab = tools.find((t) => t.name === "close_tab")!;
+      const closeTabRequired = (closeTab.parameters as any).required;
+      // close_tab takes nothing required — only the optional return_screenshot.
+      expect(closeTabRequired === undefined || closeTabRequired.length === 0).toBe(true);
+    });
+
+    test("after start(), dispatches use the original tab's WS URL", async () => {
+      const stub = makeSideTripStub();
+      const { logger, dir } = tmpLogger();
+      try {
+        const adapter = new WebAdapter({ chromeSession: stub.session as never });
+        await adapter.start("https://example.com/");
+        await adapter.executeTool("click", { selector: "#x" }, logger);
+        const click = stub.calls.find((c) => c[0] === "click");
+        expect(click).toBeDefined();
+        expect(click![1][0]).toBe("ws://stub/0");
+      } finally {
+        rmSync(dir, { recursive: true, force: true });
+      }
+    });
+
+    test("new_tab pushes; subsequent dispatches hit the new tab", async () => {
+      const stub = makeSideTripStub();
+      const { logger, dir } = tmpLogger();
+      try {
+        const adapter = new WebAdapter({ chromeSession: stub.session as never });
+        await adapter.start("https://example.com/");
+        const result = await adapter.executeTool(
+          "new_tab",
+          { url: "https://mail.example/" },
+          logger,
+        );
+        expect(result.text).toContain("opened tab");
+        expect(result.text).toContain("depth 2");
+        await adapter.executeTool("click", { selector: "#otp" }, logger);
+        // The newTab call routed to chrome.newTab with the side-trip URL.
+        const newTabCall = stub.calls.find((c) => c[0] === "newTab");
+        expect(newTabCall![1][0]).toBe("https://mail.example/");
+        // Subsequent click hit the new tab's WS URL (ws://stub/1, the
+        // first counter value the stub hands out).
+        const clickCalls = stub.calls.filter((c) => c[0] === "click");
+        expect(clickCalls).toHaveLength(1);
+        expect(clickCalls[0][1][0]).toBe("ws://stub/1");
+      } finally {
+        rmSync(dir, { recursive: true, force: true });
+      }
+    });
+
+    test("close_tab pops; dispatches return to the original tab", async () => {
+      const stub = makeSideTripStub();
+      const { logger, dir } = tmpLogger();
+      try {
+        const adapter = new WebAdapter({ chromeSession: stub.session as never });
+        await adapter.start("https://example.com/");
+        await adapter.executeTool("new_tab", { url: "https://mail.example/" }, logger);
+        const closeResult = await adapter.executeTool("close_tab", {}, logger);
+        expect(closeResult.text).toContain("closed tab");
+        expect(closeResult.text).toContain("depth 1");
+        await adapter.executeTool("click", { selector: "#submit" }, logger);
+        // closeTab was called with the side-trip URL.
+        const closeCall = stub.calls.find((c) => c[0] === "closeTab");
+        expect(closeCall![1][0]).toBe("ws://stub/1");
+        // Post-pop click hit the original tab.
+        const clickCalls = stub.calls.filter((c) => c[0] === "click");
+        expect(clickCalls).toHaveLength(1);
+        expect(clickCalls[0][1][0]).toBe("ws://stub/0");
+      } finally {
+        rmSync(dir, { recursive: true, force: true });
+      }
+    });
+
+    test("close_tab refuses at depth 1 (the original tab)", async () => {
+      const stub = makeSideTripStub();
+      const { logger, dir } = tmpLogger();
+      try {
+        const adapter = new WebAdapter({ chromeSession: stub.session as never });
+        await adapter.start("https://example.com/");
+        const result = await adapter.executeTool("close_tab", {}, logger);
+        expect(result.text).toMatch(/cannot close the original tab/i);
+        expect(result.text).toContain("navigate");
+        // Stub's closeTab must not have been called.
+        const closeCall = stub.calls.find((c) => c[0] === "closeTab");
+        expect(closeCall).toBeUndefined();
+      } finally {
+        rmSync(dir, { recursive: true, force: true });
+      }
+    });
+
+    test("new_tab refuses at the depth cap (5) without calling chrome.newTab", async () => {
+      const stub = makeSideTripStub();
+      const { logger, dir } = tmpLogger();
+      try {
+        const adapter = new WebAdapter({ chromeSession: stub.session as never });
+        await adapter.start("https://example.com/");
+        // Push 4 side-trip tabs (depth 5 total).
+        for (let i = 0; i < 4; i++) {
+          const r = await adapter.executeTool("new_tab", { url: `https://side${i}/` }, logger);
+          expect(r.text).toContain("opened tab");
+        }
+        const newTabCallsBefore = stub.calls.filter((c) => c[0] === "newTab").length;
+        const overflow = await adapter.executeTool(
+          "new_tab",
+          { url: "https://overflow/" },
+          logger,
+        );
+        expect(overflow.text).toMatch(/too many side-trip tabs/i);
+        const newTabCallsAfter = stub.calls.filter((c) => c[0] === "newTab").length;
+        expect(newTabCallsAfter).toBe(newTabCallsBefore);
+      } finally {
+        rmSync(dir, { recursive: true, force: true });
+      }
+    });
+
+    test("new_tab failure does not push the stack", async () => {
+      const stub = makeSideTripStub();
+      stub.setNewTabError(new Error("chrome unreachable"));
+      const { logger, dir } = tmpLogger();
+      try {
+        const adapter = new WebAdapter({ chromeSession: stub.session as never });
+        await adapter.start("https://example.com/");
+        const result = await adapter.executeTool(
+          "new_tab",
+          { url: "https://mail.example/" },
+          logger,
+        );
+        expect(result.text).toContain("Error");
+        expect(result.text).toContain("chrome unreachable");
+        await adapter.executeTool("click", { selector: "#x" }, logger);
+        // Click still hits the original tab — the failed new_tab did not push.
+        const click = stub.calls.find((c) => c[0] === "click");
+        expect(click![1][0]).toBe("ws://stub/0");
+      } finally {
+        rmSync(dir, { recursive: true, force: true });
+      }
+    });
+
+    test("logs tab_focus_changed events on push and pop", async () => {
+      const stub = makeSideTripStub();
+      const { logger, dir } = tmpLogger();
+      try {
+        const events: Array<{ name: string; data: Record<string, unknown> }> = [];
+        const original = logger.logEvent.bind(logger);
+        logger.logEvent = (name: string, data: Record<string, unknown>) => {
+          events.push({ name, data });
+          return original(name, data);
+        };
+        const adapter = new WebAdapter({ chromeSession: stub.session as never });
+        await adapter.start("https://example.com/");
+        await adapter.executeTool("new_tab", { url: "https://mail.example/" }, logger);
+        await adapter.executeTool("close_tab", {}, logger);
+        const focusEvents = events.filter((e) => e.name === "tab_focus_changed");
+        expect(focusEvents).toHaveLength(2);
+        expect(focusEvents[0].data.action).toBe("push");
+        expect(focusEvents[0].data.depth).toBe(2);
+        expect(focusEvents[1].data.action).toBe("pop");
+        expect(focusEvents[1].data.depth).toBe(1);
+      } finally {
+        rmSync(dir, { recursive: true, force: true });
+      }
+    });
+
+    test("close() force-closes any side-trip tabs the agent left open", async () => {
+      const stub = makeSideTripStub();
+      const { logger, dir } = tmpLogger();
+      try {
+        const adapter = new WebAdapter({ chromeSession: stub.session as never });
+        await adapter.start("https://example.com/");
+        await adapter.executeTool("new_tab", { url: "https://side1/" }, logger);
+        await adapter.executeTool("new_tab", { url: "https://side2/" }, logger);
+        await adapter.close();
+        const closeCalls = stub.calls.filter((c) => c[0] === "closeTab");
+        // Two side trips were left open; both should be closed on teardown
+        // (LIFO — top of stack first).
+        expect(closeCalls).toHaveLength(2);
+        expect(closeCalls[0][1][0]).toBe("ws://stub/2");
+        expect(closeCalls[1][1][0]).toBe("ws://stub/1");
+      } finally {
+        rmSync(dir, { recursive: true, force: true });
+      }
+    });
+  });
+
   // The whole AppConfig refactor depends on this thread:
   //   AppConfig.defaultChrome → mergeRunConfig → WebAdapter({chrome}) →
   //   createSession({ host, port }) → host-override per-instance state.
