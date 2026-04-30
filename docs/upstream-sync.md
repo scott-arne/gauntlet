@@ -57,11 +57,7 @@ Grep `chrome-ws-lib.js` for `GAUNTLET DIVERGENCE` to find these in-line.
    jQuery-style `:contains` selectors from LLM agents are translated to
    a JS walk rather than failing as CSS syntax errors.
 
-5. **`setEndpoint(host, port)`** — called by WebAdapter during construction
-   to point the library at a remote Chrome. Pairs with
-   `host-override.setDefaults()`.
-
-6. **Appended Gauntlet-only functions** (between the
+5. **Appended Gauntlet-only functions** (between the
    `GAUNTLET DIVERGENCE START: Gauntlet-only additions` marker and its
    matching END):
    - `clearBrowserData(tab)` — best-effort CDP state reset for
@@ -73,7 +69,7 @@ Grep `chrome-ws-lib.js` for `GAUNTLET DIVERGENCE` to find these in-line.
    - `onCdpEvent(tabIndex, handler)` / `offCdpEvent(tabIndex)` — raw CDP
      event subscription used by screencast streaming.
 
-7. **`createSession()` factory wrap** (PRI-1436). Upstream's
+6. **`createSession()` factory wrap** (PRI-1436). Upstream's
    `chrome-ws-lib.js` is a CommonJS singleton — the `let activePort`,
    `let chromeProcess`, `chromeProfileName`, `connectionPool` Map, and
    `consoleMessages` Map all live at module scope. Under

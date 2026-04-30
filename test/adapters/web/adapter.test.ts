@@ -204,9 +204,6 @@ describe("WebAdapter", () => {
         "killChrome",
         "openObserverSession",
         "getChromeProfileDir",
-        // Used elsewhere on the session — stubs default to no-op record so
-        // accidental calls don't blow up the test with "not a function".
-        "setEndpoint",
       ];
       for (const k of keys) {
         session[k] = record(k);

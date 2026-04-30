@@ -28,11 +28,12 @@ const { createOverride } = require('./host-override');
 
 // ===== GAUNTLET DIVERGENCE START: pickFreePort import =====
 // Free-port picker used in launch mode. When no endpoint is configured
-// via CHROME_WS_PORT or setEndpoint(), we let the OS assign an ephemeral
-// port for --remote-debugging-port so multiple Gauntlet instances (and
-// co-tenants on 9222) don't collide. Upstream uses findAvailablePort()
-// scanning 9222..12111 instead — see the same divergence marker inside
-// startChrome() for where this is consumed.
+// via CHROME_WS_PORT or createSession({host, port}), we let the OS
+// assign an ephemeral port for --remote-debugging-port so multiple
+// Gauntlet instances (and co-tenants on 9222) don't collide. Upstream
+// uses findAvailablePort() scanning 9222..12111 instead — see the
+// same divergence marker inside startChrome() for where this is
+// consumed.
 const { pickFreePort } = require('../../../util/pick-free-port');
 // ===== GAUNTLET DIVERGENCE END =====
 
@@ -3112,8 +3113,6 @@ async function setCookies(tabIndexOrWsUrl, cookies) {
 // skills/browsing/chrome-ws-lib.js.
 //
 // Contents:
-//   - setEndpoint(host, port): runtime endpoint configuration (called
-//     by WebAdapter). Pairs with host-override.setDefaults().
 //   - clearBrowserData(tab): best-effort CDP-level state reset for the
 //     remote-Chrome case (spec §5.1).
 //   - webAuthnOpenSession(tab): pinned CDP session for the passkey tool
@@ -3122,16 +3121,6 @@ async function setCookies(tabIndexOrWsUrl, cookies) {
 //     log, and network-ws events to EvidenceLogger.
 //   - onCdpEvent / offCdpEvent: raw CDP event subscription used by
 //     screencast streaming.
-
-/**
- * Set the Chrome endpoint that this module talks to. Called by WebAdapter
- * during loadConfig wiring so the server can drive a remote Chrome without
- * mutating process.env.
- */
-function setEndpoint(host, port) {
-  hostOverride.setDefaults(host, port);
-  activePort = port;
-}
 
 /**
  * Best-effort reset of the given tab's browser state for the
@@ -3517,9 +3506,6 @@ return {
   sendCdpCommand,
   onCdpEvent,
   offCdpEvent,
-
-  // Endpoint configuration (set by WebAdapter during loadConfig wiring)
-  setEndpoint,
 
   // Legacy aliases (for backwards compatibility)
   cdpClick: click,

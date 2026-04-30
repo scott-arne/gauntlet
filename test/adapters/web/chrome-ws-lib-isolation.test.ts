@@ -86,25 +86,11 @@ describe("chrome-ws-lib createSession() isolation (PRI-1436)", () => {
     expect(a.clearConsoleMessages).not.toBe(b.clearConsoleMessages);
   });
 
-  test("host-override config: setEndpoint on one session does not affect the other", () => {
+  test("createSession() with explicit host/port seeds a per-session host-override", () => {
     // PRI-1436: pre-fix, host-override was module-singleton state; both
     // sessions saw whichever endpoint was last set. After the fix, each
-    // session has its own host-override instance.
-    // eslint-disable-next-line @typescript-eslint/no-var-requires
-    const { createSession } = require("../../../src/adapters/web/lib/chrome-ws-lib");
-    const a = createSession();
-    const b = createSession();
-    a.setEndpoint("alpha-host", 9301);
-    b.setEndpoint("beta-host", 9302);
-    expect(a.getActivePort()).toBe(9301);
-    expect(b.getActivePort()).toBe(9302);
-    // Re-pointing a does not rewrite b.
-    a.setEndpoint("alpha-host-2", 9311);
-    expect(a.getActivePort()).toBe(9311);
-    expect(b.getActivePort()).toBe(9302);
-  });
-
-  test("createSession() with explicit host/port seeds a per-session host-override", () => {
+    // session has its own host-override instance — see also
+    // host-override.test.ts for the createOverride() unit-level coverage.
     // eslint-disable-next-line @typescript-eslint/no-var-requires
     const { createSession } = require("../../../src/adapters/web/lib/chrome-ws-lib");
     const a = createSession({ host: "host-a", port: 4001 });
