@@ -18,6 +18,7 @@ import type { ErrorLog } from "./errors";
 import type { StoryCard } from "../../format/story-card";
 import type { LLMClient } from "../../models/provider";
 import type { RunConfigSnapshot } from "../../types";
+import type { RunSetCtx } from "../../runs/run-set-types";
 
 function viewportString(v: Viewport | undefined): string | undefined {
   return v ? `${v.width}x${v.height}` : undefined;
@@ -210,10 +211,12 @@ export interface ExecuteRunOpts {
   provider?: string;
   /** LLM model name. Threaded to run_start. */
   model?: string;
+  /** Run set context for multi-pass orchestration. */
+  runSetCtx?: RunSetCtx;
 }
 
 export async function executeRun(opts: ExecuteRunOpts): Promise<void> {
-  const { runId: optsRunId, card, adapter, adapterType, client, target, outDir, logger, broadcaster, registry, errorLog, startedAt, contextTree, maxTurns, runConfig, saveScreencast, provider, model } = opts;
+  const { runId: optsRunId, card, adapter, adapterType, client, target, outDir, logger, broadcaster, registry, errorLog, startedAt, contextTree, maxTurns, runConfig, saveScreencast, provider, model, runSetCtx } = opts;
   // Routing key for the broadcaster and registry. Defaults to cardId so
   // ad-hoc test fixtures continue to work without supplying a runId.
   const runId = optsRunId ?? card.id;
@@ -292,6 +295,7 @@ export async function executeRun(opts: ExecuteRunOpts): Promise<void> {
       viewport: adapterType === "web" ? viewportString(snapshotViewport(adapter)) : undefined,
     });
     if (runConfig) result.config = runConfig;
+    if (runSetCtx) result.runSet = runSetCtx;
     writeResultFiles(outDir, result);
 
     terminal = { type: "complete", result };
