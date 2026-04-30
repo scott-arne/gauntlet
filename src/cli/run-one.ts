@@ -13,6 +13,7 @@ import { gauntletPath } from "../paths";
 import { snapshotRunInputs } from "../runs/snapshot";
 import type { AppConfig, Viewport } from "../config";
 import type { RunConfigSnapshot, VetResult } from "../types";
+import type { RunSetCtx } from "../runs/run-set-types";
 
 function viewportString(v: Viewport | undefined): string | undefined {
   return v ? `${v.width}x${v.height}` : undefined;
@@ -29,6 +30,7 @@ export interface RunOneOptions {
    * `finally`. The single-card command uses this to attach the streaming
    * renderer; batch.ts uses it to subscribe its per-card observer. */
   onLogger?: (logger: EvidenceLogger) => () => void;
+  runSetCtx?: RunSetCtx;
 }
 
 export interface RunOneSummary {
@@ -109,6 +111,9 @@ export async function runOne(opts: RunOneOptions): Promise<RunOneSummary> {
       viewport: adapterType === "web" ? viewportString(snapshotViewport(adapter)) : undefined,
     });
     result.config = runConfig;
+    if (opts.runSetCtx) {
+      result.runSet = opts.runSetCtx;
+    }
     writeResultFiles(outDir, result);
     return { runId, outDir, result };
   } catch (err) {
