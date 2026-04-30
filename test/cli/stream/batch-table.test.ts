@@ -202,6 +202,59 @@ describe("BatchTableRenderer rollup line (TTY mode)", () => {
   });
 });
 
+describe("BatchTableRenderer header", () => {
+  test("solo single-pass batch shows '1 card'", () => {
+    const sink = collect();
+    const r = new BatchTableRenderer(sink, TTY);
+    r.setQueued("story-a", 1, 1);
+    r.setRunning("story-a", "run-a-1", 20, 1, 1);
+    r.setDone("story-a", "pass", 5, 1);
+    r.finalize();
+    expect(sink.out).toContain("Gauntlet");
+    expect(sink.out).toContain("1 card");
+    expect(sink.out).not.toContain("attempts");
+  });
+
+  test("multi-card single-pass batch shows '<N> cards'", () => {
+    const sink = collect();
+    const r = new BatchTableRenderer(sink, TTY);
+    r.setQueued("story-a", 1, 1);
+    r.setQueued("story-b", 1, 1);
+    r.setRunning("story-a", "run-a-1", 20, 1, 1);
+    r.setDone("story-a", "pass", 5, 1);
+    r.setRunning("story-b", "run-b-1", 20, 1, 1);
+    r.setDone("story-b", "pass", 6, 1);
+    r.finalize();
+    expect(sink.out).toContain("2 cards");
+    expect(sink.out).not.toContain("attempts");
+  });
+
+  test("single-card multi-pass shows '<cardId> · <N> attempts'", () => {
+    const sink = collect();
+    const r = new BatchTableRenderer(sink, TTY);
+    r.setQueued("story-a", 1, 3);
+    r.setQueued("story-a", 2, 3);
+    r.setQueued("story-a", 3, 3);
+    r.setRunning("story-a", "run-a-1", 20, 1, 3);
+    r.setDone("story-a", "pass", 5, 1);
+    r.finalize();
+    expect(sink.out).toContain("story-a · 3 attempts");
+  });
+
+  test("multi-card multi-pass shows '<N> cards × <M> attempts'", () => {
+    const sink = collect();
+    const r = new BatchTableRenderer(sink, TTY);
+    r.setQueued("story-a", 1, 2);
+    r.setQueued("story-a", 2, 2);
+    r.setQueued("story-b", 1, 2);
+    r.setQueued("story-b", 2, 2);
+    r.setRunning("story-a", "run-a-1", 20, 1, 2);
+    r.setDone("story-a", "pass", 5, 1);
+    r.finalize();
+    expect(sink.out).toContain("2 cards × 2 attempts");
+  });
+});
+
 describe("BatchTableRenderer (TTY mode — Mock B ticker)", () => {
   test("setQueued does not emit anything (queued cards are tracked silently)", () => {
     const sink = collect();

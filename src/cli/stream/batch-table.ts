@@ -207,11 +207,27 @@ export class BatchTableRenderer {
 
   private writeHeader(): void {
     const { target } = this.opts;
-    const n = this.order.length;
     const c = this.colors();
-    const cardsLabel = n === 1 ? "1 card" : `${n} cards`;
+    const allRows = [...this.rows.values()];
+    const distinctCards = new Set(allRows.map((r) => r.cardId));
+    const cardCount = distinctCards.size;
+    const passes = allRows[0]?.passes ?? 1;
+
+    let label: string;
+    if (cardCount === 1 && passes > 1) {
+      // Single card, multiple attempts: "login-ok · 3 attempts"
+      const cardId = [...distinctCards][0];
+      label = `${cardId} · ${passes} attempts`;
+    } else if (cardCount > 1 && passes > 1) {
+      // Batch with multi-pass: "2 cards × 3 attempts"
+      label = `${cardCount} cards × ${passes} attempts`;
+    } else {
+      // Today's batch: "1 card" / "3 cards"
+      label = cardCount === 1 ? "1 card" : `${cardCount} cards`;
+    }
+
     this.sink.write(
-      `${c.bold}Gauntlet${c.reset}${c.dim} · ${cardsLabel} · target ${c.reset}${c.cyan}${target}${c.reset}\n\n`,
+      `${c.bold}Gauntlet${c.reset}${c.dim} · ${label} · target ${c.reset}${c.cyan}${target}${c.reset}\n\n`,
     );
     this.headerWritten = true;
   }
