@@ -256,6 +256,16 @@ export async function executeRun(opts: ExecuteRunOpts): Promise<void> {
       // always-save behavior; the production route threads
       // effective.saveScreencast (default false).
       const framesDir = saveScreencast === false ? undefined : join(outDir, "frames");
+      // PRI-1436: share the WebAdapter's chrome-ws-lib session so the
+      // screencast talks to the same Chrome the adapter started (correct
+      // activePort, correct connection pool). Without this, the streamer
+      // would create its own session whose activePort was never set by
+      // startChrome.
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      const webAdapter = adapter as any;
+      const chromeSession = typeof webAdapter.getChromeSession === "function"
+        ? webAdapter.getChromeSession()
+        : undefined;
       streamer = new ScreencastStreamer(0, (frame) => {
         broadcaster?.send(runId, {
           type: "frame",
@@ -268,7 +278,7 @@ export async function executeRun(opts: ExecuteRunOpts): Promise<void> {
           width: frame.metadata.width,
           height: frame.metadata.height,
         });
-      }, framesDir);
+      }, framesDir, chromeSession);
       await streamer.start();
     }
 
