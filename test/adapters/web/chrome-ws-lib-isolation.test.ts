@@ -32,14 +32,15 @@ describe("chrome-ws-lib createSession() isolation (PRI-1436)", () => {
     const { createSession } = require("../../../src/adapters/web/lib/chrome-ws-lib");
     const a = createSession();
     const b = createSession();
-    // Default both sessions report the upstream default.
-    expect(a.getProfileName()).toBe("superpowers-chrome");
-    expect(b.getProfileName()).toBe("superpowers-chrome");
+    // Default both sessions report the gauntlet default (PRI-1444 — we
+    // intentionally diverge from upstream's 'superpowers-chrome' default).
+    expect(a.getProfileName()).toBe("gauntlet");
+    expect(b.getProfileName()).toBe("gauntlet");
     a.setProfileName("alpha-profile");
     expect(a.getProfileName()).toBe("alpha-profile");
     // The bug: pre-1436 b would also see "alpha-profile" because the
     // chromeProfileName binding was module-scope.
-    expect(b.getProfileName()).toBe("superpowers-chrome");
+    expect(b.getProfileName()).toBe("gauntlet");
     b.setProfileName("beta-profile");
     expect(a.getProfileName()).toBe("alpha-profile");
     expect(b.getProfileName()).toBe("beta-profile");
@@ -55,7 +56,7 @@ describe("chrome-ws-lib createSession() isolation (PRI-1436)", () => {
     // Mutating the session A's profile (which is one of the underlying
     // module-level lets pre-1436) must not bleed into B.
     a.setProfileName("xprofile");
-    expect(b.getProfileName()).toBe("superpowers-chrome");
+    expect(b.getProfileName()).toBe("gauntlet");
   });
 
   test("connection pool is not shared (closeAllConnections on one is a no-op for the other)", () => {

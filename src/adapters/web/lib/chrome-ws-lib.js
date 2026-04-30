@@ -275,7 +275,11 @@ let captureCounter = 0;
 let chromeProcess = null;
 let chromeHeadless = true; // Default to headless mode
 let chromeUserDataDir = null;
-let chromeProfileName = 'superpowers-chrome'; // Default profile name
+// Intentional divergence from upstream obra/superpowers-chrome (which defaults
+// to 'superpowers-chrome'): gauntlet must not share a profile dir with the
+// upstream MCP, or test-run state bleeds into the user's interactive Chrome
+// (and vice versa). See PRI-1444. Keep this comment when re-syncing upstream.
+let chromeProfileName = 'gauntlet'; // Default profile name
 
 // Helper to resolve tab index or ws URL to actual ws URL
 async function resolveWsUrl(wsUrlOrIndex) {
@@ -2387,7 +2391,7 @@ function getXdgCacheHome() {
   }
 }
 
-function getChromeProfileDir(profileName = 'superpowers-chrome') {
+function getChromeProfileDir(profileName = 'gauntlet') {
   const path = require('path');
   const cacheHome = getXdgCacheHome();
   return path.join(cacheHome, 'superpowers', 'browser-profiles', profileName);
@@ -2396,21 +2400,21 @@ function getChromeProfileDir(profileName = 'superpowers-chrome') {
 // --- Dynamic port allocation and per-profile meta.json ---
 //
 // Each profile gets a sibling meta.json file next to its data directory:
-//   ~/.cache/superpowers/browser-profiles/superpowers-chrome/       ← profile data
-//   ~/.cache/superpowers/browser-profiles/superpowers-chrome.meta.json ← port/pid tracking
+//   ~/.cache/superpowers/browser-profiles/gauntlet/       ← profile data
+//   ~/.cache/superpowers/browser-profiles/gauntlet.meta.json ← port/pid tracking
 //
 // This enables:
 //   - Reconnection to Chrome instances started by previous sessions
 //   - Multiple parallel Chrome instances (different profiles = different ports)
 //   - Collision detection (port already in use by another profile or process)
 
-function getProfileMetaPath(profileName = 'superpowers-chrome') {
+function getProfileMetaPath(profileName = 'gauntlet') {
   const path = require('path');
   const cacheHome = getXdgCacheHome();
   return path.join(cacheHome, 'superpowers', 'browser-profiles', `${profileName}.meta.json`);
 }
 
-function readProfileMeta(profileName = 'superpowers-chrome') {
+function readProfileMeta(profileName = 'gauntlet') {
   const fs = require('fs');
   try {
     const data = fs.readFileSync(getProfileMetaPath(profileName), 'utf8');

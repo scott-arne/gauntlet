@@ -74,7 +74,7 @@ describe("chrome profile rotation (PRI-1280)", () => {
         // Reset module-level profile name so subsequent tests in the
         // same process don't inherit our rotation-b profile in their logs.
         try {
-          chrome.setProfileName("superpowers-chrome");
+          chrome.setProfileName("gauntlet");
         } catch {
           // best-effort
         }
