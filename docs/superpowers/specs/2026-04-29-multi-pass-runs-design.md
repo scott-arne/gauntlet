@@ -1,6 +1,6 @@
 # Multi-pass runs — design
 
-**Status:** drafted overnight, reviewed by Tarquin (Bob 4f7a2c10), revised. Awaiting Matt's review of open questions.
+**Status:** approved by Matt 2026-04-30. Open questions resolved (see "Resolved decisions" near the end). Ready for the implementation plan.
 **Author:** Mosscap (Bob 320e9b00/Opus 4.7)
 **Linear:** [PRI-1440](https://linear.app/prime-radiant/issue/PRI-1440)
 **Related:** PRI-1382 (CLI batch), `src/cli/run-one.ts`, `src/cli/batch.ts`, `src/api/routes/run.ts`, `src/api/ws.ts`, `src/api/active-runs.ts`, `src/util/id.ts`, `src/types.ts`, `src/evidence/writer.ts`, `ui/src/components/NewRunModal.tsx`
@@ -53,7 +53,7 @@ more individual runs.
 ### Out of scope (v1)
 
 - **Concurrent passes.** v1 runs passes strictly serially within a card.
-  See open question Q6.
+  See Concurrency section.
 - **Cross-run-set comparison.** Showing "this card across the last K run
   sets" is a follow-on.
 - **Statistical analysis beyond medians and counts.** No per-observation
@@ -63,6 +63,11 @@ more individual runs.
   is a feature suggested by the UI but deferred.
 
 ## Decisions (summary)
+
+> Reflects Matt's answers from 2026-04-30. The "Open Questions"
+> section that previously sat at the end of this doc has been
+> replaced by "Resolved decisions" — same numbering, with each Q
+> stamped with the chosen answer.
 
 - **New entity: `RunSet`.** A RunSet is a *non-trivial* group of runs
   produced by one invocation: passes > 1, or cards > 1, or both. A
@@ -89,16 +94,33 @@ more individual runs.
   belong to a RunSet gain an optional `runSet` field
   (`{ runSetId, kind, passes, cards, cardIndex, attemptNumber }`).
   Solo runs omit the field entirely.
-- **Aggregate "set status" is a derived field**, not a stored verdict.
+- **Aggregate status is a derived field**, not a stored verdict.
   Computed from the constituent statuses on read. v1 buckets:
   `consistent_pass`, `consistent_investigate`, `consistent_fail`,
-  `mixed`, `mixed_with_errors`, `errored`. (See Aggregation policy.
-  Q1 — bucket names are up for review.)
+  `mixed`, `mixed_with_errors`, `errored`. (See Aggregation policy.)
+- **Field naming inside `summary`:** `cardStatus` per-card,
+  `overallStatus` at the top. Same bucket vocabulary in both.
+- **Cancellation is in scope for v1.** Both CLI (SIGINT) and Web
+  (`DELETE /api/run-sets/:runSetId` and `DELETE /api/runs/:runId`)
+  abort the in-flight attempt cleanly, skip remaining attempts, and
+  finalize the set. Cancelled attempts are recorded as `errored` with
+  reason `cancelled`. See Cancellation section.
 - **No new exit-code semantics yet.** `gauntlet run --passes 3` exits
   `0` iff every attempt is `pass`; otherwise `1`. Same rule as batch.
+  CLI cancel via SIGINT exits `130` (UNIX convention).
 - **No `result.json` schema-version bump.** The `runSet` field is an
   optional additive change. Readers written for the current schema
   parse the new shape correctly (they ignore unknown fields).
+- **`runSet` lives on `VetResult`.** The TypeScript type gains an
+  optional `runSet?: RunSetCtx` field. The orchestrator stamps it
+  onto the result before `writeResultFiles` runs.
+- **Web UI scope is intentionally minimal in v1.** A broader UI
+  overhaul (transcripts, live runs, run sets unified) is anticipated
+  separately. v1 ships only what's needed to make multi-pass usable:
+  a `passes` field in NewRunModal, a basic `/run-sets/:id` page, a
+  cancel button, and a small badge on existing run rows. No row
+  collapsing in `RunsList`, no "rerun failures," no multi-pass
+  affordances on `/runs/:id`.
 
 ## Identity and naming
 
@@ -133,8 +155,7 @@ the user-facing flag (`--passes 3`, what Matt asked for) and a possible
 becoming `pass 1/3 → pass` in CLI output and code, the spec uses
 **`attemptNumber`** as the per-run counter and **"attempt N/M"** in CLI
 rendering, while keeping **`--passes N`** as the user-facing flag (Matt's
-word). Q4 — Matt may prefer to fully rename to `--attempts` for
-consistency.
+word). Resolved 2026-04-30: keep `--passes` as the flag.
 
 **Timestamp note:** `runSetId.ts` is the orchestrator start time;
 per-attempt `runId.ts` is each attempt's own start. So
@@ -185,7 +206,7 @@ disambiguates collisions.
         "cardId": "login-ok",
         "passes": 3,
         "byStatus": { "pass": 2, "fail": 0, "investigate": 1, "errored": 0 },
-        "setStatus": "mixed",
+        "cardStatus": "mixed",
         "medianTurns": 6,
         "medianDurationMs": 4210
       }
@@ -193,7 +214,7 @@ disambiguates collisions.
     "overall": {
       "totalRuns": 3,
       "byStatus": { "pass": 2, "fail": 0, "investigate": 1, "errored": 0 },
-      "setStatus": "mixed"
+      "overallStatus": "mixed"
     }
   }
 }
@@ -249,8 +270,8 @@ gauntlet batch <story1.md> [story2.md ...] --target <url> [flags]
 ```
 
 Validation: `--passes 0` is a usage error. `--passes` must be a positive
-integer. v1 ships with a soft cap of 50 (see Concurrency); Q6 covers
-whether/when to add `--concurrency K`.
+integer. v1 ships with a soft cap of 50 (see Concurrency).
+`--concurrency K` is a v2 follow-on (resolved Q6).
 
 CLI output, multi-pass single run (default TTY mode), `--passes 3`.
 "attempt N/M" deliberately avoids saying "pass" so it doesn't collide
@@ -358,7 +379,7 @@ New endpoints:
 - `GET /api/run-sets/:runSetId/summary` — just the `summary` block
   (cheap polling endpoint while the set is in flight).
 - `GET /api/run-sets?cardId=<id>&limit=...` — list of recent run sets
-  for a card. (Optional in v1; gates on Q2 — UI surface scope.)
+  for a card. (Optional in v1 — UI is intentionally minimal.)
 
 WebSocket: each pass continues to broadcast on its own per-`runId`
 channel. There is a new top-level event the UI can subscribe to keyed
@@ -419,13 +440,13 @@ Each pass row links to its `/runs/:runId` (post-hoc) or
 all per-pass screens are reused as-is.
 
 **Run Again from a pass-set.** "Run Again" on `/run-sets/:id` prefills
-the modal with the same `passes` count. (See Q2 — also allow "rerun
+the modal with the same `passes` count. (Out of v1 scope: "rerun
 just the failed passes" or "rerun with passes+1"?)
 
 **Sidebar / runs list.** When `RunsList` shows runs that belong to a
 RunSet of size >= 2, the row shows a small badge: `pass 2/3 · set abc…`,
 clickable to the set view. v1 does not collapse pass-set rows in the
-list. (Q2 — would Matt prefer collapsed grouping by default?)
+list. v1 does not collapse rows in `RunsList`.
 
 ## Architecture
 
@@ -482,19 +503,20 @@ multi-pass orchestrator drives whichever is appropriate for its caller.
    ```
 
    Both call paths route to `evidence/writer.ts`'s `writeResultFiles`,
-   which gains a third parameter:
+   which is unchanged — the `runSet` field rides along on the
+   `VetResult` itself. Concretely, `src/types.ts` gains:
 
    ```ts
-   writeResultFiles(outDir: string, result: VetResult, runSetCtx?: RunSetCtx): void;
+   interface VetResult {
+     // ...existing fields...
+     runSet?: RunSetCtx;       // present when this run is part of a RunSet
+   }
    ```
 
-   When `runSetCtx` is set, the writer stamps a `runSet` field into
-   the `result.json` payload before serializing. The `VetResult` type
-   in `src/types.ts` does **not** grow a `runSet` field — that
-   metadata lives at the JSON level only, kept out of the in-memory
-   result type so vetting logic stays orthogonal to set membership.
-   (Alternative considered: add `runSet?` to `VetResult` directly. Q7
-   below — happy to flip.)
+   The orchestrator stamps the ctx onto the result returned from
+   `runAgent` before passing it to `writeResultFiles`. This keeps the
+   writer dumb (one parameter, one shape) and lets in-process callers
+   read `runSet` off the returned result without a JSON round-trip.
 
 3. **`RunSetWriter`** (new module under `src/evidence/`, e.g.
    `evidence/run-set-writer.ts`). Owns the `<.gauntlet>/run-sets/<id>/`
@@ -569,8 +591,8 @@ multi-pass orchestrator drives whichever is appropriate for its caller.
    - `ActiveRunRegistry` is updated by the orchestrator: all N runs
      are pre-registered with `status: "queued"` at orchestrator start,
      transitioning to `"running"` and then unregistered as each pass
-     completes. (See Q8 — should `/api/active-runs` surface queued
-     future passes? My recommendation: yes, pre-register.)
+     completes. So `/api/active-runs` surfaces queued attempts in
+     addition to the running one (resolved Q8).
 
 6. **WebSocket.** New `RunSetBroadcaster` in `src/api/ws.ts`, parallel
    to `RunBroadcaster` (not derived from it). The orchestrator emits
@@ -588,11 +610,16 @@ Per-card aggregation across N attempts:
 | field | computation |
 |---|---|
 | `byStatus` | count of each VetStatus across the N attempts |
-| `setStatus` | derived bucket (see below) |
+| `cardStatus` | derived bucket (see below) |
 | `medianTurns` | median of `usage.turns` across the N attempts |
 | `medianDurationMs` | median of `duration_ms` across the N attempts |
 
-`setStatus` derivation (v1; six buckets; bucket names pending Q3):
+The same field at the batch level is named `overallStatus` (in
+`summary.overall`). The bucket vocabulary is identical; only the field
+name differs to make logs and code unambiguous about which scope is
+being described.
+
+Bucket derivation (v1; six buckets):
 
 ```
 all N pass                                → "consistent_pass"
@@ -616,14 +643,13 @@ in `mixed`, not `consistent_fail`. The earlier draft was pessimistic
 about this; Tarquin (F4) caught the inconsistency. Treating it as
 `mixed` is the more honest signal.
 
-`setStatus` for `passes === 1`: the field is computed but the UI/CLI
-**suppress the rollup display** when `passes === 1` (and at that point
-RunSet creation is also suppressed — there's no rollup to show). The
-field exists in `set.json` only when a RunSet exists.
+For `passes === 1` no RunSet exists, so neither field is materialized.
+The fields appear only in `set.json`, and `set.json` only exists for
+non-trivial groupings.
 
-Batch overall: sum `byStatus` counts across all cards. `setStatus` at
-the batch level follows the same rules over the totals (e.g. one card
-all-pass + one card all-fail → batch overall `mixed`).
+Batch overall: sum `byStatus` counts across all cards. `overallStatus`
+follows the same bucket rules over the totals (e.g. one card all-pass
++ one card all-fail → batch `overallStatus: "mixed"`).
 
 We are explicitly **not** computing means or std-dev in v1. Median is
 robust to one-off outliers (one slow attempt dragging the average) and
@@ -668,10 +694,6 @@ is the only place this knowledge lives.
   attempt for that card, all N attempts for that card are recorded
   as `errored before start` in the set, no per-run dirs are created,
   the orchestrator continues to the next card.
-- **SIGINT:** waits for the current attempt to finish (or aborts via
-  the existing `adapter.close()` in the per-run `finally`), writes
-  whatever has happened so far to `set.json`, emits `set_done` with
-  partial summary, exits.
 - **Orchestrator crash before `finalize()`:** `set.json` is left with
   `completedAt: null` and `summary: null`. A reader can detect this
   and recompute the summary from the `runs[]` pointers if the per-run
@@ -679,8 +701,93 @@ is the only place this knowledge lives.
   `gauntlet finalize-set <runSetId>` CLI is the v2 escape hatch (a
   ~20-line addition that reads the per-run results and rewrites
   `set.json` with the computed summary).
-- **Cancel while in flight (API users):** v1 has no cancel endpoint
-  for run sets. Q9 covers the design.
+- **Cancellation:** see Cancellation section — first-class behavior
+  in both CLI (SIGINT) and Web (DELETE endpoint).
+
+## Cancellation
+
+Cancellation is first-class in v1 because a multi-pass invocation can
+take long enough that "I want to stop" is a real workflow.
+
+### Shared semantics
+
+Cancel applies at three nested scopes:
+
+1. **An individual attempt** — abort the in-flight `runAgent` loop and
+   close the adapter. The attempt's `result.json` is written with
+   `status: "errored"` and an extra `errorReason: "cancelled"` field.
+2. **A RunSet** — cancel the in-flight attempt (as above) and skip all
+   remaining queued attempts. Skipped attempts never get a per-run
+   directory; they are recorded in `set.json#runs[i]` with
+   `status: "cancelled"` (a synthetic status that lives only in the
+   set manifest, not in any `result.json`).
+3. **A solo run** — same as cancelling an individual attempt; no
+   RunSet involvement.
+
+Set finalization runs as normal after a cancel, with the cancelled
+attempts contributing to `byStatus` (see below) and the set's
+`overallStatus` derived from whatever did run.
+
+`byStatus` gains a `cancelled` count (in addition to
+`pass | fail | investigate | errored`). For `overallStatus` derivation,
+cancelled attempts are treated like errored:
+
+```
+all N cancelled                                  → "errored"
+mix incl. cancelled (with at least one non-error/cancel) → "mixed_with_errors"
+```
+
+i.e. `mixed_with_errors` covers both errored and cancelled mixes.
+This keeps the bucket count at six. (The set.json's `byStatus` carries
+the precise breakdown for anyone who needs to distinguish the two.)
+
+### CLI
+
+`SIGINT` (Ctrl-C) on `gauntlet run` or `gauntlet batch`:
+
+- First Ctrl-C: graceful cancel. Aborts the in-flight attempt via
+  `adapter.close()` (the existing `runOne` `finally` already runs),
+  marks the attempt `errored` with `errorReason: "cancelled"`, marks
+  remaining queued attempts `cancelled` in `set.json`, runs
+  `finalize()`, prints the final table, exits `130`.
+- Second Ctrl-C within ~2s: hard exit. `process.exit(130)` immediately
+  without finalize. The set is left in orphan state; the operator
+  knows what they did.
+
+For solo runs (no RunSet), the same first-Ctrl-C behavior applies to
+the single in-flight attempt.
+
+### Web
+
+Two new endpoints, both idempotent:
+
+```
+DELETE /api/runs/:runId          → cancel a solo in-flight run
+DELETE /api/run-sets/:runSetId   → cancel an in-flight run set
+```
+
+Behavior:
+
+- Returns `202 ACCEPTED` with `{ status: "cancelling" }` if the
+  target was found and is in flight; `404` if not found; `409` if
+  already terminal.
+- The orchestrator (or `executeRun` for solo) listens on the
+  `ActiveRunRegistry` for a `cancelRequested` flag and breaks out of
+  its loop after the current attempt's `adapter.close()` completes.
+  Same finalize-and-exit path as SIGINT.
+- The `RunSetBroadcaster` emits `set_cancelled` (a `set_done`-shaped
+  event with the partial summary) so the UI updates.
+
+Web UI: the `/run-sets/:id` page gains a "Cancel" button when the set
+is in flight. Confirmation modal, then DELETE, then the page reflects
+the cancelled state once the WS event fires. Per-run cancel is also
+exposed on the existing live run view via `DELETE /api/runs/:runId`.
+
+### Cancel is not "rerun the failures"
+
+Cancel ends the set. To re-run after a cancel, the user invokes a
+new `gauntlet run` / `gauntlet batch` (CLI) or hits "Run Again" (web).
+"Re-run just the failed attempts" is still out of scope (resolved Q5).
 
 ## Testing
 
@@ -703,12 +810,16 @@ is the only place this knowledge lives.
     one run-set dir with 4 runs ordered (a×2, b×2), per-card
     rollups committed in three-line form, batch-level rollup.
   - Mixed status: stub adapter returns `pass`, `pass`, `investigate`
-    for `--passes 3` → `setStatus: "mixed"`.
+    for `--passes 3` → `cardStatus: "mixed"`.
   - Mixed-with-errors: stub returns `pass`, `pass`, throws on attempt 3
-    → `setStatus: "mixed_with_errors"`, `byStatus: { pass: 2, errored: 1 }`.
+    → `cardStatus: "mixed_with_errors"`, `byStatus: { pass: 2, errored: 1 }`.
     Orchestrator continues past errored attempts; no attempt is
     skipped.
-  - All-errored: stub throws on every attempt → `setStatus: "errored"`.
+  - All-errored: stub throws on every attempt → `cardStatus: "errored"`.
+  - Cancellation: kick off `--passes 5`, send SIGINT after attempt 2
+    completes; assert attempt 2 finalized as `pass`/`fail` (whatever
+    the stub said), attempts 3–5 marked `cancelled` in `set.json`,
+    `overallStatus` derived correctly, exit code `130`.
 - **Web:** snapshot test of `/run-sets/:id` with mock data for each
   bucket: `consistent_pass`, `mixed`, `mixed_with_errors`, `errored`,
   in-flight.
@@ -755,144 +866,49 @@ web UI becomes a follow-on.
 
 ---
 
-## Open Questions (queued for Matt)
+## Resolved decisions
 
-These are decisions I made best-guesses on but want a sanity check.
-Numbered for easy reference. Items the spec review (Tarquin)
-flagged as no-brainers have already been decided in the body above
-and removed from this list.
+> Resolved by Matt 2026-04-30. Originally drafted as "Open Questions";
+> answers are recorded here for the implementation plan and for
+> future readers who want to know why the spec lands this way.
 
-**Q1 — Set status bucket names.**
-v1 proposes: `consistent_pass`, `consistent_investigate`,
-`consistent_fail`, `mixed`, `mixed_with_errors`, `errored`. The word
-"flaky" was considered for the mixed bucket but rejected because in
-CI culture it usually means "the test is bad" — and here a mixed
-result is more often "the SUT is non-deterministic" or "we just
-measured stochasticity," which is the whole point of multi-pass.
-Alternates I considered: `unstable`, `inconsistent`, plain `mixed`.
-**My recommendation:** ship `mixed` / `mixed_with_errors`. Reverse
-me with one word if `flaky` reads better in practice.
-
-**Q2 — Web UI scope.**
-Several UX details I made stub decisions on:
-- Run Set view layout — drafted above; mockup-level only.
-- `RunsList` row treatment for runs in a multi-pass set — drafted
-  above as a badge, no row collapsing.
-- "Rerun just the failed attempts" — flagged as out of scope.
-- "Run Again with passes+1" / "Run Again same N" — drafted as
-  "same N" for v1.
-- Where the Run Set view lives in the sidebar nav.
-**My recommendation:** ship the basics (the new page + modal field +
-list badge), defer "rerun failures" and "+1 pass" to a follow-on.
-Sidebar: a top-level "Run Sets" entry parallel to "Runs," paginated
-the same way.
-
-**Q3 — Naming: "RunSet" vs "Pass Set" vs "Ensemble."**
-You used the word "passes." I used "RunSet" in the spec because it
-generalizes across single+batch (a batch is also a RunSet, just
-with multiple cards), and a "PassSet" feels card-specific. But
-"RunSet" is a coined term and could feel jargony.
-**My recommendation:** RunSet for the entity, "passes" for the
-count, "attempt N/M" for individual constituents. If RunSet feels
-wrong, alternates are: Run Group, Sweep, Trial Set, Ensemble.
-
-**Q4 — `--passes` vs `--attempts` flag name.**
-Spec keeps `--passes N` as the flag (matching your language) but
-uses "attempt N/M" in CLI output and `attemptNumber` in code, to
-avoid the cognitive collision with `VetStatus = pass`. The flag
-mismatching the noun is a minor wart. Alternate: rename the flag
-to `--attempts N` for consistency.
-**My recommendation:** keep `--passes` — your word, and "I want
-this to pass three times" reads natural. Live with the mild
-internal naming mismatch.
-
-**Q5 — "Run again" as a multi-pass invocation.**
-Should the existing "Run Again" button on `/runs/:id` (a solo run)
-gain a "Run Again × N" affordance? It would turn a solo run into a
-multi-pass investigation in one click.
-**My recommendation:** yes, but as a follow-on. Out of v1 scope.
-
-**Q6 — Concurrency in v1?**
-v1 is card-major serial. Reasons to keep serial:
-- Browser profile names already include `runId` so concurrency
-  works in principle, but each parallel browser session burns
-  ~50MB.
-- Stochasticity under timing pressure can be different from
-  stochasticity under no contention.
-- Aggregated medians are noisier with low N concurrent than serial.
-Reasons to add it now:
-- Wall clock. 10 attempts serial × 1 minute each = 10 minutes.
-  Parallel is 1 minute.
-**My recommendation:** ship serial in v1; add `--concurrency K`
-later as a localized change to the orchestrator loop. The
-50-passes soft cap in v1 limits accidental wall-clock pain.
-
-**Q7 — Should `runSet` field live on `VetResult` or only in JSON?**
-Spec says: writer stamps `runSet` into `result.json` payload, but
-the `VetResult` TypeScript type does not gain a `runSet` field —
-that metadata is JSON-level only. The argument: vetting outcome is
-orthogonal to set membership; a vetting policy module shouldn't
-have to know about RunSet identity.
-Alternate: add `runSet?: RunSetCtx` to `VetResult` directly. This
-is simpler, keeps the type aligned with the JSON, and lets any
-caller of `runOne`/`executeRun` read `runSet` off the returned
-result without re-reading `result.json`.
-**My recommendation:** flip to the alternate (add to `VetResult`).
-The orthogonality argument is principle without payoff. Easier to
-read and test.
-
-**Q8 — Should `/api/active-runs` surface queued attempts?**
-Spec says: orchestrator pre-registers all N attempts with
-`status: "queued"`, transitioning to `"running"` and unregistering
-as each completes. So `/api/active-runs` shows all in-flight + queued
-attempts in a multi-pass set.
-Alternate: only register an attempt when it actually starts running
-(today's behavior). The endpoint shows just the executing attempt.
-**My recommendation:** pre-register. The UI's RunsList wants to
-show "1 of 5 done, 1 running, 3 queued" — that's only possible if
-the registry knows about the queued ones. Cost: small additional
-in-memory state per multi-pass set.
-
-**Q9 — Cancel-in-flight for run sets.**
-v1 has no cancel endpoint. For a 50-attempt run, this is a real
-UX gap — if the user realizes attempt 1 was misconfigured, they
-have to wait. Two designs:
-- `DELETE /api/run-sets/:id` — abort the current attempt
-  (`adapter.close()`), mark remaining attempts as `cancelled`
-  (new VetStatus? or just `errored` with reason `cancelled`?),
-  finalize the set with whatever ran.
-- Two-step: `POST /api/run-sets/:id/cancel` with a flag for
-  "abort current and skip remaining" vs "let current finish and
-  skip remaining."
-**My recommendation:** ship `DELETE` semantics (abort + skip) in
-v1 if web UI ships in v1. If web UI is deferred, defer cancel too.
-Cancelled attempts mark with `errored` + reason `cancelled` to
-avoid introducing a new VetStatus this round.
-
-**Q10 — Naming inside `summary.perCard` and `summary.overall`.**
-Currently both use `byStatus`, `setStatus`. The "set" in
-`setStatus` at the per-card level is a slight stretch — really
-it's a per-card status across attempts, not the whole set's
-status. Calling it `cardStatus` and `overallStatus` (or
-`overall.setStatus`) might read cleaner.
-**My recommendation:** `cardStatus` per-card, `overallStatus` at
-the top. Reverse me if you'd rather keep the symmetry of using
-`setStatus` everywhere.
+- **Q1 — Bucket names:** `mixed` / `mixed_with_errors` ✓ ship as
+  proposed.
+- **Q2 — Web UI scope:** ship the *minimum* useful surface — modal
+  field, basic `/run-sets/:id` page, cancel button, run-row badge.
+  No row collapsing, no "rerun failures." A broader UI overhaul
+  (transcripts, live runs, run sets unified) is anticipated as a
+  separate effort and will redesign these affordances anyway.
+- **Q3 — Entity naming:** `RunSet` ✓.
+- **Q4 — Flag naming:** `--passes N` ✓ (kept; `attemptNumber` in
+  code, "attempt N/M" in CLI output to avoid pass/pass collision).
+- **Q5 — "Run Again × N":** out of scope for v1.
+- **Q6 — Concurrency:** v1 is card-major serial; `--concurrency K`
+  is a localized v2 change to the orchestrator loop.
+- **Q7 — `runSet` placement:** on `VetResult` ✓ — Architecture §2
+  and "Decisions (summary)" reflect this. The orchestrator stamps
+  `runSet` onto the result before `writeResultFiles`; the writer is
+  unchanged.
+- **Q8 — `/api/active-runs` surfaces queued attempts:** ✓
+  pre-register all N attempts at orchestrator start.
+- **Q9 — Cancellation:** in scope for v1, both CLI (SIGINT) and Web
+  (`DELETE /api/run-sets/:id`, `DELETE /api/runs/:id`). See
+  Cancellation section for details — including: cancelled queued
+  attempts use a synthetic `cancelled` status in `set.json`, the
+  cancelled in-flight attempt records `errored` with
+  `errorReason: "cancelled"`, and `mixed_with_errors` covers mixes
+  involving cancelled or errored attempts.
+- **Q10 — Field naming inside `summary`:** `cardStatus` per-card,
+  `overallStatus` at the top ✓.
 
 ---
 
-## Notes for whoever picks this up next (probably morning Matt)
+## Next step
 
-I made best-guess decisions in the spec body and queued the things
-I felt least sure about as Q1–Q10 above (originally 14, four were
-no-brainers per Tarquin's review and have been promoted into the body
-as decisions). The cleanest path forward is:
-
-1. Read Q1–Q10. Mark agree / disagree / discuss.
-2. Update the spec with your decisions.
-3. Hand the spec to the next Bob to write the implementation plan
-   (`writing-plans` skill). The phasing section already proposes
-   3 PRs; the plan will turn each phase into a task graph.
+The spec is now spec-final. Hand it to `writing-plans` to produce a
+three-phase implementation plan matching the Phasing section. Each
+phase is a separate commit on `matt/pri-1440-multi-pass-runs` (or its
+own branch), gated on the previous phase landing.
 
 If anything in the spec body feels wrong (not just the Qs), call
 it out and we can revisit. The decisions aren't precious.
