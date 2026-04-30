@@ -640,11 +640,11 @@ if (passes === 1) {
   }, 202);
 }
 
-// Multi-pass path — orchestrator owns the id, surfaced via prepareRunSet
-const { prepareRunSet } = await import("../../runs/run-set");
+// Multi-pass path — orchestrator owns the id, surfaces it via the await
+const { runRunSet } = await import("../../runs/run-set");
 const cancelToken = { cancelled: false };
 
-const prepared = prepareRunSet({
+const handle = await runRunSet({
   resultsRoot: gauntletPath(config.projectRoot),
   cards: [entry.card.id],
   passes,
@@ -672,41 +672,41 @@ const prepared = prepareRunSet({
   },
 });
 
-// Pre-register all attempts as queued (we now have prepared.runs).
+// Pre-register all attempts as queued (we now have handle.runs).
 if (registry) {
-  for (const r of prepared.runs) {
+  for (const r of handle.runs) {
     registry.register({
       id: r.runId, cardId: entry.card.id, title: entry.card.title,
       target: body.target, model: cfg.model ?? "", startedAt: Date.now(),
       status: "queued", attemptNumber: r.attemptNumber, passes,
-      runSetId: prepared.runSetId,
+      runSetId: handle.runSetId,
     });
   }
 }
 
 // Register the set-level cancel token for DELETE /api/run-sets/:id
-if (cancelTokens) cancelTokens.register(prepared.runSetId, cancelToken);
+if (cancelTokens) cancelTokens.register(handle.runSetId, cancelToken);
 
-// Detach the actual loop
-(async () => {
-  try {
-    const setResult = await prepared.run();
+// Detach the long-running completion
+handle.completion
+  .then((setResult) => {
     if (setBroadcaster) {
-      setBroadcaster.send(prepared.runSetId, { kind: "set_done", summary: setResult.summary });
+      setBroadcaster.send(handle.runSetId, { kind: "set_done", summary: setResult.summary });
     }
-  } catch (e) {
+  })
+  .catch((e) => {
     errorLog?.record({ scope: "run-set", error: e });
-  } finally {
-    if (cancelTokens) cancelTokens.unregister(prepared.runSetId);
-    if (registry) for (const r of prepared.runs) registry.unregister(r.runId);
-  }
-})();
+  })
+  .finally(() => {
+    if (cancelTokens) cancelTokens.unregister(handle.runSetId);
+    if (registry) for (const r of handle.runs) registry.unregister(r.runId);
+  });
 
 return c.json({
-  runSetId: prepared.runSetId,
-  kind: prepared.kind,
-  passes: prepared.passes,
-  runs: prepared.runs.map((r) => ({
+  runSetId: handle.runSetId,
+  kind: handle.kind,
+  passes: handle.passes,
+  runs: handle.runs.map((r) => ({
     runId: r.runId,
     attemptNumber: r.attemptNumber,
     status: "queued" as const,
@@ -714,23 +714,24 @@ return c.json({
 }, 202);
 ```
 
-**The shape gap:** an HTTP `Create` handler needs to return the new resource's id synchronously while the long-running work continues in the background. `runRunSet` currently does both phases in one async call. **Resolution: split `runRunSet` into a synchronous `prepareRunSet` (id generation, eager runId allocation, writer stub) and an async `prepared.run()` (the loop).** The orchestrator still owns id generation — the caller never invents an id. This is a small refactor to Phase A's orchestrator.
+**The shape gap:** an HTTP `Create` handler needs the new resource's id back fast (so the 202 carries it) while the long-running work continues in the background. `runRunSet` currently returns a single Promise that resolves only after all attempts complete. **Resolution: change `runRunSet`'s return type to `Promise<{ runSetId, kind, passes, runs, completion }>` — the awaited Promise covers only the fast prep phase (id gen + stub `set.json` write); `completion` is the long Promise that resolves with the final `RunSetResult`.** The orchestrator still owns id generation; the caller never invents an id.
 
-- [ ] **Step 3a: Refactor `runRunSet` into `prepareRunSet` + `prepared.run()`**
+- [ ] **Step 3a: Change `runRunSet`'s return type to expose the id early**
 
 ```ts
-// src/runs/run-set.ts — replace runRunSet with this two-phase shape
+// src/runs/run-set.ts
 
-export interface PreparedRunSet {
+export interface RunSetHandle {
   runSetId: string;
   kind: RunSetKind;
   passes: number;
   cards: string[];
   runs: Array<{ runId: string; cardId: string; attemptNumber: number }>;
-  run(): Promise<RunSetResult>;
+  completion: Promise<RunSetResult>;
 }
 
-export function prepareRunSet(cfg: RunSetConfig): PreparedRunSet {
+export async function runRunSet(cfg: RunSetConfig): Promise<RunSetHandle> {
+  // ── Prep phase (fast: id gen, eager runIds, set.json stub) ──
   const runSetId = makeRunSetId(cfg.kind);
   const gen = cfg.generateRunId ?? ((cardId, _i) => makeRunId(cardId));
 
@@ -750,66 +751,71 @@ export function prepareRunSet(cfg: RunSetConfig): PreparedRunSet {
     cardIndex: 0, attemptNumber: 1,
   };
   const writer = new RunSetWriter(cfg.resultsRoot, ctx0);
-  writer.start(allRuns);                 // synchronous fs write — set.json stub is on disk before return
+  writer.start(allRuns);
   cfg.onAllRunsKnown?.(allRuns);
 
-  return {
-    runSetId,
-    kind: cfg.kind,
-    passes: cfg.passes,
-    cards: cfg.cards,
-    runs: allRuns,
-    run: () => runPreparedRunSet({ cfg, writer, ctx0, allRuns }),
-  };
+  // ── Run phase (slow: cards × passes loop). Started but not awaited. ──
+  const completion = runLoop({ cfg, writer, ctx0, allRuns, runSetId });
+
+  return { runSetId, kind: cfg.kind, passes: cfg.passes, cards: cfg.cards, runs: allRuns, completion };
 }
 
-async function runPreparedRunSet(args: {
+async function runLoop(args: {
   cfg: RunSetConfig;
   writer: RunSetWriter;
   ctx0: RunSetCtx;
   allRuns: Array<{ runId: string; cardId: string; attemptNumber: number }>;
+  runSetId: string;
 }): Promise<RunSetResult> {
   // Body of the existing runRunSet from the loop onward, unchanged:
   // for (cardIndex...) for (attemptNumber...) { check cancelToken; executor; recordRunEnd }
   // mark unstarted as cancelled if cancelToken.cancelled
   // writer.finalize(...)
-  // return { runSetId, runs, summary }
-  // ...existing body, adapted to use args.cfg / args.writer / args.allRuns
-}
-
-// Back-compat shim for existing CLI callers that prefer one call:
-export async function runRunSet(cfg: RunSetConfig): Promise<RunSetResult> {
-  return prepareRunSet(cfg).run();
+  // return { runSetId: args.runSetId, runs, summary }
 }
 ```
 
-The `runRunSet` shim keeps `src/cli/run.ts` and `src/cli/batch.ts` working unchanged — Phase A's CLI callers don't need to learn the new shape. The HTTP handler uses `prepareRunSet` directly to get the id synchronously.
-
-Update `test/runs/run-set.test.ts` to add tests for `prepareRunSet`:
+This is a **breaking change** to `runRunSet`'s return type — Phase A's CLI callers (`src/cli/run.ts`, `src/cli/batch.ts`) currently do `await runRunSet(cfg)` expecting a `RunSetResult`. Update both call sites:
 
 ```ts
-test("prepareRunSet returns the id and runs synchronously", () => {
-  const prepared = prepareRunSet({
-    resultsRoot: mkdtempSync(join(tmpdir(), "gauntlet-prep-")),
-    cards: ["card-a"],
-    passes: 3,
-    kind: "single",
-    executor: async () => ({ runId: "x", outDir: "x", result: fakeResult("pass") }),
-    generateRunId: (cardId, i) => `${cardId}_t${i}_x000`,
-  });
-  expect(prepared.runSetId).toMatch(/^single_/);
-  expect(prepared.runs).toHaveLength(3);
-  expect(prepared.runs[0].attemptNumber).toBe(1);
-  // set.json must exist on disk before run() is called
-  // (the test config above puts it under prepared's resultsRoot)
-});
-
-test("prepareRunSet then run() == old runRunSet behavior", async () => {
-  // Verify the shim path still produces the same result.
-});
+// src/cli/run.ts and src/cli/batch.ts — replace
+const setResult = await runRunSet({ ... });
+// with
+const handle = await runRunSet({ ... });
+const setResult = await handle.completion;
 ```
 
-Existing tests of `runRunSet` continue to pass via the shim.
+That's a 2-line change in each file. Do it as part of this task.
+
+Update `test/runs/run-set.test.ts` accordingly. The 5 existing tests need their `await runRunSet(cfg)` calls changed to `await (await runRunSet(cfg)).completion`. Add one new test that asserts the early-return contract:
+
+```ts
+test("runRunSet resolves with the id and runs before the loop completes", async () => {
+  let executorCalled = false;
+  const handle = await runRunSet({
+    resultsRoot: mkdtempSync(join(tmpdir(), "gauntlet-handle-")),
+    cards: ["card-a"],
+    passes: 2,
+    kind: "single",
+    executor: async () => {
+      executorCalled = true;
+      return { runId: "x", outDir: "x", result: fakeResult("pass") };
+    },
+    generateRunId: (cardId, i) => `${cardId}_t${i}_x000`,
+  });
+
+  // The handle is returned BEFORE the executor runs (the loop is started but not awaited).
+  expect(handle.runSetId).toMatch(/^single_/);
+  expect(handle.runs).toHaveLength(2);
+  // set.json stub must exist on disk before the loop runs.
+  expect(existsSync(join(/* resolve from cfg.resultsRoot */, "run-sets", handle.runSetId, "set.json"))).toBe(true);
+
+  // Now wait for the loop to actually finish.
+  const result = await handle.completion;
+  expect(executorCalled).toBe(true);
+  expect(result.summary?.overall.overallStatus).toBe("consistent_pass");
+});
+```
 
 - [ ] **Step 4: Extract a `runSingleAttempt` helper**
 
@@ -959,7 +965,7 @@ The simplest design: a parallel `SetCancelTokenRegistry` (or extend `CancelToken
 
 - [ ] **Step 1: Confirm Task 5's set-token registration**
 
-Tokens for solo runs and tokens for run sets live in the same registry — runIds and runSetIds have non-overlapping formats (`<cardId>_…` vs `<kind>_…`). No new class needed. Task 5's multi-pass branch already calls `cancelTokens.register(prepared.runSetId, cancelToken)` and unregisters in the finally; this task just exposes the DELETE endpoint.
+Tokens for solo runs and tokens for run sets live in the same registry — runIds and runSetIds have non-overlapping formats (`<cardId>_…` vs `<kind>_…`). No new class needed. Task 5's multi-pass branch already calls `cancelTokens.register(handle.runSetId, cancelToken)` and unregisters in the finally; this task just exposes the DELETE endpoint.
 
 - [ ] **Step 3: Add the DELETE route**
 
