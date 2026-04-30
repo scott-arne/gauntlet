@@ -31,6 +31,10 @@ export interface RunOneOptions {
    * renderer; batch.ts uses it to subscribe its per-card observer. */
   onLogger?: (logger: EvidenceLogger) => () => void;
   runSetCtx?: RunSetCtx;
+  /** Externally-supplied runId (from the orchestrator). When provided, this
+   * overrides the `makeRunId(card.id)` call so the run directory name
+   * matches what the RunSet manifest already recorded. */
+  runId?: string;
 }
 
 export interface RunOneSummary {
@@ -44,7 +48,7 @@ export async function runOne(opts: RunOneOptions): Promise<RunOneSummary> {
 
   const content = readFileSync(scenarioPath, "utf-8");
   const card = parseStoryCard(content);
-  const runId = makeRunId(card.id);
+  const runId = opts.runId ?? makeRunId(card.id);
   const outDir = opts.outDir ?? gauntletPath(config.projectRoot, "results", runId);
   snapshotRunInputs({
     runDir: outDir,

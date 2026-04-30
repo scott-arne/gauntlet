@@ -90,11 +90,13 @@ describe("gauntlet batch — e2e against CLI adapter", () => {
 
     const resultsRoot = join(projectRoot, ".gauntlet", "results");
     expect(existsSync(resultsRoot)).toBe(true);
-    // RunIds embed the cardId as their stem (`<cardId>_<ts>_<nonce>`),
-    // so we expect exactly two run dirs and one per card.
+    // RunIds embed the batch cardId as their stem (`<cardId>_<ts>_<nonce>`).
+    // The batch cardId is the file stem (basename without extension), not the
+    // frontmatter id — the orchestrator generates runIds from the file stem
+    // before parsing the card.
     const runDirs = readdirSync(resultsRoot);
     expect(runDirs.length).toBe(2);
-    expect(runDirs.some((d) => d.startsWith("cli-batch-a_"))).toBe(true);
-    expect(runDirs.some((d) => d.startsWith("cli-batch-b_"))).toBe(true);
+    expect(runDirs.some((d) => d.startsWith("a_"))).toBe(true);
+    expect(runDirs.some((d) => d.startsWith("b_"))).toBe(true);
   });
 });

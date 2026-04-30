@@ -1,4 +1,7 @@
-import { describe, test, expect } from "bun:test";
+import { describe, test, expect, afterAll } from "bun:test";
+import { mkdtempSync, rmSync, readdirSync, readFileSync } from "fs";
+import { tmpdir } from "os";
+import { join } from "path";
 import type { EvidenceLogger, EventObserver } from "../../src/evidence/logger";
 import { runBatch } from "../../src/cli/batch";
 import type { AppConfig } from "../../src/config";
@@ -206,5 +209,158 @@ describe("runBatch — output modes", () => {
 
     expect(sink.out).toBe("");
     expect(stderrLines.join("\n")).toContain("batch: 1 pass");
+  });
+});
+
+describe("runBatch — RunSet artifact", () => {
+  // Each test creates its own isolated tmpdir under the OS temp dir.
+  const tmpdirs: string[] = [];
+  afterAll(() => {
+    for (const d of tmpdirs) {
+      try { rmSync(d, { recursive: true, force: true }); } catch {}
+    }
+  });
+
+  function makeTmpConfig(): AppConfig {
+    const projectRoot = mkdtempSync(join(tmpdir(), "gauntlet-batch-test-"));
+    tmpdirs.push(projectRoot);
+    return {
+      projectRoot,
+      port: 4400,
+      defaultChrome: { host: "127.0.0.1", port: 9222 },
+      defaultTurns: 5,
+      defaultViewport: { width: 1440, height: 900 },
+      saveScreencast: false,
+      models: { agent: "claude-sonnet-4-6", fanout: undefined },
+      sources: { defaultChrome: "default" },
+    } as any;
+  }
+
+  function makeStubRunOne(calls: string[]) {
+    return async (opts: { scenarioPath: string; runId?: string; onLogger?: any }) => {
+      calls.push(opts.scenarioPath);
+      let observer: EventObserver | null = null;
+      const fakeLog: any = {
+        addEventObserver(fn: EventObserver) { observer = fn; return () => {}; },
+        logEvent: () => {},
+      };
+      const detach = opts.onLogger?.(fakeLog) ?? (() => {});
+      const runId = opts.runId ?? `run-${opts.scenarioPath}`;
+      observer?.({ type: "run_start", runId, cardId: opts.scenarioPath, maxTurns: 20 } as any);
+      observer?.({ type: "run_end", status: "pass", durationMs: 500, usage: { turns: 2 } } as any);
+      detach();
+      return { runId, outDir: `/tmp/${runId}`, result: { status: "pass" } as any };
+    };
+  }
+
+  test("gauntlet batch a.md b.md (passes=1) produces a RunSet artifact with 2 runs", async () => {
+    const sink = { out: "", write(s: string) { this.out += s; } };
+    const config = makeTmpConfig();
+    const calls: string[] = [];
+
+    const exitCode = await runBatch(
+      {
+        scenarioPaths: ["a.md", "b.md"],
+        target: "http://localhost",
+        adapterType: "cli",
+        config,
+        silent: false,
+        format: undefined,
+        noColor: true,
+        sink,
+        isTTY: false,
+        passes: 1,
+      },
+      makeStubRunOne(calls) as any,
+    );
+
+    expect(exitCode).toBe(0);
+    expect(calls).toEqual(["a.md", "b.md"]);
+
+    // Assert that .gauntlet/run-sets/batch_*/ was created.
+    const runSetsDir = join(config.projectRoot, ".gauntlet", "run-sets");
+    const entries = readdirSync(runSetsDir);
+    expect(entries.length).toBe(1);
+    expect(entries[0]).toMatch(/^batch_/);
+
+    const setJson = JSON.parse(
+      readFileSync(join(runSetsDir, entries[0], "set.json"), "utf8"),
+    );
+    expect(setJson.kind).toBe("batch");
+    expect(setJson.passes).toBe(1);
+    expect(setJson.runs).toHaveLength(2);
+    expect(setJson.runs.map((r: any) => r.cardId)).toEqual(["a", "b"]);
+    // All runs should be pass.
+    expect(setJson.summary.overall.overallStatus).toBe("consistent_pass");
+  });
+
+  test("gauntlet batch a.md b.md --passes 2 produces a RunSet artifact with 4 runs", async () => {
+    const sink = { out: "", write(s: string) { this.out += s; } };
+    const config = makeTmpConfig();
+    const calls: string[] = [];
+
+    const exitCode = await runBatch(
+      {
+        scenarioPaths: ["a.md", "b.md"],
+        target: "http://localhost",
+        adapterType: "cli",
+        config,
+        silent: false,
+        format: undefined,
+        noColor: true,
+        sink,
+        isTTY: false,
+        passes: 2,
+      },
+      makeStubRunOne(calls) as any,
+    );
+
+    expect(exitCode).toBe(0);
+    // 2 cards × 2 passes = 4 executor calls.
+    expect(calls).toHaveLength(4);
+
+    const runSetsDir = join(config.projectRoot, ".gauntlet", "run-sets");
+    const entries = readdirSync(runSetsDir);
+    expect(entries.length).toBe(1);
+
+    const setJson = JSON.parse(
+      readFileSync(join(runSetsDir, entries[0], "set.json"), "utf8"),
+    );
+    expect(setJson.passes).toBe(2);
+    expect(setJson.runs).toHaveLength(4);
+    expect(setJson.summary.overall.overallStatus).toBe("consistent_pass");
+  });
+
+  test("gauntlet batch a.md (passes=1) does NOT produce a RunSet artifact", async () => {
+    const sink = { out: "", write(s: string) { this.out += s; } };
+    const config = makeTmpConfig();
+    const calls: string[] = [];
+
+    const exitCode = await runBatch(
+      {
+        scenarioPaths: ["a.md"],
+        target: "http://localhost",
+        adapterType: "cli",
+        config,
+        silent: false,
+        format: undefined,
+        noColor: true,
+        sink,
+        isTTY: false,
+        passes: 1,
+      },
+      makeStubRunOne(calls) as any,
+    );
+
+    expect(exitCode).toBe(0);
+    expect(calls).toEqual(["a.md"]);
+
+    // The else branch must not create any run-sets directory.
+    let runSetsDirExists = false;
+    try {
+      readdirSync(join(config.projectRoot, ".gauntlet", "run-sets"));
+      runSetsDirExists = true;
+    } catch {}
+    expect(runSetsDirExists).toBe(false);
   });
 });

@@ -3,6 +3,8 @@ import type { AppConfig } from "../config";
 import type { EvidenceLogger, EventObserver } from "../evidence/logger";
 import { gauntletPath } from "../paths";
 import { runOne, type RunOneOptions, type RunOneSummary } from "./run-one";
+import { runRunSet } from "../runs/run-set";
+import type { RunSetCtx } from "../runs/run-set-types";
 import { BatchTableRenderer } from "./stream/batch-table";
 import type { WriteSink } from "./stream/jsonl";
 
@@ -27,11 +29,52 @@ function cardIdForPath(p: string): string {
   return basename(p, extname(p));
 }
 
+function makeBatchObserver(
+  table: BatchTableRenderer | null,
+  format: "pretty" | "jsonl" | undefined,
+  silent: boolean,
+  sink: WriteSink,
+  cardId: string,
+  runSetCtx: RunSetCtx,
+): (logger: EvidenceLogger) => () => void {
+  const { attemptNumber, passes } = runSetCtx;
+  return (logger: EvidenceLogger) => {
+    let currentRunId: string | null = null;
+    const observer: EventObserver = (ev) => {
+      const t = ev.type as string;
+      if (t === "run_start") {
+        currentRunId = String((ev as any).runId);
+        if (table) {
+          table.setRunning(
+            cardId,
+            currentRunId,
+            Number((ev as any).maxTurns ?? 0),
+            attemptNumber,
+            passes,
+          );
+        }
+      } else if (t === "llm_response") {
+        if (table) table.onTurn(cardId, Number((ev as any).turn ?? 0), attemptNumber);
+      } else if (t === "run_end") {
+        const status = String((ev as any).status ?? "fail") as "pass" | "fail" | "investigate";
+        const turns = Number(((ev as any).usage?.turns) ?? 0);
+        if (table) table.setDone(cardId, status, turns, attemptNumber);
+      }
+
+      if (format === "jsonl" && !silent) {
+        const enriched = { runId: currentRunId, ...ev };
+        sink.write(JSON.stringify(enriched) + "\n");
+      }
+    };
+    return logger.addEventObserver(observer);
+  };
+}
+
 export async function runBatch(
   opts: BatchOptions,
   runOneImpl: RunOneFn = runOne,
 ): Promise<number> {
-  const cards = opts.scenarioPaths.map((p) => ({ path: p, cardId: cardIdForPath(p) }));
+  const cards = opts.scenarioPaths.map((p) => ({ scenarioPath: p, id: cardIdForPath(p) }));
   const resultsRoot = gauntletPath(opts.config.projectRoot, "results");
   const useTable = !opts.silent && opts.format !== "jsonl";
   const table = useTable
@@ -44,11 +87,87 @@ export async function runBatch(
       })
     : null;
 
-  if (table) for (const c of cards) table.setQueued(c.cardId);
+  const cardIds = cards.map((c) => c.id);
+  const useRunSet = opts.passes > 1 || cardIds.length > 1;
 
-  let pass = 0, fail = 0, investigate = 0, errored = 0;
+  if (useRunSet) {
+    // Pre-queue all (cardId, attemptNumber) pairs via onAllRunsKnown.
+    const onAllRunsKnown = (
+      runs: Array<{ runId: string; cardId: string; attemptNumber: number }>,
+    ) => {
+      if (table) {
+        for (const r of runs) {
+          table.setQueued(r.cardId, r.attemptNumber, opts.passes);
+        }
+      }
+    };
 
-  for (const c of cards) {
+    // The .gauntlet/ dir is the parent of both results/ and run-sets/.
+    const gauntletRoot = gauntletPath(opts.config.projectRoot);
+
+    const setResult = await runRunSet({
+      resultsRoot: gauntletRoot,
+      cards: cardIds,
+      passes: opts.passes,
+      kind: "batch",
+      onAllRunsKnown,
+      executor: async ({ cardId, runSetCtx, runId }) => {
+        const card = cards.find((c) => c.id === cardId)!;
+        const onLogger = makeBatchObserver(
+          table,
+          opts.format,
+          opts.silent,
+          opts.sink,
+          cardId,
+          runSetCtx,
+        );
+        try {
+          return await runOneImpl({
+            scenarioPath: card.scenarioPath,
+            target: opts.target,
+            adapterType: opts.adapterType,
+            config: opts.config,
+            onLogger,
+            runSetCtx,
+            runId,
+          });
+        } catch (err) {
+          const msg = err instanceof Error ? err.message : String(err);
+          if (table) table.setErrored(cardId, null, msg, runSetCtx.attemptNumber);
+          throw err;
+        }
+      },
+    });
+
+    if (table) {
+      table.finalize();
+    } else if (opts.silent) {
+      const by = setResult.summary?.overall.byStatus;
+      const pass = by?.pass ?? 0;
+      const fail = by?.fail ?? 0;
+      const investigate = by?.investigate ?? 0;
+      const errored = by?.errored ?? 0;
+      console.error(
+        `batch: ${pass} pass · ${fail} fail · ${investigate} investigate · ${errored} errored`,
+      );
+      console.error(`results: ${resultsRoot}`);
+    }
+
+    const overall = setResult.summary?.overall.byStatus;
+    const anyNonPass =
+      (overall?.fail ?? 0) +
+      (overall?.investigate ?? 0) +
+      (overall?.errored ?? 0) +
+      (overall?.cancelled ?? 0);
+    return anyNonPass === 0 ? 0 : 1;
+  } else {
+    // Single card, single pass — preserve today's batch behavior exactly.
+    // No RunSet artifact.
+    const c = cards[0];
+    if (table) table.setQueued(c.id);
+
+    let pass = 0, fail = 0, investigate = 0, errored = 0;
+
     let currentRunId: string | null = null;
 
     const onLogger = (logger: EvidenceLogger) => {
@@ -57,14 +176,14 @@ export async function runBatch(
         if (t === "run_start") {
           currentRunId = String((ev as any).runId);
           if (table) {
-            table.setRunning(c.cardId, currentRunId, Number((ev as any).maxTurns ?? 0));
+            table.setRunning(c.id, currentRunId, Number((ev as any).maxTurns ?? 0));
           }
         } else if (t === "llm_response") {
-          if (table) table.onTurn(c.cardId, Number((ev as any).turn ?? 0));
+          if (table) table.onTurn(c.id, Number((ev as any).turn ?? 0));
         } else if (t === "run_end") {
           const status = String((ev as any).status ?? "fail") as "pass" | "fail" | "investigate";
           const turns = Number(((ev as any).usage?.turns) ?? 0);
-          if (table) table.setDone(c.cardId, status, turns);
+          if (table) table.setDone(c.id, status, turns);
         }
 
         if (opts.format === "jsonl" && !opts.silent) {
@@ -77,7 +196,7 @@ export async function runBatch(
 
     try {
       const summary = await runOneImpl({
-        scenarioPath: c.path,
+        scenarioPath: c.scenarioPath,
         target: opts.target,
         adapterType: opts.adapterType,
         config: opts.config,
@@ -96,18 +215,18 @@ export async function runBatch(
     } catch (err) {
       errored++;
       const msg = err instanceof Error ? err.message : String(err);
-      if (table) table.setErrored(c.cardId, null, msg);
+      if (table) table.setErrored(c.id, null, msg);
     }
-  }
 
-  if (table) {
-    table.finalize();
-  } else if (opts.silent) {
-    console.error(
-      `batch: ${pass} pass · ${fail} fail · ${investigate} investigate · ${errored} errored`,
-    );
-    console.error(`results: ${resultsRoot}`);
-  }
+    if (table) {
+      table.finalize();
+    } else if (opts.silent) {
+      console.error(
+        `batch: ${pass} pass · ${fail} fail · ${investigate} investigate · ${errored} errored`,
+      );
+      console.error(`results: ${resultsRoot}`);
+    }
 
-  return (fail + investigate + errored) === 0 ? 0 : 1;
+    return (fail + investigate + errored) === 0 ? 0 : 1;
+  }
 }
