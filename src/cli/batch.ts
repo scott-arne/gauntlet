@@ -4,6 +4,7 @@ import type { EvidenceLogger, EventObserver } from "../evidence/logger";
 import { gauntletPath } from "../paths";
 import { runOne, type RunOneOptions, type RunOneSummary } from "./run-one";
 import { runRunSet } from "../runs/run-set";
+import { installSigintHandler } from "./signals";
 import type { RunSetCtx } from "../runs/run-set-types";
 import { BatchTableRenderer } from "./stream/batch-table";
 import type { WriteSink } from "./stream/jsonl";
@@ -105,39 +106,48 @@ export async function runBatch(
     // The .gauntlet/ dir is the parent of both results/ and run-sets/.
     const gauntletRoot = gauntletPath(opts.config.projectRoot);
 
-    const setResult = await runRunSet({
-      resultsRoot: gauntletRoot,
-      cards: cardIds,
-      passes: opts.passes,
-      kind: "batch",
-      onAllRunsKnown,
-      executor: async ({ cardId, runSetCtx, runId }) => {
-        const card = cards.find((c) => c.id === cardId)!;
-        const onLogger = makeBatchObserver(
-          table,
-          opts.format,
-          opts.silent,
-          opts.sink,
-          cardId,
-          runSetCtx,
-        );
-        try {
-          return await runOneImpl({
-            scenarioPath: card.scenarioPath,
-            target: opts.target,
-            adapterType: opts.adapterType,
-            config: opts.config,
-            onLogger,
+    const cancelToken = { cancelled: false };
+    const detach = installSigintHandler(cancelToken);
+    let setResult;
+    try {
+      setResult = await runRunSet({
+        resultsRoot: gauntletRoot,
+        cards: cardIds,
+        passes: opts.passes,
+        kind: "batch",
+        onAllRunsKnown,
+        cancelToken,
+        executor: async ({ cardId, runSetCtx, runId }) => {
+          const card = cards.find((c) => c.id === cardId)!;
+          const onLogger = makeBatchObserver(
+            table,
+            opts.format,
+            opts.silent,
+            opts.sink,
+            cardId,
             runSetCtx,
-            runId,
-          });
-        } catch (err) {
-          const msg = err instanceof Error ? err.message : String(err);
-          if (table) table.setErrored(cardId, null, msg, runSetCtx.attemptNumber);
-          throw err;
-        }
-      },
-    });
+          );
+          try {
+            return await runOneImpl({
+              scenarioPath: card.scenarioPath,
+              target: opts.target,
+              adapterType: opts.adapterType,
+              config: opts.config,
+              onLogger,
+              runSetCtx,
+              runId,
+            });
+          } catch (err) {
+            const msg = err instanceof Error ? err.message : String(err);
+            if (table) table.setErrored(cardId, null, msg, runSetCtx.attemptNumber);
+            throw err;
+          }
+        },
+      });
+    } finally {
+      detach();
+    }
+    if (cancelToken.cancelled) process.exit(130);
 
     if (table) {
       table.finalize();
