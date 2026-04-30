@@ -44,6 +44,49 @@ export interface VetResult {
   usage?: { inputTokens: number; outputTokens: number; turns: number };
   /** Present on v2+ results. Undefined on older results on disk. */
   config?: RunConfigSnapshot;
+  runSet?: {
+    runSetId: string;
+    kind: "single" | "batch";
+    passes: number;
+    cards: string[];
+    cardIndex: number;
+    attemptNumber: number;
+  };
+}
+
+export interface RunSetSummary {
+  perCard: Array<{
+    cardId: string;
+    passes: number;
+    byStatus: { pass: number; fail: number; investigate: number; errored: number; cancelled: number };
+    cardStatus: string;
+    medianTurns: number;
+    medianDurationMs: number;
+  }>;
+  overall: {
+    totalRuns: number;
+    byStatus: { pass: number; fail: number; investigate: number; errored: number; cancelled: number };
+    overallStatus: string;
+  };
+}
+
+export interface RunSetManifest {
+  schemaVersion: 1;
+  runSetId: string;
+  kind: "single" | "batch";
+  createdAt: string;
+  completedAt: string | null;
+  passes: number;
+  cards: string[];
+  runs: Array<{ runId: string; cardId: string; attemptNumber: number; status: string }>;
+  summary: RunSetSummary | null;
+}
+
+export interface StartRunResponse {
+  runSetId: string | null;
+  kind: "single" | "batch";
+  passes: number;
+  runs: Array<{ runId: string; attemptNumber: number; status: "queued" | "running" }>;
 }
 
 /** Paginated `GET /api/results` response. */
@@ -186,11 +229,30 @@ export const api = {
       request<FanoutResult>(`/fanout/${runId}/failure`, { method: "POST" }),
   },
   run: {
-    start: (cardId: string, body: { target: string; model?: string; adapter?: string; chrome?: string; turns?: number; viewport?: { width: number; height: number }; saveScreencast?: boolean }) =>
-      request<{ runId: string; cardId: string }>(`/run/${cardId}`, {
+    start: (cardId: string, body: {
+      target: string;
+      model?: string;
+      adapter?: string;
+      chrome?: string;
+      turns?: number;
+      viewport?: { width: number; height: number };
+      saveScreencast?: boolean;
+      passes?: number;
+    }) =>
+      request<StartRunResponse>(`/run/${cardId}`, {
         method: "POST",
         body: JSON.stringify(body),
       }),
+    cancel: (runId: string) =>
+      request<{ status: "cancelling" }>(`/runs/${encodeURIComponent(runId)}`, { method: "DELETE" }),
+  },
+  runSets: {
+    get: (runSetId: string) =>
+      request<RunSetManifest>(`/run-sets/${encodeURIComponent(runSetId)}`),
+    summary: (runSetId: string) =>
+      request<RunSetSummary>(`/run-sets/${encodeURIComponent(runSetId)}/summary`),
+    cancel: (runSetId: string) =>
+      request<{ status: "cancelling" }>(`/run-sets/${encodeURIComponent(runSetId)}`, { method: "DELETE" }),
   },
   activeRuns: {
     list: () => request<{ runs: ActiveRun[] }>("/runs/active").then((r) => r.runs),

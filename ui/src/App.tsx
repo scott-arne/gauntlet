@@ -326,9 +326,13 @@ export default function App() {
           onStarted={async (cardId, config) => {
             setRunModal(null);
             try {
-              const { runId } = await api.run.start(cardId, config);
+              const result = await api.run.start(cardId, config);
               await refreshActive();
-              navigate(`/runs/live/${runId}`);
+              if (result.runSetId) {
+                navigate(`/run-sets/${result.runSetId}`);
+              } else {
+                navigate(`/runs/live/${result.runs[0].runId}`);
+              }
             } catch (e) {
               // Start failed synchronously — surface error via refresh so
               // any server-side error gets logged, then bounce to Runs tab.

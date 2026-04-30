@@ -11,6 +11,7 @@ export interface NewRunPrefill {
   adapter?: "web" | "cli" | "tui";
   viewport?: { width: number; height: number };
   saveScreencast?: boolean;
+  passes?: number;
 }
 
 interface NewRunModalProps {
@@ -25,6 +26,7 @@ interface NewRunModalProps {
       adapter?: string;
       viewport?: { width: number; height: number };
       saveScreencast?: boolean;
+      passes?: number;
     },
   ) => void;
   prefill?: NewRunPrefill;
@@ -43,6 +45,9 @@ export function NewRunModal({ onClose, onStarted, prefill }: NewRunModalProps) {
   // Blank string === "use server default"; see handleStart.
   const [turns, setTurns] = useState<string>(
     prefill?.turns !== undefined ? String(prefill.turns) : "",
+  );
+  const [passes, setPasses] = useState<string>(
+    prefill?.passes !== undefined ? String(prefill.passes) : "",
   );
   // Screencast disk persistence. Prefill from caller ("Run again") > server
   // default (hydrated from /api/config below). Passed through to the body
@@ -94,6 +99,15 @@ export function NewRunModal({ onClose, onStarted, prefill }: NewRunModalProps) {
       }
       turnsNum = parsed;
     }
+    let passesNum: number | undefined;
+    if (passes.trim() !== "") {
+      const parsed = Number.parseInt(passes, 10);
+      if (Number.isNaN(parsed) || parsed < 1) {
+        setError("Passes must be a positive integer");
+        return;
+      }
+      passesNum = parsed;
+    }
     onStarted(selectedCard, {
       target: target.trim(),
       model: model.trim() || undefined,
@@ -106,6 +120,7 @@ export function NewRunModal({ onClose, onStarted, prefill }: NewRunModalProps) {
       // server default via AppConfig.
       viewport: prefill?.viewport,
       saveScreencast,
+      passes: passesNum,
     });
   }
 
@@ -207,6 +222,21 @@ export function NewRunModal({ onClose, onStarted, prefill }: NewRunModalProps) {
             />
             <p className="text-xs text-slate mt-1">
               Hard cap on agent turns. Leave blank to use the server default.
+            </p>
+          </div>
+
+          <div>
+            <label className="section-label block mb-1">Passes</label>
+            <input
+              className="input-field"
+              type="number"
+              min={1}
+              value={passes}
+              onChange={(e) => setPasses(e.target.value)}
+              placeholder="1"
+            />
+            <p className="text-xs text-slate mt-1">
+              Number of passes to run. Leave blank for a single run.
             </p>
           </div>
 
