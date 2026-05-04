@@ -1,0 +1,6 @@
+# Tutorial-only fixture for the local webapp at localhost:4444.
+# Committed because the webapp trusts the cookie value verbatim
+# (no real auth happens). DO NOT use this pattern for a real app.
+- name: session
+  value: fred
+  url: http://localhost:4444/

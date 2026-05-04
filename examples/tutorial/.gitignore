@@ -1,0 +1,52 @@
+# Standard bun init defaults
+node_modules
+out
+dist
+*.tgz
+coverage
+*.lcov
+logs
+*.log
+report.[0-9]*.[0-9]*.[0-9]*.[0-9]*.json
+.env
+.env.development.local
+.env.test.local
+.env.production.local
+.env.local
+.eslintcache
+.cache
+*.tsbuildinfo
+.idea
+.DS_Store
+
+# Tutorial: setup-creating stories (npm init, bun init) run
+# inside scratch-* subdirs so they don't clobber the fixtures
+# (notes.md, setup.ts, vimrc, README.md, .gauntlet/).
+# Anything in a scratch dir is throwaway.
+scratch-*/
+
+# Defensive: if someone runs npm/bun init in this directory
+# directly instead of inside a scratch dir, don't commit the
+# generated artifacts.
+package.json
+package-lock.json
+bun.lock
+tsconfig.json
+index.ts
+CLAUDE.md
+
+# Gauntlet writes per-run state under .gauntlet/results/ and
+# .gauntlet/runs/. Stories and context stay tracked.
+.gauntlet/results/
+.gauntlet/runs/
+
+# Auth fixtures — keep these out of git even for test accounts.
+# See docs/credentials.md.
+cookies.yaml
+passkey.yaml
+
+# Tutorial-only exceptions: the local webapp at webapp/server.ts
+# trusts the cookie value verbatim, so these specific fixtures
+# are safe to commit. Don't add other profiles' cookies.yaml
+# to this list.
+!.gauntlet/context/profiles/fred/cookies.yaml
