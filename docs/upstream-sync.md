@@ -23,7 +23,7 @@ Gauntlet-native and not synced from upstream.
 | Field | Value |
 |---|---|
 | Upstream repo | `https://github.com/obra/superpowers-chrome` |
-| Fork point | `70b2c6c` (v1.8.0) — 2026-03-07 |
+| Fork point | `70b2c6c` (v1.8.0) — 2026-02-25 |
 | Last synced upstream HEAD | `81bc7b0` (v1.12.0) — 2026-04-14 |
 
 > Bump "last synced upstream HEAD" each time a sync cycle completes.
