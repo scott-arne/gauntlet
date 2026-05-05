@@ -66,9 +66,10 @@ cd examples/tutorial
 ```
 
 Open `.gauntlet/context/` before you start. That's where Fred,
-Deborah, Quinn, and the sign-in instructions live. Every story
-below leans on these files, and the agent reads the tree the way
-a teammate would read a wiki.
+Deborah, and Quinn live — each as a `profile.md` under
+`profiles/`, plus Fred's `cookies.yaml` for the cookie-based
+sign-in story. Every story below leans on these files, and the
+agent reads the tree the way a teammate would read a wiki.
 
 Each tutorial below tells you which target tool (`npm`, `bun`,
 `vim`, or a browser) it expects you to have.

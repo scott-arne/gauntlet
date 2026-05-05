@@ -136,7 +136,7 @@ For the auth specifics — `install_cookies`, password-based sign-in, the cookie
 The core of Gauntlet is an agentic loop in `src/agent/agent.ts`:
 
 1. The story card is loaded and a system prompt is built, instructing the LLM to act as a thorough QA tester.
-2. The LLM is given browser tools (screenshot, click, type, press, navigate, extract, eval, wait_for) plus a special `report_result` tool.
+2. The LLM is given browser tools (mouse, keyboard, navigation, extraction, tab management — see [Browser adapter](#browser-adapter) for the full set) plus a special `report_result` tool.
 3. On each turn, the LLM decides what to do -- take a screenshot, click a button, type into a form, etc. Tool results (including screenshot images) are fed back into the conversation.
 4. The loop continues until the agent calls `report_result` with its verdict, or hits the 50-turn limit.
 5. Each tool call has a 30-second timeout to prevent hangs.
@@ -148,18 +148,30 @@ The agent reports:
 
 ### Browser adapter
 
-The web adapter (`src/adapters/web/adapter.ts`) drives Chrome via CDP and exposes eight tools to the agent:
+The web adapter (`src/adapters/web/adapter.ts`) drives Chrome via CDP. It exposes seventeen browser tools by default, plus three optional tools (`read`, `install_cookies`, `install_passkey`) that are mounted when the corresponding context files exist:
 
 | Tool | Description |
 |------|-------------|
 | `screenshot` | Capture the page or a specific element (returns image to the LLM) |
-| `click` | Click an element by CSS selector |
+| `click` | Click an element by selector (CSS, XPath, or `:contains('text')`) |
 | `type` | Type text into an element |
-| `press` | Press a key (Enter, Tab, Escape, etc.) |
+| `press` | Press a special key (Enter, Tab, Escape, etc.) |
+| `hover` | Move the mouse over an element (fires `:hover` and tooltips) |
+| `double_click` | Double-click an element |
+| `right_click` | Right-click to open a context menu |
+| `drag` | Drag an element to another selector or to `{x, y}` coordinates |
+| `mouse_move` | Move the mouse to viewport coordinates |
+| `scroll` | Scroll the page or an element using real wheel events |
+| `file_upload` | Upload local files into an `<input type=file>` |
 | `navigate` | Go to a URL |
-| `extract` | Convert the page (or element) to markdown text |
+| `extract` | Return the page (or element) as DOM text |
 | `eval` | Run a JavaScript expression in the page |
 | `wait_for` | Wait for an element or text to appear |
+| `new_tab` | Open a foreground tab for a side trip (OTP fetch, 2FA portal) |
+| `close_tab` | Close the current side-trip tab and return to the original |
+| `read` *(opt-in)* | Read a fixture file from `.gauntlet/context/` |
+| `install_cookies` *(opt-in)* | Install browser cookies from `cookies.yaml` — see [`docs/credentials.md`](docs/credentials.md) |
+| `install_passkey` *(opt-in)* | Register a virtual WebAuthn credential from `passkey.yaml` — see [`docs/credentials.md`](docs/credentials.md) |
 
 Most tools support `return_screenshot` to automatically capture the page state after the action.
 
@@ -518,7 +530,7 @@ src/
     resolve.ts          Model string -> client instantiation
   adapters/
     adapter.ts          Abstract adapter interface
-    web/adapter.ts      Chrome CDP browser adapter (8 tools)
+    web/adapter.ts      Chrome CDP browser adapter (17 tools + 3 opt-in)
     cli/adapter.ts      Terminal-based adapter
     tui/adapter.ts      Text UI adapter
   api/

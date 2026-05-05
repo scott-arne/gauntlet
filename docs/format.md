@@ -26,9 +26,18 @@ describes what's in it and how to read it.
   artifacts/         Document-like tool outputs spilled from tool_result
                      rows (DOM dumps, full-page extracts, large JSON, etc.)
   screenshots/       Agent-captured screenshots
+  captures/          TUI screen captures (one .ansi + .json pair per
+                     read_screen call). TUI runs only.
   frames/            Passive screencast frames
   issues/            Per-observation markdown (derived from observations)
+  console.jsonl      Browser console.* messages (web adapter)
+  exception.jsonl    Page exceptions (web adapter)
+  log.jsonl          Console-API entries (web adapter, distinct from
+                     console.jsonl in source channel)
+  network-ws.jsonl   WebSocket frames observed on the page (web adapter)
 ```
+
+The four `*.jsonl` browser-event files exist on disk but are not listed in `result.json`'s manifest. The HTTP file route only serves files that the manifest names; consumers reading off disk see them, consumers reading via the API do not.
 
 `projectRoot` is the Gauntlet project directory (default: cwd). Gauntlet
 owns the `.gauntlet/` subdirectory inside it. `runId` is the primary
@@ -60,7 +69,7 @@ agent's reasoning, the observations, and pointers to the evidence files.
 
 ```json
 {
-  "schemaVersion": 1,
+  "schemaVersion": 2,
   "runId": "login-001_20260416T142301Z_k3xm",
   "scenario": "login-001",
   "status": "pass",
@@ -80,13 +89,20 @@ agent's reasoning, the observations, and pointers to the evidence files.
     "turns": 7,
     "cacheCreationInputTokens": 4200,
     "cacheReadInputTokens": 8300
+  },
+  "config": {
+    "target": "https://app.local",
+    "model": "claude-sonnet-4-6",
+    "adapter": "web",
+    "turns": 50,
+    "viewport": { "width": 1440, "height": 900 }
   }
 }
 ```
 
 ### Fields
 
-- `schemaVersion` — format version. `1` today.
+- `schemaVersion` — format version. `2` today.
 - `runId` — composite id for this run. See [`runId`](#runid) above.
 - `scenario` — id of the story card that was tested. Present alongside `runId`
   for convenience (the cardId is also embedded in `runId`, but having it as
@@ -102,12 +118,27 @@ agent's reasoning, the observations, and pointers to the evidence files.
   - `artifacts` (optional): relative paths to document-like tool outputs
     spilled from tool_result rows (DOM dumps, full-page extracts, etc.)
   - `video` (optional): relative path to a video file, if the run produced one
+  - `captures` (optional, TUI runs only): relative paths to TUI screen
+    captures. Each entry points at the raw `.ansi` file; the parsed `.json`
+    twin lives at the same stem (e.g. `captures/003.ansi` + `captures/003.json`).
 - `duration_ms` — wall-clock time of the run.
 - `usage` — token counts. `inputTokens` / `outputTokens` / `turns` are the
   primary signals. `cacheCreationInputTokens` and `cacheReadInputTokens`
   are Anthropic prompt-cache telemetry; they're optional and only populated
   when the provider reports them. A high `cacheReadInputTokens` relative
   to `inputTokens` means the cache is doing its job.
+- `config` (optional) — snapshot of the knobs the run was launched with.
+  Fields: `target`, `model`, `adapter` (`"web"` \| `"cli"` \| `"tui"`),
+  `chrome` (host:port; omitted when the adapter auto-launched Chrome),
+  `turns`, `viewport` (`{width, height}`; omitted for the `cli` adapter).
+  Used by the UI to offer "Run again" without re-asking the user for
+  parameters. Optional for back-compat with v1 results on disk.
+- `runSet` (optional) — context for runs that were spawned as part of a
+  set (a multi-pass single run, or a `gauntlet batch` invocation). Fields:
+  `runSetId`, `kind` (`"single"` \| `"batch"`), `passes`, `cards` (array of
+  cardIds in deterministic order), `cardIndex` (0-indexed position in
+  `cards`), `attemptNumber` (1-indexed within the cards × attempts loop).
+  Omitted for one-off `gauntlet run` invocations.
 
 ### Path references
 
@@ -165,4 +196,8 @@ do not require a bump.
 
 ### Changelog
 
+- **v2** — Added optional `config` block to `result.json` capturing the
+  per-run knobs (target, model, adapter, chrome, turns, viewport) so the
+  UI can offer a "Run again" action without re-eliciting parameters.
+  Additive; v1 readers ignore the field.
 - **v1** — Initial published format.
