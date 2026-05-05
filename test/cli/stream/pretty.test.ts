@@ -82,22 +82,23 @@ describe("PrettyRenderer", () => {
     r.close();
   });
 
-  test("assistant text longer than columns is soft-wrapped at columns-4", () => {
+  test("assistant text longer than columns is soft-wrapped under the » glyph", () => {
     const longText = "alpha beta gamma delta epsilon zeta eta theta iota kappa lambda mu nu xi omicron";
     const sink = collect();
-    const r = new PrettyRenderer(sink, { color: false, columns: 24 }); // effective wrap width: 20
+    const r = new PrettyRenderer(sink, { color: false, columns: 24 }); // effective wrap width: 22
     r.handle({ eventId: 1, parentEventId: 0, ts: "t", type: "run_start", runId: "r", cardId: "c", target: "t", provider: "a", model: "m", adapter: "cli", maxTurns: 1, toolTimeoutMs: 1, contextTreeBytes: 0 } as any);
     r.handle({ eventId: 2, parentEventId: 1, ts: "t", type: "llm_response", turn: 1, stopReason: "end_turn", text: longText, thinking: [], toolCalls: [], usage: { inputTokens: 0, outputTokens: 0 }, rawAssistantMessage: null } as any);
     r.close();
-    // First line of the assistant block carries a `»` glyph; continuations
-    // indent to 4 spaces under it. Find the wrap-continuation lines.
+    // First line carries a leading `»`; wrap continuations indent to 2 spaces.
+    expect(sink.out).toMatch(/^» alpha/m);
     const continuations = sink.out.split("\n").filter(
-      (l) => l.startsWith("    ") && l.trim().length > 0 && !l.includes("»"),
+      (l) => l.startsWith("  ") && l.trim().length > 0 && !l.includes("»"),
     );
-    expect(continuations.length).toBeGreaterThan(1); // actually wrapped into multiple lines
+    expect(continuations.length).toBeGreaterThan(0);
     for (const line of continuations) {
-      const content = line.slice(4); // strip the "    " indent
-      expect(content.length).toBeLessThanOrEqual(20);
+      // Wrap budget is columns - 2 (=22). Continuations should respect it.
+      const content = line.slice(2);
+      expect(content.length).toBeLessThanOrEqual(22);
     }
   });
 
@@ -171,46 +172,45 @@ describe("PrettyRenderer", () => {
     expect(snippetLine.length).toBeLessThanOrEqual(40);
   });
 
-  test("blank line separates a tool_result from the next content turn's wide rule", () => {
+  test("section header carries a · t<N> turn marker", () => {
+    const sink = collect();
+    const r = new PrettyRenderer(sink, { color: false, columns: 100 });
+    r.handle({ eventId: 1, parentEventId: 0, ts: "t", type: "llm_response", turn: 5, stopReason: "end_turn", text: "Accept the default version.", thinking: [], toolCalls: [], usage: { inputTokens: 0, outputTokens: 0 }, rawAssistantMessage: null } as any);
+    r.close();
+    expect(sink.out).toContain("» Accept the default version. · t5");
+  });
+
+  test("blank line separates one section from the next", () => {
     const sink = collect();
     const r = new PrettyRenderer(sink, { color: false, columns: 100 });
     r.handle({ eventId: 1, parentEventId: 0, ts: "t", type: "tool_call", turn: 1, toolUseId: "t1", name: "screenshot", arguments: {} } as any);
     r.handle({ eventId: 2, parentEventId: 1, ts: "t", type: "tool_result", turn: 1, toolUseId: "t1", name: "screenshot", durationMs: 309, text: "", image: "screenshots/001.png", error: false } as any);
     r.handle({ eventId: 3, parentEventId: 2, ts: "t", type: "llm_response", turn: 2, stopReason: "end_turn", text: "ok", thinking: [], toolCalls: [], usage: { inputTokens: 0, outputTokens: 0 }, rawAssistantMessage: null } as any);
     r.close();
-    // Blank line between tool_result and the next turn's wide rule.
-    expect(sink.out).toMatch(/→ screenshots\/001\.png\n\n─ 2 ─+/);
+    // One blank between the previous tools and the next section header — never two.
+    expect(sink.out).toMatch(/→ screenshots\/001\.png\n\n» ok · t2/);
+    expect(sink.out).not.toMatch(/→ screenshots\/001\.png\n\n\n/);
   });
 
-  test("tool-only turn inlines the short divider with the next tool call", () => {
+  test("tool-only turn produces no header, dissolves into preceding section", () => {
     const sink = collect();
     const r = new PrettyRenderer(sink, { color: false, columns: 100 });
-    // Turn 1: empty llm_response (no thinking, no text) → tool-only turn
-    r.handle({ eventId: 1, parentEventId: 0, ts: "t", type: "llm_response", turn: 1, stopReason: "tool_use", text: "", thinking: [], toolCalls: [{ id: "t1", name: "press", arguments: { key: "Enter" } }], usage: { inputTokens: 0, outputTokens: 0 }, rawAssistantMessage: null } as any);
+    // Section: utterance + 1 tool
+    r.handle({ eventId: 1, parentEventId: 0, ts: "t", type: "llm_response", turn: 1, stopReason: "tool_use", text: "Run the thing.", thinking: [], toolCalls: [{ id: "t1", name: "press", arguments: { key: "Enter" } }], usage: { inputTokens: 0, outputTokens: 0 }, rawAssistantMessage: null } as any);
     r.handle({ eventId: 2, parentEventId: 1, ts: "t", type: "tool_call", turn: 1, toolUseId: "t1", name: "press", arguments: { key: "Enter" } } as any);
     r.handle({ eventId: 3, parentEventId: 2, ts: "t", type: "tool_result", turn: 1, toolUseId: "t1", name: "press", durationMs: 0, text: "pressed", error: false } as any);
-    r.close();
-    // Divider and call land on a single line.
-    expect(sink.out).toContain("─ 1 ─  ▸ press");
-    // No "Turn 1" or content header above it.
-    expect(sink.out).not.toContain("─ 1 ─\n");
-    expect(sink.out).not.toContain("Turn 1");
-  });
-
-  test("consecutive tool-only turns pack together without blank lines between them", () => {
-    const sink = collect();
-    const r = new PrettyRenderer(sink, { color: false, columns: 100 });
-    // Turn 1: tool-only
-    r.handle({ eventId: 1, parentEventId: 0, ts: "t", type: "llm_response", turn: 1, stopReason: "tool_use", text: "", thinking: [], toolCalls: [], usage: { inputTokens: 0, outputTokens: 0 }, rawAssistantMessage: null } as any);
-    r.handle({ eventId: 2, parentEventId: 1, ts: "t", type: "tool_call", turn: 1, toolUseId: "t1", name: "press", arguments: { key: "Enter" } } as any);
-    r.handle({ eventId: 3, parentEventId: 2, ts: "t", type: "tool_result", turn: 1, toolUseId: "t1", name: "press", durationMs: 0, text: "pressed", error: false } as any);
-    // Turn 2: tool-only
+    // Tool-only turn 2: no utterance, just another tool
     r.handle({ eventId: 4, parentEventId: 3, ts: "t", type: "llm_response", turn: 2, stopReason: "tool_use", text: "", thinking: [], toolCalls: [], usage: { inputTokens: 0, outputTokens: 0 }, rawAssistantMessage: null } as any);
     r.handle({ eventId: 5, parentEventId: 4, ts: "t", type: "tool_call", turn: 2, toolUseId: "t2", name: "read_output", arguments: {} } as any);
     r.handle({ eventId: 6, parentEventId: 5, ts: "t", type: "tool_result", turn: 2, toolUseId: "t2", name: "read_output", durationMs: 0, text: "version: (1.0.0) ", error: false } as any);
     r.close();
-    // No blank between the two tool-only turns.
-    expect(sink.out).toMatch(/─ 1 ─  ▸ press[^\n]*\n─ 2 ─  ▸ read_output/);
+    // Only one section header — the utterance from turn 1.
+    const headers = sink.out.match(/^» /gm) ?? [];
+    expect(headers.length).toBe(1);
+    // No "· t2" anywhere — the tool-only turn has no header to put it on.
+    expect(sink.out).not.toContain("· t2");
+    // The two tools pack contiguously under the single header.
+    expect(sink.out).toMatch(/▸ press Enter\n  ▸ read_output/);
   });
 
   test("anomaly event line uses compact summary for known event families", () => {

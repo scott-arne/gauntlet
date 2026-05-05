@@ -8,12 +8,10 @@
   evidence  .gauntlet/results/r-8f21/
 ──────────────────────────────────────────────────────
 
-─ 1 ────────────────────────────────────────────────
   ~ thinking
     Let me see the page state.
 
-  » I'll take a screenshot first.
-
+» I'll take a screenshot first. · t1
   ▸ screenshot 📷
     ↳ ✓ 180ms
       → screenshots/001.png

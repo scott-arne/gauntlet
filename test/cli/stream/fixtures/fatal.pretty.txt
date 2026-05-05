@@ -8,7 +8,6 @@
   evidence  .gauntlet/results/r-fa01/
 ──────────────────────────────────────────────────────
 
-─ 1 ─
   · tool_result_text_oversize  read_screen · 64.0kB · artifacts/001.txt
 
 ─── Run failed ────────────────────────────────── ✗ error

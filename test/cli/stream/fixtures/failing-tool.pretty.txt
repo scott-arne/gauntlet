@@ -8,9 +8,7 @@
   evidence  .gauntlet/results/r-ff01/
 ──────────────────────────────────────────────────────
 
-─ 1 ────────────────────────────────────────────────
-  » Clicking login.
-
+» Clicking login. · t1
   ▸ click .nonexistent
     ↳ ✗ 1.2s
       ╵ error  element not found: waited 1s for ".nonexistent"
