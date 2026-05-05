@@ -121,8 +121,11 @@ export interface ConfigArgs {
 export type ParsedArgs = RunArgs | BatchArgs | ValidateArgs | FanoutArgs | ServeArgs | ConfigArgs;
 
 export function parseArgs(argv: string[]): ParsedArgs {
-  // Skip "bun" and script name
-  const args = argv.slice(2);
+  // Skip "bun" and script name. Strip `--verbose` here so it works on
+  // every command without polluting per-command flag whitelists; it's a
+  // process-wide signal consumed by the top-level error renderer in
+  // src/index.ts (via isVerboseRequest), not a per-command behavior flag.
+  const args = argv.slice(2).filter((a) => a !== "--verbose");
   const command = args[0];
 
   if (!command) {

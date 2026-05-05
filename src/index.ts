@@ -1,53 +1,32 @@
 #!/usr/bin/env bun
 import { parseArgs } from "./cli/args";
 import { run } from "./cli/run";
+import { formatCliError, isVerboseRequest } from "./cli/error-output";
 import type { AppConfig, CliArgsInput } from "./config";
 
-/**
- * loadConfig throws on bad env/flag values. Surface those as a clean
- * one-line error and exit, instead of letting Bun's top-level rejection
- * print a full stack trace — particularly important for `gauntlet config`,
- * whose whole purpose is to diagnose config problems.
- */
-async function loadConfigOrExit(cli: CliArgsInput): Promise<AppConfig> {
+async function loadConfigOrThrow(cli: CliArgsInput): Promise<AppConfig> {
   const { loadConfig } = await import("./config");
-  try {
-    return loadConfig(cli, process.env);
-  } catch (e) {
-    console.error(e instanceof Error ? e.message : String(e));
-    process.exit(1);
-  }
+  return loadConfig(cli, process.env);
 }
 
 /**
- * Sibling to loadConfigOrExit: enforces the "at least one LLM provider
+ * Sibling to loadConfigOrThrow: enforces the "at least one LLM provider
  * configured" gate at dispatch time for `serve` and `run`. Deliberately
  * NOT called from `config`, which must still work in broken environments
  * so the user can see what's missing.
  */
-async function requireLlmCapableOrExit(config: AppConfig): Promise<void> {
+async function requireLlmCapableOrThrow(config: AppConfig): Promise<void> {
   const { requireLlmCapable } = await import("./config");
-  try {
-    requireLlmCapable(config);
-  } catch (e) {
-    console.error(e instanceof Error ? e.message : String(e));
-    process.exit(1);
-  }
+  requireLlmCapable(config);
 }
 
 async function main() {
-  let args;
-  try {
-    args = parseArgs(process.argv);
-  } catch (e: unknown) {
-    console.error(e instanceof Error ? e.message : String(e));
-    process.exit(1);
-  }
+  const args = parseArgs(process.argv);
 
   switch (args.command) {
     case "run": {
-      const config = await loadConfigOrExit(args.cli);
-      await requireLlmCapableOrExit(config);
+      const config = await loadConfigOrThrow(args.cli);
+      await requireLlmCapableOrThrow(config);
       await run({
         scenarioPath: args.scenarioPath,
         target: args.cli.target ?? "",
@@ -62,8 +41,8 @@ async function main() {
       break;
     }
     case "batch": {
-      const config = await loadConfigOrExit(args.cli);
-      await requireLlmCapableOrExit(config);
+      const config = await loadConfigOrThrow(args.cli);
+      await requireLlmCapableOrThrow(config);
       const { runBatch } = await import("./cli/batch");
       const exitCode = await runBatch({
         scenarioPaths: args.scenarioPaths,
@@ -92,8 +71,8 @@ async function main() {
       break;
     }
     case "fanout": {
-      const config = await loadConfigOrExit(args.cli);
-      await requireLlmCapableOrExit(config);
+      const config = await loadConfigOrThrow(args.cli);
+      await requireLlmCapableOrThrow(config);
       const { fanout } = await import("./cli/fanout");
       // Prefer an explicit fanout model, else fall back to the agent model.
       // The fanout implementation takes a ModelConfig where `agent` is the
@@ -108,12 +87,7 @@ async function main() {
     }
     case "config": {
       const { runConfigCommand } = await import("./cli/config-command");
-      try {
-        console.log(runConfigCommand(args, process.env));
-      } catch (e) {
-        console.error(e instanceof Error ? e.message : String(e));
-        process.exit(1);
-      }
+      console.log(runConfigCommand(args, process.env));
       break;
     }
     case "serve": {
@@ -126,8 +100,8 @@ async function main() {
       const { join } = await import("path");
       const { gauntletPath } = await import("./paths");
 
-      const config = await loadConfigOrExit(args.cli);
-      await requireLlmCapableOrExit(config);
+      const config = await loadConfigOrThrow(args.cli);
+      await requireLlmCapableOrThrow(config);
 
       const uiDir = join(import.meta.dir, "..", "ui", "dist");
       const gauntletRoot = gauntletPath(config.projectRoot);
@@ -187,6 +161,7 @@ async function main() {
 }
 
 main().catch((err) => {
-  console.error(err);
+  const verbose = isVerboseRequest(process.env as Record<string, string | undefined>, process.argv);
+  process.stderr.write(formatCliError(err, { verbose }));
   process.exit(1);
 });
