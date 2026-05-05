@@ -143,3 +143,70 @@ describe("executeRunCore — result metadata", () => {
     expect(resultJson.runSet).toBeUndefined();
   });
 }, 15000);
+
+describe("executeRunCore — onLogger hook", () => {
+  test("invokes onLogger before runAgent and detaches after adapter close", async () => {
+    const projectRoot = mkdtempSync(join(tmpdir(), "gauntlet-orch-onlog-"));
+    const storyPath = join(projectRoot, "card.md");
+    writeFileSync(storyPath, HAPPY_CARD);
+    const card = parseStoryCard(HAPPY_CARD);
+    const client = makeScriptedClient([report("pass", "ok", "fine")]);
+
+    const calls: string[] = [];
+    let attached = false;
+
+    await executeRunCore({
+      card,
+      storyPath,
+      client,
+      runConfig: {
+        projectRoot,
+        model: "claude-sonnet-4-6",
+        adapter: "cli",
+        target: "true",
+        turns: 5,
+      },
+      hooks: {
+        onLogger: (logger) => {
+          attached = true;
+          calls.push("attach");
+          return () => {
+            attached = false;
+            calls.push("detach");
+          };
+        },
+      },
+    });
+
+    expect(attached).toBe(false);
+    expect(calls).toEqual(["attach", "detach"]);
+  });
+
+  test("onLogger return value undefined is allowed (no detach)", async () => {
+    const projectRoot = mkdtempSync(join(tmpdir(), "gauntlet-orch-onlog2-"));
+    const storyPath = join(projectRoot, "card.md");
+    writeFileSync(storyPath, HAPPY_CARD);
+    const card = parseStoryCard(HAPPY_CARD);
+    const client = makeScriptedClient([report("pass", "ok", "fine")]);
+
+    let attached = false;
+    await executeRunCore({
+      card,
+      storyPath,
+      client,
+      runConfig: {
+        projectRoot,
+        model: "claude-sonnet-4-6",
+        adapter: "cli",
+        target: "true",
+        turns: 5,
+      },
+      hooks: {
+        onLogger: () => {
+          attached = true;
+        },
+      },
+    });
+    expect(attached).toBe(true);
+  });
+}, 15000);

@@ -119,7 +119,7 @@ async function buildDefaultAdapter(
 export async function executeRunCore(
   opts: ExecuteRunCoreOptions,
 ): Promise<ExecuteRunCoreResult> {
-  const { card, storyPath, runConfig, client, runSetCtx } = opts;
+  const { card, storyPath, runConfig, client, runSetCtx, hooks } = opts;
 
   const runId = opts.runId ?? makeRunId(card.id);
   const outDir = opts.outDir ?? gauntletPath(runConfig.projectRoot, "results", runId);
@@ -131,6 +131,9 @@ export async function executeRunCore(
   });
 
   const logger = new EvidenceLogger(outDir);
+  const prepared: RunCorePrepared = { runId, outDir, card };
+  const detachLogger = hooks?.onLogger?.(logger, prepared) ?? (() => {});
+
   const contextRoot = join(outDir, "inputs", "context");
   const contextTree = renderContextTree(contextRoot);
 
@@ -145,18 +148,18 @@ export async function executeRunCore(
         runConfig.viewport,
       ));
 
-  await adapter.start(runConfig.target);
-
-  const stampedRunConfig: RunConfigSnapshot = {
-    target: runConfig.target,
-    model: runConfig.model,
-    adapter: runConfig.adapter,
-    chrome: runConfig.chrome ? `${runConfig.chrome.host}:${runConfig.chrome.port}` : undefined,
-    turns: runConfig.turns,
-    viewport: snapshotViewport(adapter),
-  };
-
   try {
+    await adapter.start(runConfig.target);
+
+    const stampedRunConfig: RunConfigSnapshot = {
+      target: runConfig.target,
+      model: runConfig.model,
+      adapter: runConfig.adapter,
+      chrome: runConfig.chrome ? `${runConfig.chrome.host}:${runConfig.chrome.port}` : undefined,
+      turns: runConfig.turns,
+      viewport: snapshotViewport(adapter),
+    };
+
     const result = await runAgent(card, adapter, client, logger, runConfig.target, {
       contextTree,
       runId,
@@ -173,6 +176,7 @@ export async function executeRunCore(
     writeResultFiles(outDir, result);
     return { runId, outDir, result };
   } finally {
-    await adapter.close();
+    try { await adapter.close(); } catch { /* swallow during cleanup */ }
+    detachLogger();
   }
 }
