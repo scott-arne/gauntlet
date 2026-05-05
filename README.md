@@ -43,7 +43,7 @@ Beyond single-story testing, Gauntlet can **generate variations** ("fanout") fro
 - **Frontend**: React 19 + React Router 7 + Vite + Tailwind CSS
 - **Browser automation**: Chrome DevTools Protocol (custom CDP library)
 - **AI providers**: Anthropic SDK (Claude) and OpenAI SDK
-- **Deployment**: Docker (Debian + Chrome + Bun)
+- **Deployment**: Docker (Debian + Chromium + Bun); a separate `Dockerfile.chrome` ships a Google Chrome sidecar for amd64 production use
 - **Storage**: File-based (no database) -- markdown for stories, JSON for results
 
 ## How it works
@@ -208,7 +208,7 @@ Gauntlet ships as a `gauntlet` command on your PATH. The package isn't published
 ### Prerequisites
 
 - [Bun](https://bun.sh) — `curl -fsSL https://bun.sh/install | bash`
-- Google Chrome — the browser adapter drives Chrome via CDP
+- Google Chrome (or Chromium) — the browser adapter drives either via CDP
 - An LLM API key — `ANTHROPIC_API_KEY` and/or `OPENAI_API_KEY` in your environment
 
 ### Install
@@ -378,7 +378,7 @@ docker run --rm \
 
 On macOS/Windows, use `--target http://host.docker.internal:3000` to reach a dev server running on the host.
 
-The Docker image includes Chrome, Bun, and the pre-built UI. It uses Debian bookworm-slim as the base.
+The Docker image includes Chromium (multi-arch — works on both amd64 and arm64), Bun, and the pre-built UI, on Debian bookworm-slim. For production deployments that prefer Google Chrome, the separate `docker/Dockerfile.chrome` builds a standalone headless Chrome sidecar (amd64 only).
 
 ### Docker Compose
 
