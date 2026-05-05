@@ -1,5 +1,6 @@
 import OpenAI from "openai";
 import type { LLMClient, ToolDefinition, AgentResponse, StopReason, ToolCall, ToolResult } from "./provider";
+import { withLlmErrorSanitization } from "../util/sanitize-error";
 
 export function createOpenAIClient(model: string): LLMClient {
   if (!process.env.OPENAI_API_KEY) {
@@ -12,14 +13,16 @@ export function createOpenAIClient(model: string): LLMClient {
 
   return {
     async chat(messages, tools, systemPrompt) {
-      const response = await client.chat.completions.create({
-        model,
-        messages: [
-          { role: "system", content: systemPrompt },
-          ...(messages as OpenAI.Chat.Completions.ChatCompletionMessageParam[]),
-        ],
-        tools: tools.length > 0 ? tools.map(convertTool) : undefined,
-      });
+      const response = await withLlmErrorSanitization(() =>
+        client.chat.completions.create({
+          model,
+          messages: [
+            { role: "system", content: systemPrompt },
+            ...(messages as OpenAI.Chat.Completions.ChatCompletionMessageParam[]),
+          ],
+          tools: tools.length > 0 ? tools.map(convertTool) : undefined,
+        }),
+      );
 
       return convertResponse(response);
     },

@@ -1,5 +1,6 @@
 import Anthropic from "@anthropic-ai/sdk";
 import type { LLMClient, ToolDefinition, AgentResponse, StopReason, ToolCall, ToolResult } from "./provider";
+import { withLlmErrorSanitization } from "../util/sanitize-error";
 
 export function createAnthropicClient(model: string): LLMClient {
   if (!process.env.ANTHROPIC_API_KEY) {
@@ -36,13 +37,15 @@ export function createAnthropicClient(model: string): LLMClient {
         messages as Anthropic.MessageParam[]
       );
 
-      const response = await client.messages.create({
-        model,
-        max_tokens: 4096,
-        system,
-        messages: apiMessages,
-        tools: convertedTools,
-      });
+      const response = await withLlmErrorSanitization(() =>
+        client.messages.create({
+          model,
+          max_tokens: 4096,
+          system,
+          messages: apiMessages,
+          tools: convertedTools,
+        }),
+      );
 
       return convertResponse(response);
     },
