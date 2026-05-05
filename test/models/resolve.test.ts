@@ -1,5 +1,5 @@
 import { describe, test, expect } from "bun:test";
-import { resolveProvider, parseModelFlags } from "../../src/models/resolve";
+import { UnknownModelProviderError, parseModelFlags, resolveProvider } from "../../src/models/resolve";
 
 describe("resolveProvider", () => {
   test("returns anthropic for claude models", () => {
@@ -16,8 +16,20 @@ describe("resolveProvider", () => {
     expect(resolveProvider("o1-preview")).toBe("openai");
   });
 
-  test("throws for unknown model", () => {
-    expect(() => resolveProvider("unknown-model")).toThrow();
+  test("throws typed unknown-model error for unsupported prefixes", () => {
+    expect(() => resolveProvider("unknown-model")).toThrow(UnknownModelProviderError);
+
+    try {
+      resolveProvider("unknown-model");
+      throw new Error("expected resolveProvider to throw");
+    } catch (err) {
+      expect(err).toBeInstanceOf(UnknownModelProviderError);
+      expect((err as UnknownModelProviderError).code).toBe("unknown_model");
+      expect((err as UnknownModelProviderError).message).toContain("claude*");
+      expect((err as UnknownModelProviderError).message).toContain("gpt*");
+      expect((err as UnknownModelProviderError).message).toContain("o1*");
+      expect((err as UnknownModelProviderError).message).toContain("o3*");
+    }
   });
 });
 
