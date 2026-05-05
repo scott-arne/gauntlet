@@ -335,7 +335,6 @@ describe("Run API", () => {
     } as unknown as StoryCard;
 
     const runId = `story-001_20260422T120000Z_${saveScreencast ? "save" : "drop"}`;
-    const resultsDir = gauntletPath(projectRoot, "results", runId);
 
     // Write a minimal story file so snapshotRunInputs has something to copy.
     const storyDir = gauntletPath(projectRoot, "stories");
@@ -364,7 +363,7 @@ describe("Run API", () => {
       adapterFactory: () => stubAdapter,
     }).catch(() => { /* swallow expected streamer failure */ });
 
-    return { resultsDir, framesDir: join(gauntletPath(projectRoot, "results", runId), "frames") };
+    return { framesDir: join(gauntletPath(projectRoot, "results", runId), "frames") };
   }
 
   test("screencast gate: saveScreencast=false does NOT create frames/ on disk", async () => {

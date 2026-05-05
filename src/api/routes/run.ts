@@ -60,6 +60,11 @@ export async function executeHttpRun(
           broadcaster, registry, errorLog, startedAt, runSetCtx } = opts;
 
   let streamer: ScreencastStreamerType | undefined;
+  // `terminal` is null during the run and at afterClose time on the
+  // success path. onError sets it before afterClose runs (error path); the
+  // success branch sets it AFTER executeRunCore returns and broadcasts
+  // directly. afterClose only sends if `terminal` is non-null, so success
+  // is broadcast exactly once from the line below executeRunCore.
   let terminal: Record<string, unknown> | null = null;
 
   const hooks: RunCoreHooks = {
