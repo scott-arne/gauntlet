@@ -15,6 +15,8 @@ interface ConfigOutput {
     maxConcurrentRuns: number;
     maxTurnsCap: number;
     activeRunTargetMaxBytes: number;
+    wsIdleTimeoutSec: number;
+    wsOriginAllowlist: string[];
     models: {
       agent: string;
       fanout: string | null;
@@ -52,6 +54,8 @@ export function buildConfigOutput(config: AppConfig, env: NodeJS.ProcessEnv): Co
       maxConcurrentRuns: config.maxConcurrentRuns,
       maxTurnsCap: config.maxTurnsCap,
       activeRunTargetMaxBytes: config.activeRunTargetMaxBytes,
+      wsIdleTimeoutSec: config.wsIdleTimeoutSec,
+      wsOriginAllowlist: config.wsOriginAllowlist,
       models: {
         agent: config.models.agent,
         fanout: config.models.fanout ?? null,
@@ -94,6 +98,8 @@ export function formatConfigText(output: ConfigOutput): string {
   lines.push(`  maxConcurrentRuns: ${output.gauntlet.maxConcurrentRuns}  (${output.gauntlet.sources.maxConcurrentRuns})`);
   lines.push(`  maxTurnsCap:    ${output.gauntlet.maxTurnsCap}  (${output.gauntlet.sources.maxTurnsCap})`);
   lines.push(`  activeRunTargetMaxBytes: ${output.gauntlet.activeRunTargetMaxBytes}  (${output.gauntlet.sources.activeRunTargetMaxBytes})`);
+  lines.push(`  wsIdleTimeoutSec: ${output.gauntlet.wsIdleTimeoutSec}  (${output.gauntlet.sources.wsIdleTimeoutSec})`);
+  lines.push(`  wsOriginAllowlist: [${output.gauntlet.wsOriginAllowlist.join(", ")}]  (${output.gauntlet.sources.wsOriginAllowlist})`);
   lines.push(`  models.agent:   ${output.gauntlet.models.agent}  (${output.gauntlet.sources["models.agent"]})`);
   lines.push(`  models.fanout:  ${output.gauntlet.models.fanout ?? "(unset)"}  (${output.gauntlet.sources["models.fanout"]})`);
   lines.push(`  models.available: [${output.gauntlet.models.available.join(", ")}]  (${output.gauntlet.sources["models.available"]})`);

@@ -100,6 +100,7 @@ async function main() {
       const { CancelTokenRegistry } = await import("./api/run-cancel");
       const { handleWsOpen, handleSetWsOpen } = await import("./api/ws-handlers");
       const { ShutdownState, drainShutdown, installShutdownHandlers } = await import("./api/shutdown");
+      const { decideUpgrade } = await import("./api/ws-upgrade");
       const { join } = await import("path");
       const { gauntletPath } = await import("./paths");
       const { serve } = await import("./runtime/serve");
@@ -123,18 +124,15 @@ async function main() {
       const server = serve<WsData>({
         port,
         idleTimeout: 255, // seconds; LLM calls can take minutes
+        wsIdleTimeoutSec: config.wsIdleTimeoutSec, // PRI-1483
         fetch: (req) => app.fetch(req),
         websocket: {
-          upgrade(url) {
-            if (url.pathname.startsWith("/api/ws/run-sets/")) {
-              const runSetId = url.pathname.slice("/api/ws/run-sets/".length);
-              if (!/^[a-z]+_\d{8}T\d{6}Z_[a-z0-9]+$/.test(runSetId)) return null;
-              return { runSetId };
-            }
-            if (url.pathname === "/api/ws") {
-              return { runId: url.searchParams.get("run") || "" };
-            }
-            return null;
+          // Validation + Origin gating live in decideUpgrade so they're
+          // testable without a live server. PRI-1483.
+          upgrade(url, headers) {
+            return decideUpgrade(url, headers, {
+              originAllowlist: config.wsOriginAllowlist,
+            });
           },
           open(ws, data) {
             if (data.runSetId) {

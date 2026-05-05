@@ -1,5 +1,6 @@
 import { existsSync, readFileSync } from "fs";
 import { join } from "path";
+import { isSafePath } from "../paths";
 import type { RunBroadcaster } from "./ws";
 import type { ActiveRunRegistry } from "./active-runs";
 import type { RunSetBroadcaster } from "./run-set-broadcaster";
@@ -44,7 +45,12 @@ export function handleWsOpen(
   // Best-effort transcript snapshot. Runs with no `run.jsonl` on disk
   // (legacy or very early live runs) simply don't get this message.
   if (resultsRoot) {
+    // Defense in depth (PRI-1483): runId already passed parseRunId at
+    // upgrade, but the join below is the disk-touching site so guard
+    // here too. A future caller that bypasses upgrade validation would
+    // otherwise be able to traverse out of resultsRoot.
     const jsonlPath = join(resultsRoot, runId, "run.jsonl");
+    if (!isSafePath(resultsRoot, jsonlPath)) return;
     if (existsSync(jsonlPath)) {
       try {
         const raw = readFileSync(jsonlPath, "utf8");
