@@ -71,6 +71,19 @@ export interface AppConfig {
    * endpoint still returns the full string. PRI-1478.
    */
   activeRunTargetMaxBytes: number;
+  /**
+   * Idle timeout (seconds) for WebSocket connections. Bun's
+   * `websocket.idleTimeout` closes the socket if no messages flow in
+   * either direction within this window. Defends against accumulating
+   * dead WS subscribers. PRI-1483.
+   */
+  wsIdleTimeoutSec: number;
+  /**
+   * If non-empty, only accept WebSocket upgrades whose `Origin` header
+   * matches one of these strings exactly. Defense-in-depth, opt-in via
+   * `GAUNTLET_WS_ORIGIN_ALLOWLIST`. PRI-1483.
+   */
+  wsOriginAllowlist: string[];
   models: {
     agent: string;
     fanout?: string;
@@ -93,6 +106,8 @@ export interface AppConfig {
     maxConcurrentRuns: "default" | "env";
     maxTurnsCap: "default" | "env";
     activeRunTargetMaxBytes: "default" | "env";
+    wsIdleTimeoutSec: "default" | "env";
+    wsOriginAllowlist: "default" | "env";
     "models.agent": "default" | "env" | "flag";
     "models.fanout": "default" | "env" | "flag" | "unset";
     "models.available": "default" | "env" | "flag";
@@ -281,6 +296,7 @@ const DEFAULT_MAX_REQUEST_BODY_SIZE = 1024 * 1024; // 1 MB
 const DEFAULT_MAX_CONCURRENT_RUNS = 4;
 const DEFAULT_MAX_TURNS_CAP = 200;
 const DEFAULT_ACTIVE_RUN_TARGET_MAX_BYTES = 1024;
+const DEFAULT_WS_IDLE_TIMEOUT_SEC = 60;
 const DEFAULT_AGENT_MODEL = "claude-sonnet-4-6";
 
 function parseChromeEndpoint(raw: string, label: string): ChromeEndpoint {
@@ -490,6 +506,21 @@ export function loadConfig(args: CliArgsInput, env: NodeJS.ProcessEnv): AppConfi
   const activeRunTargetMaxBytesSource: "default" | "env" =
     env.GAUNTLET_ACTIVE_RUN_TARGET_MAX_BYTES ? "env" : "default";
 
+  // PRI-1483 WebSocket hygiene knobs.
+  const wsIdleTimeoutSec = parseNonNegIntEnv(
+    env.GAUNTLET_WS_IDLE_TIMEOUT_SEC,
+    "GAUNTLET_WS_IDLE_TIMEOUT_SEC",
+    DEFAULT_WS_IDLE_TIMEOUT_SEC,
+  );
+  const wsIdleTimeoutSecSource: "default" | "env" =
+    env.GAUNTLET_WS_IDLE_TIMEOUT_SEC ? "env" : "default";
+
+  const wsOriginAllowlist = env.GAUNTLET_WS_ORIGIN_ALLOWLIST
+    ? env.GAUNTLET_WS_ORIGIN_ALLOWLIST.split(",").map((s) => s.trim()).filter(Boolean)
+    : [];
+  const wsOriginAllowlistSource: "default" | "env" =
+    env.GAUNTLET_WS_ORIGIN_ALLOWLIST ? "env" : "default";
+
   // models.agent
   let agentModel = DEFAULT_AGENT_MODEL;
   let agentSource: "default" | "env" | "flag" = "default";
@@ -543,6 +574,8 @@ export function loadConfig(args: CliArgsInput, env: NodeJS.ProcessEnv): AppConfi
     maxConcurrentRuns,
     maxTurnsCap,
     activeRunTargetMaxBytes,
+    wsIdleTimeoutSec,
+    wsOriginAllowlist,
     models: {
       agent: agentModel,
       fanout: fanoutModel,
@@ -562,6 +595,8 @@ export function loadConfig(args: CliArgsInput, env: NodeJS.ProcessEnv): AppConfi
       maxConcurrentRuns: maxConcurrentRunsSource,
       maxTurnsCap: maxTurnsCapSource,
       activeRunTargetMaxBytes: activeRunTargetMaxBytesSource,
+      wsIdleTimeoutSec: wsIdleTimeoutSecSource,
+      wsOriginAllowlist: wsOriginAllowlistSource,
       "models.agent": agentSource,
       "models.fanout": fanoutSource,
       "models.available": availableSource,

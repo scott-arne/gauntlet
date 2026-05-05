@@ -28,16 +28,21 @@ export interface WebsocketHooks<T> {
   /**
    * Decide whether an incoming request should upgrade to a WebSocket.
    * Return upgrade data to upgrade, or null to fall through to `fetch`.
+   * Receives the parsed URL and request headers so callers can implement
+   * Origin allowlists or other header-based gates. PRI-1483.
    */
-  upgrade(url: URL): T | null;
+  upgrade(url: URL, headers: Headers): T | null;
   open(ws: WsLike, data: T): void;
   close(ws: WsLike, data: T): void;
 }
 
 export interface ServeOptions<T = unknown> {
   port: number;
-  /** Bun-only; ignored on Node. Seconds before idle connections close. */
+  /** Bun-only; ignored on Node. Seconds before idle HTTP connections close. */
   idleTimeout?: number;
+  /** Bun-only; ignored on Node. Seconds before idle WebSocket connections
+   * are closed by the server (Bun's `websocket.idleTimeout`). PRI-1483. */
+  wsIdleTimeoutSec?: number;
   fetch(req: Request): Response | Promise<Response>;
   websocket?: WebsocketHooks<T>;
 }
@@ -52,7 +57,7 @@ export function serve<T extends object>(opts: ServeOptions<T>): RunningServer {
 
 function serveViaBun<T extends object>(opts: ServeOptions<T>): RunningServer {
   const Bun = (globalThis as { Bun: typeof globalThis.Bun }).Bun;
-  const { fetch: appFetch, websocket, port, idleTimeout } = opts;
+  const { fetch: appFetch, websocket, port, idleTimeout, wsIdleTimeoutSec } = opts;
 
   if (!websocket) {
     const server = Bun.serve({
@@ -68,7 +73,7 @@ function serveViaBun<T extends object>(opts: ServeOptions<T>): RunningServer {
     idleTimeout,
     fetch(req, server) {
       const url = new URL(req.url);
-      const data = websocket.upgrade(url);
+      const data = websocket.upgrade(url, req.headers);
       if (data !== null) {
         // Bun's upgrade overload widens to `[T] extends [undefined]`,
         // which `tsc` can't narrow even with `T extends object` here.
@@ -79,6 +84,7 @@ function serveViaBun<T extends object>(opts: ServeOptions<T>): RunningServer {
       return appFetch(req);
     },
     websocket: {
+      idleTimeout: wsIdleTimeoutSec,
       open(ws) { websocket.open(ws as unknown as WsLike, ws.data); },
       close(ws) { websocket.close(ws as unknown as WsLike, ws.data); },
       message() {},
@@ -98,7 +104,14 @@ function serveViaNode<T>(opts: ServeOptions<T>): RunningServer {
     const wss = new WebSocketServer({ noServer: true });
     httpServer.on("upgrade", (req: IncomingMessage, socket: Duplex, head: Buffer) => {
       const url = new URL(req.url ?? "/", `http://${req.headers.host ?? "localhost"}`);
-      const data = hooks.upgrade(url);
+      // Translate Node's `req.headers` (Record<string, string|string[]>) into
+      // a Headers object so the upgrade hook has the same shape on both runtimes.
+      const headerMap = new Headers();
+      for (const [k, v] of Object.entries(req.headers)) {
+        if (Array.isArray(v)) for (const vv of v) headerMap.append(k, vv);
+        else if (v !== undefined) headerMap.set(k, String(v));
+      }
+      const data = hooks.upgrade(url, headerMap);
       if (data === null) {
         socket.destroy();
         return;

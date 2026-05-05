@@ -46,6 +46,33 @@ function isoBasicNow(): string {
 }
 
 /**
+ * Parse and validate a runId. Returns the runId on success, null on
+ * failure. The shape is `<cardId>_<YYYYMMDDTHHMMSSZ>_<nonce>` where
+ * cardId is `[a-zA-Z0-9-]+`, the timestamp is ISO 8601 basic format at
+ * second precision, and the nonce is 4 base36 chars. PRI-1483.
+ *
+ * Rejecting empty/malformed runIds at the WebSocket upgrade boundary
+ * means downstream consumers (path lookups, broadcaster keys) never
+ * see hostile inputs. The strict format check also implicitly rejects
+ * traversal sequences (`..`, `/`, etc).
+ */
+const RUN_ID_RE = /^[a-zA-Z0-9-]+_\d{8}T\d{6}Z_[a-z0-9]{4}$/;
+export function parseRunId(s: unknown): string | null {
+  if (typeof s !== "string" || !s) return null;
+  return RUN_ID_RE.test(s) ? s : null;
+}
+
+/**
+ * Parse and validate a run-set id. Mirrors `parseRunId`. The shape is
+ * `<kind>_<YYYYMMDDTHHMMSSZ>_<nonce>` where kind is `single` or `batch`.
+ */
+const RUN_SET_ID_RE = /^(?:single|batch)_\d{8}T\d{6}Z_[a-z0-9]{4}$/;
+export function parseRunSetId(s: unknown): string | null {
+  if (typeof s !== "string" || !s) return null;
+  return RUN_SET_ID_RE.test(s) ? s : null;
+}
+
+/**
  * Sanitize an arbitrary string for use as (part of) a Chrome profile
  * name. `chrome-ws-lib.setProfileName` enforces
  * `/^[a-zA-Z0-9_-]+$/`; replace anything outside that set with `-`.
