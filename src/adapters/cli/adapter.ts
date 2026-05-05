@@ -3,6 +3,7 @@ import type { ToolDefinition, ToolResult } from "../../models/provider";
 import type { EvidenceLogger } from "../../evidence/logger";
 import { buildReadTool, type ReadTool } from "../../context/read-tool";
 import { validateToolArgs } from "../../agent/validators";
+import { spawn, type SpawnedProcess } from "../../runtime/spawn";
 
 
 const KEY_MAP: Record<string, string> = {
@@ -20,10 +21,7 @@ export interface CLIAdapterOptions {
 
 export class CLIAdapter implements Adapter {
   readonly name = "cli";
-  // Narrow the stdio triple so stdin is a FileSink and stdout/stderr are
-  // ReadableStreams. Bun.spawn's return type widens to the full union when
-  // the stdio option is only known by value, which loses these guarantees.
-  private proc: Bun.Subprocess<"pipe", "pipe", "pipe"> | null = null;
+  private proc: SpawnedProcess | null = null;
   private buffer = "";
   private readTool: ReadTool | null;
   /** Lazy cache of tool name → parameter schema for O(1) validation. */
@@ -37,11 +35,7 @@ export class CLIAdapter implements Adapter {
 
   async start(command: string): Promise<void> {
     this.buffer = "";
-    this.proc = Bun.spawn(["sh", "-c", command], {
-      stdin: "pipe",
-      stdout: "pipe",
-      stderr: "pipe",
-    });
+    this.proc = spawn(["sh", "-c", command]);
 
     this.readStream(this.proc.stdout);
     this.readStream(this.proc.stderr);

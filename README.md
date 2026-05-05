@@ -43,7 +43,7 @@ Beyond single-story testing, Gauntlet can **generate variations** ("fanout") fro
 - **Frontend**: React 19 + React Router 7 + Vite + Tailwind CSS
 - **Browser automation**: Chrome DevTools Protocol (custom CDP library)
 - **AI providers**: Anthropic SDK (Claude) and OpenAI SDK
-- **Deployment**: Docker (Debian + Chrome + Bun)
+- **Deployment**: Docker (Debian + Chromium + Bun); a separate `Dockerfile.chrome` ships a Google Chrome sidecar for amd64 production use
 - **Storage**: File-based (no database) -- markdown for stories, JSON for results
 
 ## How it works
@@ -208,7 +208,7 @@ Gauntlet ships as a `gauntlet` command on your PATH. The package isn't published
 ### Prerequisites
 
 - [Bun](https://bun.sh) — `curl -fsSL https://bun.sh/install | bash`
-- Google Chrome — the browser adapter drives Chrome via CDP
+- Google Chrome (or Chromium) — the browser adapter drives either via CDP
 - An LLM API key — `ANTHROPIC_API_KEY` and/or `OPENAI_API_KEY` in your environment
 
 ### Install
@@ -350,10 +350,19 @@ The HTTP API (Hono) serves at `/api`:
 | `/api/results` | GET | List all results |
 | `/api/results/:runId` | GET | Get result metadata |
 | `/api/results/:runId/file/:path` | GET | Fetch a file from a run (must be listed in result.json) |
+| `/api/run-sets/:id` | GET | Get a run-set's metadata and per-attempt results |
+| `/api/run-sets/:id/summary` | GET | Aggregate summary (per-card buckets: `consistent_pass`, `mixed`, `errored`, …) |
+| `/api/run-sets/:id` | DELETE | Delete a run-set and all of its runs from disk |
+| `/api/runs/active` | GET | List runs currently executing in this server process |
+| `/api/runs/active/:runId/snapshot` | GET | Current snapshot of an in-flight run (latest events, last frame) |
 | `/api/fanout/:id` | POST | Generate test variations |
 | `/api/fanout/:id/observations` | POST | Generate cards from observations |
 | `/api/fanout/:id/failure` | POST | Generate cards from a failure |
+| `/api/config` | GET | Loaded server config |
+| `/api/config/effective` | GET | Effective config with per-field source attribution (env / flag / default) — same payload as `gauntlet config --json` |
+| `/api/errors` | GET | Tail of recent error envelopes captured by the unified error pipeline (debug aid) |
 | `/api/ws?run=<runId>` | WS | WebSocket for live run streaming, scoped to one run |
+| `/api/ws/run-sets/:id` | WS | WebSocket for run-set live streaming (per-attempt completions, manifest updates) |
 
 ## Docker
 
@@ -362,14 +371,14 @@ Run a story from the current directory against a target URL — the container mo
 ```bash
 docker run --rm \
   -e OPENAI_API_KEY=sk-... \
-  -e GAUNTLET_AGENT_MODEL=gpt-5.4-mini \
+  -e GAUNTLET_AGENT_MODEL=gpt-5-mini \
   -v "$PWD:/work" -w /work \
   gauntlet run story.md --target https://example.com
 ```
 
 On macOS/Windows, use `--target http://host.docker.internal:3000` to reach a dev server running on the host.
 
-The Docker image includes Chrome, Bun, and the pre-built UI. It uses Debian bookworm-slim as the base.
+The Docker image includes Chromium (multi-arch — works on both amd64 and arm64), Bun, and the pre-built UI, on Debian bookworm-slim. For production deployments that prefer Google Chrome, the separate `docker/Dockerfile.chrome` builds a standalone headless Chrome sidecar (amd64 only).
 
 ### Docker Compose
 
@@ -403,6 +412,7 @@ The web `POST /api/run/:id` body is validated against an explicit allow-list. Un
 | `run` | `--chrome host:port` | Chrome debugging endpoint |
 | `run` | `--adapter web\|cli\|tui` | Adapter type (default: web) |
 | `run` | `--turns <n>` | Max agent turns for this run (default: 50) |
+| `run` | `--passes <n>` | Number of attempts for this card; integer in `[1, 50]` (default: 1). Used to surface flaky behavior — repeated attempts roll up into a run-set. |
 | `run` | `--viewport WxH` | Browser viewport for web-adapter runs (default: 1440x900) |
 | `run` | `--save-screencast [bool]` | Persist screencast frames to disk (default: off; live UI stream is unchanged) |
 | `run` | `--out <dir>` | Evidence output directory |
@@ -412,6 +422,7 @@ The web `POST /api/run/:id` body is validated against an explicit allow-list. Un
 | `run` | `--no-color` | Disable ANSI color output; `NO_COLOR` is also respected |
 | `batch` | `<story.md> [more.md ...]` | Positional card paths (at least one required) |
 | `batch` | `--target <url>` | (required) Application under test |
+| `batch` | `--passes <n>` | Attempts per card; integer in `[1, 50]` (default: 1). The full execution becomes `cards × passes` runs, all rolled up into one run-set. |
 | `batch` | other per-card flags | Same as `run` minus `--out`. Applied uniformly to every card. |
 | `batch` | `--silent` | Suppress the table; print only the final summary on stderr |
 | `batch` | `--format pretty\|jsonl` | Output format (default: auto by TTY); jsonl injects `runId` per event |
@@ -455,6 +466,7 @@ Gauntlet-prefixed (consumed by `loadConfig`):
 | `GAUNTLET_AGENT_MODEL` | Default agent model | `claude-sonnet-4-6` |
 | `GAUNTLET_FANOUT_MODEL` | Default fanout model | -- |
 | `GAUNTLET_MODELS` | Comma-separated allow-list of models (opt-in) | `[]` (no restriction) |
+| `GAUNTLET_CHROME_VERBOSE` | Print Chrome lifecycle messages (reconnect, startup, session dir) on stderr. Any truthy string activates it. | unset |
 
 ### SDK env pass-through policy
 
@@ -513,16 +525,20 @@ See the [Configuration](#configuration) section above for the full list. Quick r
 | `GAUNTLET_AGENT_MODEL` | Default model for test execution | `claude-sonnet-4-6` |
 | `GAUNTLET_FANOUT_MODEL` | Model for story generation | -- |
 | `GAUNTLET_MODELS` | Comma-separated model allow-list (opt-in) | `[]` (no restriction) |
+| `GAUNTLET_CHROME_VERBOSE` | Print Chrome lifecycle messages on stderr | unset |
 
 ## Project structure
 
 ```
 src/
   index.ts              CLI entry point and command router
-  types.ts              Core types (VetResult, Observation, etc.)
+  types.ts              Core types (VetResult, Observation, RunConfigSnapshot)
+  config.ts             Single loadConfig() — env + flags → AppConfig
+  paths.ts              .gauntlet/ project directory conventions
   agent/
-    agent.ts            Agentic loop: LLM + tools for up to 50 turns
-    prompts.ts          System prompt construction from story cards
+    agent.ts            Agentic loop: LLM + tools, with grace turn after max
+    prompts.ts          System prompt construction from story cards + context
+    validators.ts       Per-tool argument schema validation before dispatch
   models/
     provider.ts         LLM client interface
     anthropic.ts        Claude client (with prompt caching)
@@ -531,13 +547,29 @@ src/
   adapters/
     adapter.ts          Abstract adapter interface
     web/adapter.ts      Chrome CDP browser adapter (17 tools + 3 opt-in)
-    cli/adapter.ts      Terminal-based adapter
-    tui/adapter.ts      Text UI adapter
+    web/cookies.ts      install_cookies tool + cookies.yaml loader
+    web/passkey.ts      install_passkey tool + passkey.yaml loader
+    cli/adapter.ts      Terminal-based adapter (stdin/stdout target)
+    tui/adapter.ts      Text UI adapter (tmux-hosted target)
+    tui/capture-parser.ts  ANSI screen capture → structured cells
   api/
-    server.ts           Hono app with API routes + static UI serving
-    ws.ts               WebSocket broadcaster for live runs
-    routes/             HTTP route handlers (scenarios, results, run, fanout)
-    safe-path.ts        Path traversal protection
+    server.ts           Hono app: API routes + static UI serving
+    ws.ts               WebSocket broadcaster for single runs
+    ws-handlers.ts      Per-connection handler dispatch
+    active-runs.ts      In-process registry of running runs
+    run-cancel.ts       Cancellation plumbing for live runs
+    run-set-broadcaster.ts  WS broadcaster for run-sets (multi-pass / batch)
+    mime-types.ts       Static-file content-type table
+    routes/
+      scenarios.ts      Story-card CRUD
+      run.ts            POST /api/run/:id — start a run
+      run-sets.ts       Run-set retrieval, summary, deletion
+      results.ts        Result list + per-run files (manifest-gated)
+      fanout.ts         Generate variations / from-observations / from-failure
+      active-runs.ts    GET /api/runs/active
+      config.ts         GET /api/config
+      config-effective.ts  GET /api/config/effective
+      errors.ts         GET /api/errors (tail of recent error envelopes)
   cli/
     args.ts             CLI argument parsing
     run.ts              `run` command (single-card streaming wrapper)
@@ -546,25 +578,52 @@ src/
     batch.ts            `batch` command — serial runner + per-card observer
     validate.ts         `validate` command
     fanout.ts           `fanout` command
-    stream/             Streaming-transcript renderers for run/batch
-                        (pretty, jsonl, batch-table)
+    config-command.ts   `config` command (effective config inspector)
+    error-output.ts     Unified top-level error envelope across commands
+    signals.ts          SIGINT/SIGTERM handling for in-flight runs
+    stream/             Streaming-transcript renderers (pretty, jsonl,
+                        batch-table) plus shared formatters
+  cards/
+    store.ts            Story-card filesystem store (read/write/list)
+  runs/
+    orchestrator.ts     Shared run orchestrator (used by CLI and HTTP)
+    run-set.ts          Run-set lifecycle (passes × cards loop)
+    run-set-types.ts    RunSetCtx / SetBucket types
+    aggregate.ts        Per-set roll-up (consistent_pass / mixed / errored)
+    snapshot.ts         Per-run snapshot for /api/runs/active
+  context/
+    tree.ts             .gauntlet/context/ directory listing for system prompt
+    read-tool.ts        Opt-in `read` tool (when context tree non-empty)
   fanout/
     generator.ts        AI-powered test variation generation
   evidence/
-    logger.ts           Screenshot/action capture during runs
-    writer.ts           Result serialization to disk
+    logger.ts           Per-run event log + screenshot/capture writers
+    writer.ts           Result serialization (result.json + result.md)
+    run-set-writer.ts   Run-set roll-up serialization
   format/
     story-card.ts       Story card parsing and serialization
   streaming/
-    screencast.ts       Browser frame capture
+    screencast.ts       Browser frame capture (opt-in disk persistence)
+  util/
+    id.ts               runId composition
+    pick-free-port.ts   Local TCP port helper (dev / test / Chrome launch)
+    sanitize-error.ts   Stack-trace scrubbing for transmissible error envelopes
 ui/
   src/
     App.tsx             React Router setup
-    components/         CardsList, CardEditor, RunsList, RunDetail, LiveRun, etc.
-    hooks/              Data-fetching hooks (useCards, useResults, useRunStream)
+    main.tsx            Vite entry point
+    app.css             Global styles
+    components/         CardsList, CardEditor, RunsList, RunDetail, RunSetDetail,
+                        LiveRun, NewRunModal, AppShell, Sidebar, transcript/...
+    components/transcript/  Transcript view + ToolPairCard, EventLine,
+                            Screenshot, TuiCapture, ThinkingBlock, etc.
+    hooks/              useCards, useCard, useResults, useRunStream,
+                        useTranscript, useLiveTranscript, useActiveRuns
     lib/api.ts          HTTP client for the backend API
+    lib/runId.ts        runId parsing helpers (mirrors src/util/id.ts)
+    lib/transcript.ts   Reducer for transcriptSnapshot + event WS messages
 docker/
-  Dockerfile            Production image (Debian + Chrome + Bun)
+  Dockerfile            Production image (Debian + Chromium + Bun)
   Dockerfile.chrome     Standalone headless Chrome image (separate target)
 compose.yaml            Docker Compose entry point (mounts project root at /project)
 .env.example            Template for API keys and optional env overrides

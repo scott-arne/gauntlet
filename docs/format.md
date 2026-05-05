@@ -29,7 +29,11 @@ describes what's in it and how to read it.
   captures/          TUI screen captures (one .ansi + .json pair per
                      read_screen call). TUI runs only.
   frames/            Passive screencast frames
-  issues/            Per-observation markdown (derived from observations)
+  issues/            Per-observation markdown, named NNN-<kind>-<slug>.md
+                     where NNN is the 1-based index zero-padded to 3,
+                     kind is the observation kind, and slug is the first
+                     40 chars of the description with non-alphanumerics
+                     collapsed to hyphens.
   console.jsonl      Browser console.* messages (web adapter)
   exception.jsonl    Page exceptions (web adapter)
   log.jsonl          Console-API entries (web adapter, distinct from

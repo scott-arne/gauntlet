@@ -20,13 +20,45 @@ project's `.gauntlet/context/` tree. The tool descriptions the
 agent sees at runtime are authoritative; this document is the
 human-facing reference that mirrors them.
 
-> **Note on filename extension.** Throughout this document we
-> use `.yaml` for both files. Parts of the codebase
-> historically reference `passkey.json` — Gauntlet's parser
-> accepts JSON as a strict subset of YAML, so either extension
-> works in practice. The runtime tool descriptions the agent
-> sees recommend `.yaml`, and that's the convention to use for
-> new fixtures.
+## Username and password
+
+The most common case. Most apps have a sign-in form; the agent
+already knows how to find a form and type into it. There is no
+`install_credentials` tool because there does not need to be
+one — the profile supplies the values and the regular browser
+tools do the rest.
+
+A typical profile:
+
+```markdown
+# Alice
+
+Marketing manager at Acme. Likes detailed UIs; hates modal dialogs.
+
+## Credentials
+- Username: alice@acme.test
+- Password: hunter2-test
+```
+
+The card refers to the user by name in prose (*"Sign in as
+Alice; create a draft post"*). The agent picks the profile by
+inference, reads the credentials block, and signs in by
+navigating to the sign-in page (or following a "Sign in" link
+from the home page), typing into the username and password
+fields, and submitting.
+
+If the form layout is unusual — one combined "email or
+username" field, a two-step flow with username first and
+password on a separate page, an MFA challenge to skip past, a
+"remember me" checkbox to leave alone — describe it in plain
+English in a `HOW-TO-LOGIN.md` (or any name) at the root of
+your context tree. The agent reads the whole tree as part of
+its system prompt; the file just needs to exist.
+
+Profile and `HOW-TO-LOGIN.md` files are routine context, not
+secrets handled specially. Treat them like any other fixture.
+The cookie and passkey YAML files below are different —
+they're the only files in this doc that should be gitignored.
 
 ## Username and password
 
@@ -104,8 +136,8 @@ parameters.
 | Field | Required | Description |
 |-------|----------|-------------|
 | `name` | yes | Cookie name |
-| `value` | yes | Cookie value (string — even if numeric) |
-| `url` | one of | Full URL the cookie is for. Sets domain+path implicitly. |
+| `value` | yes | Cookie value. Must be a **quoted** string in YAML — an unquoted token like `value: 12345` is rejected because YAML coerces it to a number first. |
+| `url` | one of | Full URL the cookie is for. Chrome derives the cookie's domain and path from this URL — Gauntlet passes the field through to CDP unchanged. |
 | `domain` | one of | Cookie's domain (e.g., `app.example.com`). Pair with `path`. |
 | `path` | no | Cookie's path (default `/` when `domain` is given) |
 | `secure` | no | Boolean. Required if `sameSite: None`. |
@@ -130,7 +162,7 @@ silently dropped.
   secure: true
   httpOnly: true
   sameSite: Lax
-  expires: 1735689600
+  expires: 1893456000  # 2030-01-01 UTC
 
 - name: csrf
   value: kJh92h3jKdLm
@@ -218,6 +250,12 @@ How do you actually get a credential or a usable cookie set?
 **Do not commit either file.** Add `cookies.yaml` and
 `passkey.yaml` to your `.gitignore`. They contain personal
 auth material even for test accounts.
+
+The run's action log (`run.jsonl`) records only the *length* of
+each cookie value and never the bytes themselves; same for
+passkey `credentialId` and `privateKey` fields. So the evidence
+files Gauntlet writes to disk don't leak the secrets, even
+though the YAML inputs do contain them.
 
 ## Lifecycle reference
 

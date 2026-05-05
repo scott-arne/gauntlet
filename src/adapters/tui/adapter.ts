@@ -5,6 +5,7 @@ import { buildReadTool, type ReadTool } from "../../context/read-tool";
 import { validateToolArgs } from "../../agent/validators";
 import type { Viewport } from "../../config";
 import { defaultCaptureParser, type CaptureParser } from "./capture-parser";
+import { spawnSync } from "../../runtime/spawn";
 
 /**
  * tmux pane dimensions in character cells. Hardcoded for now — resize
@@ -71,7 +72,7 @@ export class TUIAdapter implements Adapter {
     const id = `gauntlet-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
     this._sessionName = id;
 
-    const result = Bun.spawnSync([
+    const result = spawnSync([
       "tmux",
       "new-session",
       "-d",
@@ -91,7 +92,7 @@ export class TUIAdapter implements Adapter {
   }
 
   async readScreen(): Promise<string> {
-    const result = Bun.spawnSync([
+    const result = spawnSync([
       "tmux",
       "capture-pane",
       "-t",
@@ -109,7 +110,7 @@ export class TUIAdapter implements Adapter {
   }
 
   async type(text: string): Promise<void> {
-    const result = Bun.spawnSync([
+    const result = spawnSync([
       "tmux",
       "send-keys",
       "-t",
@@ -128,7 +129,7 @@ export class TUIAdapter implements Adapter {
     const mapped = KEY_MAP[key];
     if (!mapped) throw new Error(`Unknown key: ${key}. Available: ${AVAILABLE_KEYS}`);
 
-    const result = Bun.spawnSync([
+    const result = spawnSync([
       "tmux",
       "send-keys",
       "-t",
@@ -158,7 +159,7 @@ export class TUIAdapter implements Adapter {
     if (!this._sessionName) return;
 
     try {
-      Bun.spawnSync(["tmux", "kill-session", "-t", this._sessionName]);
+      spawnSync(["tmux", "kill-session", "-t", this._sessionName]);
     } catch {
       // session may already be dead
     }

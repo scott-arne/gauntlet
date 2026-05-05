@@ -1,4 +1,5 @@
 import { Hono } from "hono";
+import { bodyLimit } from "hono/body-limit";
 import { join } from "path";
 import { existsSync, readFileSync, statSync } from "fs";
 import { scenarioRoutes } from "./routes/scenarios";
@@ -16,6 +17,7 @@ import type { RunBroadcaster } from "./ws";
 import type { ActiveRunRegistry } from "./active-runs";
 import type { RunSetBroadcaster } from "./run-set-broadcaster";
 import type { CancelTokenRegistry } from "./run-cancel";
+import type { ShutdownState } from "./shutdown";
 import type { AppConfig } from "../config";
 
 export function createApp(
@@ -25,6 +27,7 @@ export function createApp(
   registry?: ActiveRunRegistry,
   setBroadcaster?: RunSetBroadcaster,
   cancelTokens?: CancelTokenRegistry,
+  shutdownState?: ShutdownState,
 ) {
   const app = new Hono();
   app.onError((err, c) => {
@@ -33,6 +36,29 @@ export function createApp(
       message: err instanceof Error ? err.message : String(err),
     }, 500);
   });
+
+  // Graceful shutdown gate: while the daemon is draining, refuse new POSTs
+  // (any new run started here would be orphaned a few seconds later).
+  // GETs flow through so existing clients can keep polling status. PRI-1477.
+  if (shutdownState) {
+    app.use("*", async (c, next) => {
+      if (shutdownState.isDraining() && c.req.method !== "GET") {
+        return c.json({ error: "shutting_down" }, 503);
+      }
+      return next();
+    });
+  }
+
+  // Body-size cap (PRI-1478). Applied at the Hono layer so both Bun and
+  // Node runtimes enforce it uniformly. 413 + a structured envelope.
+  app.use("*", bodyLimit({
+    maxSize: config.maxRequestBodySize,
+    onError: (c) => c.json({
+      error: "body_too_large",
+      message: `request body exceeds cap of ${config.maxRequestBodySize} bytes`,
+      cap: config.maxRequestBodySize,
+    }, 413),
+  }));
 
   const errorLog = new ErrorLog();
   const projectRoot = config.projectRoot;
@@ -46,7 +72,7 @@ export function createApp(
   api.route("/config", configRoutes(config));
   api.route("/config/effective", configEffectiveRoutes(config));
   api.route("/errors", errorRoutes(errorLog));
-  if (registry) api.route("/runs/active", activeRunRoutes(registry));
+  if (registry) api.route("/runs/active", activeRunRoutes(registry, config.activeRunTargetMaxBytes));
 
   app.route("/api", api);
 

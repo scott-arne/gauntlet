@@ -3,6 +3,8 @@ import { parseArgs } from "./cli/args";
 import { run } from "./cli/run";
 import { formatCliError, isVerboseRequest } from "./cli/error-output";
 import type { AppConfig, CliArgsInput } from "./config";
+import { fileURLToPath } from "node:url";
+import { dirname } from "node:path";
 
 async function loadConfigOrThrow(cli: CliArgsInput): Promise<AppConfig> {
   const { loadConfig } = await import("./config");
@@ -97,63 +99,83 @@ async function main() {
       const { RunSetBroadcaster } = await import("./api/run-set-broadcaster");
       const { CancelTokenRegistry } = await import("./api/run-cancel");
       const { handleWsOpen, handleSetWsOpen } = await import("./api/ws-handlers");
+      const { ShutdownState, drainShutdown, installShutdownHandlers } = await import("./api/shutdown");
+      const { decideUpgrade } = await import("./api/ws-upgrade");
       const { join } = await import("path");
       const { gauntletPath } = await import("./paths");
+      const { serve } = await import("./runtime/serve");
 
       const config = await loadConfigOrThrow(args.cli);
       await requireLlmCapableOrThrow(config);
 
-      const uiDir = join(import.meta.dir, "..", "ui", "dist");
+      const here = dirname(fileURLToPath(import.meta.url));
+      const uiDir = join(here, "..", "ui", "dist");
       const gauntletRoot = gauntletPath(config.projectRoot);
       const resultsRoot = gauntletPath(config.projectRoot, "results");
       const broadcaster = new RunBroadcaster();
       const registry = new ActiveRunRegistry();
       const setBroadcaster = new RunSetBroadcaster();
       const cancelTokens = new CancelTokenRegistry();
-      const app = createApp(config, uiDir, broadcaster, registry, setBroadcaster, cancelTokens);
+      const shutdownState = new ShutdownState();
+      const app = createApp(config, uiDir, broadcaster, registry, setBroadcaster, cancelTokens, shutdownState);
       const port = config.port;
       console.error(`gauntlet server listening on port ${port}`);
-      Bun.serve<{ runId?: string; runSetId?: string }>({
+      type WsData = { runId?: string; runSetId?: string };
+      const server = serve<WsData>({
         port,
         idleTimeout: 255, // seconds; LLM calls can take minutes
-        fetch(req, server) {
-          const url = new URL(req.url);
-          if (url.pathname.startsWith("/api/ws/run-sets/")) {
-            const runSetId = url.pathname.slice("/api/ws/run-sets/".length);
-            if (!/^[a-z]+_\d{8}T\d{6}Z_[a-z0-9]+$/.test(runSetId)) {
-              return new Response("invalid run set id", { status: 400 });
-            }
-            const upgraded = server.upgrade(req, { data: { runSetId } });
-            if (upgraded) return undefined;
-            return new Response("WebSocket upgrade failed", { status: 400 });
-          }
-          if (url.pathname === "/api/ws") {
-            const runId = url.searchParams.get("run") || "";
-            const upgraded = server.upgrade(req, { data: { runId } });
-            if (upgraded) return undefined;
-            return new Response("WebSocket upgrade failed", { status: 400 });
-          }
-          return app.fetch(req);
-        },
+        wsIdleTimeoutSec: config.wsIdleTimeoutSec, // PRI-1483
+        fetch: (req) => app.fetch(req),
         websocket: {
-          open(ws) {
-            const data = ws.data as any;
+          // Validation + Origin gating live in decideUpgrade so they're
+          // testable without a live server. PRI-1483.
+          upgrade(url, headers) {
+            return decideUpgrade(url, headers, {
+              originAllowlist: config.wsOriginAllowlist,
+            });
+          },
+          open(ws, data) {
             if (data.runSetId) {
-              handleSetWsOpen(setBroadcaster, data.runSetId, ws as any, gauntletRoot);
+              handleSetWsOpen(setBroadcaster, data.runSetId, ws, gauntletRoot);
             } else if (data.runId) {
-              handleWsOpen(registry, broadcaster, data.runId, ws as any, resultsRoot);
+              handleWsOpen(registry, broadcaster, data.runId, ws, resultsRoot);
             }
           },
-          close(ws) {
-            const data = ws.data as any;
+          close(ws, data) {
             if (data.runSetId) {
-              setBroadcaster.removeClient(data.runSetId, ws as any);
+              setBroadcaster.removeClient(data.runSetId, ws);
             } else if (data.runId) {
-              broadcaster.removeClient(data.runId, ws as any);
+              broadcaster.removeClient(data.runId, ws);
             }
           },
-          message() {},
         },
+      });
+
+      // PRI-1477: graceful shutdown on SIGTERM/SIGINT/SIGHUP. The handler
+      // marks state as draining (middleware then refuses new POSTs),
+      // closes existing WS connections, waits up to shutdownGraceMs for
+      // in-flight runs to complete naturally, then stops the server and
+      // exits 0. Runs that exceed the grace window are abandoned —
+      // PRI-1507 closes that gap once the orchestrator can be cancelled.
+      let shuttingDown = false;
+      installShutdownHandlers(["SIGTERM", "SIGINT", "SIGHUP"], async (signal) => {
+        if (shuttingDown) return;
+        shuttingDown = true;
+        try {
+          await drainShutdown({
+            signal,
+            state: shutdownState,
+            broadcaster,
+            setBroadcaster,
+            registry,
+            graceMs: config.shutdownGraceMs,
+            pollMs: 100,
+            log: (msg) => process.stderr.write(`gauntlet: ${msg}\n`),
+          });
+        } finally {
+          await server.stop();
+          process.exit(0);
+        }
       });
       break;
     }

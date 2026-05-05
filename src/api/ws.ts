@@ -1,6 +1,7 @@
 interface WsLike {
   send(data: string): void;
   readyState: number;
+  close(code?: number, reason?: string): void;
 }
 
 export class RunBroadcaster {
@@ -29,5 +30,18 @@ export class RunBroadcaster {
         clients.delete(ws);
       }
     }
+  }
+
+  /** Close every connected client with the given code+reason and forget
+   * them. Used by graceful shutdown (PRI-1477) to send a 1001 "going
+   * away" before the daemon exits. Per-client errors are swallowed so a
+   * single bad socket doesn't block the rest. */
+  closeAll(code: number, reason: string): void {
+    for (const set of this.clients.values()) {
+      for (const ws of set) {
+        try { ws.close(code, reason); } catch { /* per-client errors ignored */ }
+      }
+    }
+    this.clients.clear();
   }
 }
