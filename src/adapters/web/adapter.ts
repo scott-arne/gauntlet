@@ -873,14 +873,35 @@ export class WebAdapter implements Adapter {
 
     const tab = this.activeTab();
 
-    const takeReturnScreenshot = async (): Promise<{ image?: ToolResult["image"]; imagePath?: string }> => {
+    const RETURN_SCREENSHOT_TIMEOUT_MS = 5000; // PRI-1517
+
+    const takeReturnScreenshot = async (
+      tabOverride?: typeof tab
+    ): Promise<ScreenshotResult> => {
       if (!args.return_screenshot) return {};
+      const targetTab = tabOverride ?? tab;
+      const t0 = Date.now();
       const tmpFile = join(tmpdir(), `gauntlet-screenshot-${Date.now()}.png`);
-      await this.chrome.screenshot(tab, tmpFile, null, false);
-      const data = readFileSync(tmpFile);
-      const imagePath = logger.saveScreenshot(Buffer.from(data));
-      try { unlinkSync(tmpFile); } catch { }
-      return { image: { data: Buffer.from(data).toString("base64"), mediaType: "image/png" }, imagePath };
+      try {
+        await this.chrome.screenshot(targetTab, tmpFile, null, false, {
+          timeoutMs: RETURN_SCREENSHOT_TIMEOUT_MS,
+        });
+        const data = readFileSync(tmpFile);
+        const imagePath = logger.saveScreenshot(Buffer.from(data));
+        try { unlinkSync(tmpFile); } catch { /* best-effort */ }
+        return {
+          image: { data: Buffer.from(data).toString("base64"), mediaType: "image/png" },
+          imagePath,
+        };
+      } catch (err) {
+        try { unlinkSync(tmpFile); } catch { /* best-effort */ }
+        const reason = err instanceof Error ? err.message : String(err);
+        const elapsed = Date.now() - t0;
+        console.warn(
+          `[gauntlet] return_screenshot skipped (${name}, ${elapsed}ms): ${reason}`
+        );
+        return { screenshotSkipped: reason };
+      }
     };
 
     switch (name) {
@@ -914,19 +935,19 @@ export class WebAdapter implements Adapter {
           const note = result?.fallback
             ? ` (fallback: ${result.fallback})`
             : "";
-          return {
-            text: `clicked ${args.selector}${note}`,
-            ...await takeReturnScreenshot(),
-          };
+          return composeResult(
+            `clicked ${args.selector}${note}`,
+            await takeReturnScreenshot()
+          );
         } catch (err) {
           // Make failures visible to the agent. A silent "clicked" when
           // nothing actually got clicked is a classic way to waste 40
           // turns.
           const reason = err instanceof Error ? err.message : String(err);
-          return {
-            text: `Error: ${reason}`,
-            ...await takeReturnScreenshot(),
-          };
+          return composeResult(
+            `Error: ${reason}`,
+            await takeReturnScreenshot()
+          );
         }
       }
       case "type": {

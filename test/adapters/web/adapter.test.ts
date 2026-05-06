@@ -1014,3 +1014,137 @@ describe("composeResult", () => {
     expect(result.text).toBe(`${text} (screenshot unavailable: boom)`);
   });
 });
+
+// PRI-1517: takeReturnScreenshot is wrapped in try/catch and uses a 5s
+// timeout cap. Tests use the chromeSession DI seam to inject failures
+// and verify the cap value flows through to chrome.screenshot opts.
+const RETURN_SCREENSHOT_TIMEOUT_MS = 5000;
+
+// 1x1 transparent PNG bytes — write to the file the fake screenshot
+// "returns" so logger.saveScreenshot can read a valid image.
+const ONE_PX_PNG = Buffer.from([
+  0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a,
+  0x00, 0x00, 0x00, 0x0d, 0x49, 0x48, 0x44, 0x52,
+  0x00, 0x00, 0x00, 0x01, 0x00, 0x00, 0x00, 0x01,
+  0x08, 0x06, 0x00, 0x00, 0x00, 0x1f, 0x15, 0xc4,
+  0x89, 0x00, 0x00, 0x00, 0x0a, 0x49, 0x44, 0x41,
+  0x54, 0x78, 0x9c, 0x63, 0x00, 0x01, 0x00, 0x00,
+  0x05, 0x00, 0x01, 0x0d, 0x0a, 0x2d, 0xb4, 0x00,
+  0x00, 0x00, 0x00, 0x49, 0x45, 0x4e, 0x44, 0xae,
+  0x42, 0x60, 0x82,
+]);
+
+describe("takeReturnScreenshot via WebAdapter (PRI-1517)", () => {
+  test("T2a: screenshot timeout returns truthful action text + skip note", async () => {
+    let screenshotTimeoutPassed: number | undefined;
+    const session: Record<string, unknown> = {
+      click: async () => ({ clicked: true }),
+      screenshot: async (
+        _tab: unknown,
+        _file: unknown,
+        _sel: unknown,
+        _full: unknown,
+        opts?: { timeoutMs?: number }
+      ) => {
+        screenshotTimeoutPassed = opts?.timeoutMs;
+        // Reject quickly — we're not testing the production cap timer
+        // (that's enforced by sendCdpCommand inside chrome-ws-lib).
+        // We're testing that a thrown error becomes a skip note rather
+        // than poisoning the action result. The load-bearing assertion
+        // is screenshotTimeoutPassed === 5000, which proves Task 3
+        // wired the cap value into the call site.
+        throw new Error("CDP command timeout: Page.captureScreenshot");
+      },
+    };
+
+    const outDir = mkdtempSync(join(tmpdir(), "gauntlet-pri1517-t2a-"));
+    try {
+      const logger = new EvidenceLogger(outDir);
+      const adapter = new WebAdapter({ chromeSession: session as never });
+
+      const t0 = Date.now();
+      const result = await adapter.executeTool(
+        "click",
+        { selector: "button", return_screenshot: true },
+        logger
+      );
+      const elapsed = Date.now() - t0;
+
+      // Load-bearing assertion: the production path passed the 5s cap.
+      // If Task 2's opts.timeoutMs threading silently breaks, this fails.
+      expect(screenshotTimeoutPassed).toBe(RETURN_SCREENSHOT_TIMEOUT_MS);
+      // Hard upper bound on wall-time. Catches the timeout-cap silently
+      // growing back to 30s (a rejection that took 30s would breach this).
+      expect(elapsed).toBeLessThan(5500);
+      // The action result decoupling — the action's primary text is
+      // preserved verbatim, and the skip note is appended.
+      expect(result.text).toBe(
+        "clicked button (screenshot unavailable: CDP command timeout: Page.captureScreenshot)"
+      );
+      expect(result.image).toBeUndefined();
+      expect(result.imagePath).toBeUndefined();
+    } finally {
+      rmSync(outDir, { recursive: true, force: true });
+    }
+  });
+
+  test("T1: screenshot success path returns image + imagePath; action text untouched", async () => {
+    const session: Record<string, unknown> = {
+      click: async () => ({ clicked: true }),
+      screenshot: async (_tab: unknown, file: string) => {
+        // Real chrome.screenshot writes the PNG to `file` then returns
+        // the absolute path. Fake mirrors that contract.
+        writeFileSync(file, ONE_PX_PNG);
+        return file;
+      },
+    };
+
+    const outDir = mkdtempSync(join(tmpdir(), "gauntlet-pri1517-t1ok-"));
+    try {
+      const logger = new EvidenceLogger(outDir);
+      const adapter = new WebAdapter({ chromeSession: session as never });
+
+      const result = await adapter.executeTool(
+        "click",
+        { selector: "button", return_screenshot: true },
+        logger
+      );
+
+      expect(result.text).toBe("clicked button");
+      expect(result.image).toBeDefined();
+      expect(result.image?.mediaType).toBe("image/png");
+      expect(result.imagePath).toBeDefined();
+    } finally {
+      rmSync(outDir, { recursive: true, force: true });
+    }
+  });
+
+  test("T1: return_screenshot:false → no screenshot attempted, no text suffix", async () => {
+    let screenshotCalled = false;
+    const session: Record<string, unknown> = {
+      click: async () => ({ clicked: true }),
+      screenshot: async () => {
+        screenshotCalled = true;
+        return "/tmp/x.png";
+      },
+    };
+
+    const outDir = mkdtempSync(join(tmpdir(), "gauntlet-pri1517-t1no-"));
+    try {
+      const logger = new EvidenceLogger(outDir);
+      const adapter = new WebAdapter({ chromeSession: session as never });
+
+      const result = await adapter.executeTool(
+        "click",
+        { selector: "button" },
+        logger
+      );
+
+      expect(result.text).toBe("clicked button");
+      expect(result.image).toBeUndefined();
+      expect(screenshotCalled).toBe(false);
+    } finally {
+      rmSync(outDir, { recursive: true, force: true });
+    }
+  });
+});
