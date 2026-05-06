@@ -1785,7 +1785,9 @@ async function waitForText(tabIndexOrWsUrl, text, timeout = 5000) {
   });
 }
 
-async function screenshot(tabIndexOrWsUrl, filename, selector = null, fullPage = false) {
+// PRI-1517: optional opts.timeoutMs threads to Page.captureScreenshot's
+// CDP timeout. Default behavior unchanged for callers that pass nothing.
+async function screenshot(tabIndexOrWsUrl, filename, selector = null, fullPage = false, opts = {}) {
   const wsUrl = await resolveWsUrl(tabIndexOrWsUrl);
 
   let clip = undefined;
@@ -1833,7 +1835,7 @@ async function screenshot(tabIndexOrWsUrl, filename, selector = null, fullPage =
     fromSurface: true,
     captureBeyondViewport: fullPage,
     clip
-  });
+  }, opts.timeoutMs);
 
   const fs = require('fs');
   const path = require('path');

@@ -105,6 +105,14 @@ Grep `chrome-ws-lib.js` for `GAUNTLET DIVERGENCE` to find these in-line.
    `test/adapters/web/chrome-ws-lib-isolation.test.ts` exercises this
    invariant. If it ever fails, we've reintroduced the PRI-1436 bug.
 
+7. **`screenshot()` accepts an optional 5th parameter `opts = {}`** (PRI-1517).
+   `opts.timeoutMs` threads through to the `Page.captureScreenshot`
+   `sendCdpCommand` call's timeout argument. When `undefined`, the
+   underlying `sendCdpCommand` 30s default applies — so all upstream
+   callers stay green. Marked with a `// PRI-1517` comment above the
+   function. Used by Gauntlet's adapter `takeReturnScreenshot` to cap
+   bundled-screenshot wall-time at 5s instead of 30s.
+
 ## Sync recipe
 
 1. **Clone upstream fresh:**
