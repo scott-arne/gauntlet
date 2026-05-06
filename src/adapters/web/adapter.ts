@@ -961,37 +961,37 @@ export class WebAdapter implements Adapter {
             await this.chrome.keyboardPress(tab, char);
           }
         }
-        return { text: "typed", ...await takeReturnScreenshot() };
+        return composeResult("typed", await takeReturnScreenshot());
       }
       case "press": {
         await this.chrome.keyboardPress(tab, args.key as string);
-        return { text: "pressed", ...await takeReturnScreenshot() };
+        return composeResult("pressed", await takeReturnScreenshot());
       }
       case "hover": {
         try {
           await this.chrome.hover(tab, args.selector as string);
-          return { text: `hovered ${args.selector}`, ...await takeReturnScreenshot() };
+          return composeResult(`hovered ${args.selector}`, await takeReturnScreenshot());
         } catch (err) {
           const reason = err instanceof Error ? err.message : String(err);
-          return { text: `Error: ${reason}`, ...await takeReturnScreenshot() };
+          return composeResult(`Error: ${reason}`, await takeReturnScreenshot());
         }
       }
       case "double_click": {
         try {
           await this.chrome.doubleClick(tab, args.selector as string);
-          return { text: `double-clicked ${args.selector}`, ...await takeReturnScreenshot() };
+          return composeResult(`double-clicked ${args.selector}`, await takeReturnScreenshot());
         } catch (err) {
           const reason = err instanceof Error ? err.message : String(err);
-          return { text: `Error: ${reason}`, ...await takeReturnScreenshot() };
+          return composeResult(`Error: ${reason}`, await takeReturnScreenshot());
         }
       }
       case "right_click": {
         try {
           await this.chrome.rightClick(tab, args.selector as string);
-          return { text: `right-clicked ${args.selector}`, ...await takeReturnScreenshot() };
+          return composeResult(`right-clicked ${args.selector}`, await takeReturnScreenshot());
         } catch (err) {
           const reason = err instanceof Error ? err.message : String(err);
-          return { text: `Error: ${reason}`, ...await takeReturnScreenshot() };
+          return composeResult(`Error: ${reason}`, await takeReturnScreenshot());
         }
       }
       case "drag": {
@@ -1014,15 +1014,15 @@ export class WebAdapter implements Adapter {
         }
         try {
           await this.chrome.drag(tab, sourceSelector, target);
-          return { text: `dragged ${sourceSelector}`, ...await takeReturnScreenshot() };
+          return composeResult(`dragged ${sourceSelector}`, await takeReturnScreenshot());
         } catch (err) {
           const reason = err instanceof Error ? err.message : String(err);
-          return { text: `Error: ${reason}`, ...await takeReturnScreenshot() };
+          return composeResult(`Error: ${reason}`, await takeReturnScreenshot());
         }
       }
       case "mouse_move": {
         await this.chrome.mouseMove(tab, args.x as number, args.y as number);
-        return { text: `moved mouse to (${args.x}, ${args.y})`, ...await takeReturnScreenshot() };
+        return composeResult(`moved mouse to (${args.x}, ${args.y})`, await takeReturnScreenshot());
       }
       case "scroll": {
         const direction = args.direction as "up" | "down" | "left" | "right";
@@ -1036,7 +1036,7 @@ export class WebAdapter implements Adapter {
           deltaY,
           selector: (args.selector as string) ?? undefined,
         });
-        return { text: `scrolled ${direction} ${amount}px`, ...await takeReturnScreenshot() };
+        return composeResult(`scrolled ${direction} ${amount}px`, await takeReturnScreenshot());
       }
       case "file_upload": {
         try {
@@ -1045,18 +1045,18 @@ export class WebAdapter implements Adapter {
             args.selector as string,
             args.file_paths as string[],
           );
-          return {
-            text: `uploaded ${result.files} file(s) to ${args.selector}`,
-            ...await takeReturnScreenshot(),
-          };
+          return composeResult(
+            `uploaded ${result.files} file(s) to ${args.selector}`,
+            await takeReturnScreenshot()
+          );
         } catch (err) {
           const reason = err instanceof Error ? err.message : String(err);
-          return { text: `Error: ${reason}`, ...await takeReturnScreenshot() };
+          return composeResult(`Error: ${reason}`, await takeReturnScreenshot());
         }
       }
       case "navigate": {
         await this.chrome.navigate(tab, args.url as string);
-        return { text: "navigated", ...await takeReturnScreenshot() };
+        return composeResult("navigated", await takeReturnScreenshot());
       }
       case "extract": {
         const selector = args.selector as string | undefined;
@@ -1075,17 +1075,17 @@ export class WebAdapter implements Adapter {
       case "eval": {
         const result = await this.chrome.evaluate(tab, args.expression as string);
         const text = result === undefined ? "undefined" : (typeof result === "string" ? result : JSON.stringify(result));
-        return { text, ...await takeReturnScreenshot() };
+        return composeResult(text, await takeReturnScreenshot());
       }
       case "wait_for": {
         const timeout = (args.timeout as number) ?? 5000;
         if (args.selector) {
           await this.chrome.waitForElement(tab, args.selector as string, timeout);
-          return { text: "element found", ...await takeReturnScreenshot() };
+          return composeResult("element found", await takeReturnScreenshot());
         }
         if (args.text) {
           await this.chrome.waitForText(tab, args.text as string, timeout);
-          return { text: "text found", ...await takeReturnScreenshot() };
+          return composeResult("text found", await takeReturnScreenshot());
         }
         return { text: "nothing to wait for — provide selector or text" };
       }
@@ -1130,27 +1130,10 @@ export class WebAdapter implements Adapter {
           // Recompute against the now-pushed tab so return_screenshot
           // captures the *new* tab, not the one we just left.
           const newActive = this.activeTab();
-          let shot: { image?: ToolResult["image"]; imagePath?: string } = {};
-          if (args.return_screenshot) {
-            const tmpFile = join(tmpdir(), `gauntlet-screenshot-${Date.now()}.png`);
-            try {
-              await this.chrome.screenshot(newActive, tmpFile, null, false);
-              const data = readFileSync(tmpFile);
-              const imagePath = logger.saveScreenshot(Buffer.from(data));
-              shot = {
-                image: { data: Buffer.from(data).toString("base64"), mediaType: "image/png" },
-                imagePath,
-              };
-              try { unlinkSync(tmpFile); } catch { /* best-effort */ }
-            } catch {
-              // Screenshot is supplementary — never let it mask the
-              // primary tool result.
-            }
-          }
-          return {
-            text: `opened tab (depth ${this.tabStack.length})`,
-            ...shot,
-          };
+          return composeResult(
+            `opened tab (depth ${this.tabStack.length})`,
+            await takeReturnScreenshot(newActive)
+          );
         } catch (err) {
           const reason = err instanceof Error ? err.message : String(err);
           return { text: `Error: ${reason}` };
@@ -1188,26 +1171,10 @@ export class WebAdapter implements Adapter {
         // Same fix as new_tab: return_screenshot must hit the *now-active*
         // tab (the one we popped back to), not the just-closed tab.
         const newActive = this.activeTab();
-        let shot: { image?: ToolResult["image"]; imagePath?: string } = {};
-        if (args.return_screenshot) {
-          const tmpFile = join(tmpdir(), `gauntlet-screenshot-${Date.now()}.png`);
-          try {
-            await this.chrome.screenshot(newActive, tmpFile, null, false);
-            const data = readFileSync(tmpFile);
-            const imagePath = logger.saveScreenshot(Buffer.from(data));
-            shot = {
-              image: { data: Buffer.from(data).toString("base64"), mediaType: "image/png" },
-              imagePath,
-            };
-            try { unlinkSync(tmpFile); } catch { /* best-effort */ }
-          } catch {
-            // Supplementary — agent already learned focus changed.
-          }
-        }
-        return {
-          text: `closed tab (depth ${this.tabStack.length})${closeWarning}`,
-          ...shot,
-        };
+        return composeResult(
+          `closed tab (depth ${this.tabStack.length})${closeWarning}`,
+          await takeReturnScreenshot(newActive)
+        );
       }
       default:
         throw new Error(`Unknown tool: ${name}`);
