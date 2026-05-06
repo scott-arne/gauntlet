@@ -1785,8 +1785,9 @@ async function waitForText(tabIndexOrWsUrl, text, timeout = 5000) {
   });
 }
 
-// PRI-1517: optional opts.timeoutMs threads to Page.captureScreenshot's
-// CDP timeout. Default behavior unchanged for callers that pass nothing.
+// GAUNTLET DIVERGENCE (PRI-1517): optional opts.timeoutMs threads to
+// Page.captureScreenshot's CDP timeout. Default behavior unchanged for
+// callers that pass nothing.
 async function screenshot(tabIndexOrWsUrl, filename, selector = null, fullPage = false, opts = {}) {
   const wsUrl = await resolveWsUrl(tabIndexOrWsUrl);
 
