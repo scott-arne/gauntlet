@@ -27,6 +27,25 @@ async function main() {
 
   switch (args.command) {
     case "run": {
+      if (args.showPromptAndExit) {
+        // Introspect path: render the composed system prompt with
+        // provenance and exit. Runs BEFORE loadConfigOrThrow /
+        // requireLlmCapableOrThrow so it works without API keys —
+        // resolving project root and viewport ourselves rather than
+        // through loadConfig (which would demand LLM creds).
+        const { showPromptAndExit } = await import("./cli/show-prompt");
+        const projectRoot = args.cli.projectRoot ?? process.env.GAUNTLET_PROJECT_ROOT ?? process.cwd();
+        const viewport = args.cli.viewport ?? "1440x900";
+        showPromptAndExit({
+          scenarioPath: args.scenarioPath,
+          target: args.cli.target ?? "",
+          adapter: args.adapter,
+          projectRoot,
+          projectPromptPath: args.projectPromptPath,
+          viewport,
+        });
+        break;
+      }
       const config = await loadConfigOrThrow(args.cli);
       await requireLlmCapableOrThrow(config);
       await run({

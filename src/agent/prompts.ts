@@ -8,15 +8,16 @@ export function getContextSectionTemplate(): string {
 }
 export const CONTEXT_SECTION_TEMPLATE = getContextSectionTemplate();
 
-export function buildSystemPrompt(
-  card: StoryCard,
-  contextTree?: string,
-  adapterName?: string,
-  projectPrompt?: string,
-): string {
-  const parts: string[] = [];
-
-  parts.push(loadPromptFile("persona"));
+/**
+ * Build the Scenario blocks (Story Card + Acceptance Criteria) for a card.
+ * Returned as an ordered array of strings where each entry is a `\n\n`-
+ * separable block, matching the joiner contract in `buildSystemPrompt`.
+ *
+ * Exported so the introspect renderer (`--show-prompt-and-exit`) emits
+ * the EXACT same Scenario text the agent sees, with no drift.
+ */
+export function buildScenarioBlocks(card: StoryCard): string[] {
+  const blocks: string[] = [];
 
   // Story Card block — header, identifying lines, and description are
   // one block (sub-lines joined by \n; the description is offset by a
@@ -24,7 +25,7 @@ export function buildSystemPrompt(
   const storyLines: string[] = [`## Story Card`, ``, `**ID:** ${card.id}`, `**Title:** ${card.title}`];
   if (card.stakeholder) storyLines.push(`**Stakeholder:** ${card.stakeholder}`);
   storyLines.push(``, card.description);
-  parts.push(storyLines.join("\n"));
+  blocks.push(storyLines.join("\n"));
 
   if (card.acceptanceCriteria.length > 0) {
     // Acceptance Criteria block — header, bullets (adjacent), then the
@@ -35,11 +36,28 @@ export function buildSystemPrompt(
       critLines.push(`- ${criterion}`);
     }
     critLines.push(``, `Evaluate each criterion based on what you observe. Use your judgment.`);
-    parts.push(critLines.join("\n"));
+    blocks.push(critLines.join("\n"));
   } else {
-    parts.push(
+    blocks.push(
       `This story has no explicit acceptance criteria. You should explore the application freely and report what you find. Judge whether the story's intent is satisfied.`
     );
+  }
+
+  return blocks;
+}
+
+export function buildSystemPrompt(
+  card: StoryCard,
+  contextTree?: string,
+  adapterName?: string,
+  projectPrompt?: string,
+): string {
+  const parts: string[] = [];
+
+  parts.push(loadPromptFile("persona"));
+
+  for (const block of buildScenarioBlocks(card)) {
+    parts.push(block);
   }
 
   parts.push(loadPromptFile("evaluation"));
