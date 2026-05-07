@@ -36,23 +36,22 @@ export function buildSystemPrompt(
     );
   }
 
-  parts.push(`\n## Reporting
+  parts.push(loadPromptFile("evaluation"));
 
-When you are done testing, call the \`report_result\` tool with your findings.
-
-Your verdict should be:
-- **pass** — the story's intent is satisfied, acceptance criteria met
-- **fail** — something is clearly broken or criteria are not met
-- **investigate** — you're unsure, something seems off but you can't confirm
-
-Include ALL observations, not just those related to the acceptance criteria.`);
-
-  // PRI-1439: web-only side-trip guidance. Other adapters (cli, tui)
-  // don't have new_tab/close_tab and should not be told to use them.
+  // PRI-1439: per-adapter overlay (e.g. web side-trip guidance). Other
+  // first-party adapters (cli, tui) have empty .md files. Unknown adapter
+  // names (e.g. test fakes) have no overlay file and contribute nothing —
+  // matches the pre-extraction behavior where only "web" was special-cased.
   if (adapterName) {
-    const adapterPrompt = loadPromptFile(`adapter-${adapterName}`);
-    if (adapterPrompt.length > 0) {
-      parts.push(adapterPrompt);
+    try {
+      const adapterPrompt = loadPromptFile(`adapter-${adapterName}`);
+      if (adapterPrompt.length > 0) {
+        parts.push(adapterPrompt);
+      }
+    } catch (err) {
+      if (!(err instanceof Error) || !err.message.startsWith("Required prompt file not found:")) {
+        throw err;
+      }
     }
   }
 
