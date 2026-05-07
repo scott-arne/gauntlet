@@ -426,6 +426,8 @@ Commands:
     --silent             Suppress the streaming transcript (default: stream)
     --format <mode>      Stream format: pretty | jsonl (default: auto by TTY)
     --no-color           Disable ANSI color (also respects NO_COLOR env var)
+    --project-prompt <path> Caller-supplied augmentation prompt (overrides .gauntlet/project.md)
+    --show-prompt-and-exit  Print the composed system prompt with provenance and exit (no Chrome, no LLM call)
 
   batch <story.md> [more.md ...]  Run multiple cards serially
     --target <url>       (required) Application under test
