@@ -55,6 +55,11 @@ export interface AgentOptions {
   projectPrompt?: string;
 }
 
+// Property order matters here. Models emit object properties in schema
+// order, and we want `observations` to appear *before* `reasoning` so the
+// array shape is established before the model is deep in a long quoted
+// reasoning blob. (See PRI-1528: observations was being string-wrapped
+// after the model accumulated escape-heavy reasoning output.)
 const REPORT_TOOL: ToolDefinition = {
   name: "report_result",
   description:
@@ -71,13 +76,10 @@ const REPORT_TOOL: ToolDefinition = {
         type: "string",
         description: "Brief summary of what happened",
       },
-      reasoning: {
-        type: "string",
-        description: "Why you reached this verdict",
-      },
       observations: {
         type: "array",
-        description: "Any observations, bugs, suggestions, etc.",
+        description:
+          "Array of structured observations. Pass as an array literal, not a JSON string. Use an empty array if you have nothing to report. Example: [{\"kind\": \"bug\", \"description\": \"login button does nothing on second click\"}]",
         items: {
           type: "object",
           properties: {
@@ -97,8 +99,12 @@ const REPORT_TOOL: ToolDefinition = {
           required: ["kind", "description"],
         },
       },
+      reasoning: {
+        type: "string",
+        description: "Why you reached this verdict",
+      },
     },
-    required: ["status", "summary", "reasoning"],
+    required: ["status", "summary", "observations", "reasoning"],
   },
 };
 
