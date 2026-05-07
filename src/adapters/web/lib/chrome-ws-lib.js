@@ -762,6 +762,7 @@ async function click(tabIndexOrWsUrl, selector) {
     expression: findJs,
     returnByValue: true,
   });
+  throwIfExceptionDetails(findResult);
 
   const value = findResult && findResult.result && findResult.result.value;
   if (!value || !value.found) {
@@ -776,7 +777,8 @@ async function click(tabIndexOrWsUrl, selector) {
     // Element exists but has no layout box (display:none, hidden, detached).
     // Fall back to el.click() — the native click handler may still fire.
     const clickJs = `${getElementSelector(selector)}?.click()`;
-    await sendCdpCommand(wsUrl, 'Runtime.evaluate', { expression: clickJs });
+    const fallbackResult = await sendCdpCommand(wsUrl, 'Runtime.evaluate', { expression: clickJs });
+    throwIfExceptionDetails(fallbackResult);
     return { clicked: true, fallback: 'zero-size' };
   }
 
@@ -794,7 +796,8 @@ async function click(tabIndexOrWsUrl, selector) {
     // Mouse events themselves failed (rare — Input domain unreachable etc.).
     // Fall back to el.click() but report we did so.
     const clickJs = `${getElementSelector(selector)}?.click()`;
-    await sendCdpCommand(wsUrl, 'Runtime.evaluate', { expression: clickJs });
+    const fallbackResult = await sendCdpCommand(wsUrl, 'Runtime.evaluate', { expression: clickJs });
+    throwIfExceptionDetails(fallbackResult);
     return { clicked: true, fallback: 'mouse-event-error' };
   }
 }
@@ -831,6 +834,7 @@ async function hover(tabIndexOrWsUrl, selector) {
     expression: js,
     returnByValue: true
   });
+  throwIfExceptionDetails(result);
 
   if (!result.result.value || !result.result.value.found) {
     throw new Error(`Element not found: ${selector}`);
@@ -885,6 +889,7 @@ async function drag(tabIndexOrWsUrl, sourceSelector, target, options = {}) {
     expression: sourceJs,
     returnByValue: true
   });
+  throwIfExceptionDetails(sourceResult);
 
   if (!sourceResult.result.value || !sourceResult.result.value.found) {
     throw new Error(`Source element not found: ${sourceSelector}`);
@@ -915,6 +920,7 @@ async function drag(tabIndexOrWsUrl, sourceSelector, target, options = {}) {
       expression: targetJs,
       returnByValue: true
     });
+    throwIfExceptionDetails(targetResult);
 
     if (!targetResult.result.value || !targetResult.result.value.found) {
       throw new Error(`Target element not found: ${target}`);
@@ -1039,6 +1045,7 @@ async function scroll(tabIndexOrWsUrl, options = {}) {
       expression: js,
       returnByValue: true
     });
+    throwIfExceptionDetails(result);
     if (result.result.value && result.result.value.found) {
       x = result.result.value.x;
       y = result.result.value.y;
@@ -1085,6 +1092,7 @@ async function doubleClick(tabIndexOrWsUrl, selector) {
     expression: js,
     returnByValue: true
   });
+  throwIfExceptionDetails(result);
 
   if (!result.result.value || !result.result.value.found) {
     throw new Error(`Element not found: ${selector}`);
@@ -1140,6 +1148,7 @@ async function rightClick(tabIndexOrWsUrl, selector) {
     expression: js,
     returnByValue: true
   });
+  throwIfExceptionDetails(result);
 
   if (!result.result.value || !result.result.value.found) {
     throw new Error(`Element not found: ${selector}`);
@@ -1540,6 +1549,7 @@ async function selectOption(tabIndexOrWsUrl, selector, value, index = 0) {
     expression: countJs,
     returnByValue: true
   });
+  throwIfExceptionDetails(countResult);
   const matchCount = countResult.result.value || 0;
 
   let warning = null;
@@ -1589,6 +1599,7 @@ async function selectOption(tabIndexOrWsUrl, selector, value, index = 0) {
     expression: js,
     returnByValue: true
   });
+  throwIfExceptionDetails(result);
 
   const resultValue = result.result.value;
   if (!resultValue.success) {
@@ -1731,6 +1742,7 @@ async function spaNavigate(tabIndexOrWsUrl, path, options = {}) {
     expression: js,
     returnByValue: true
   });
+  throwIfExceptionDetails(result);
 
   return result.result.value;
 }
@@ -1752,6 +1764,7 @@ async function hrefNavigate(tabIndexOrWsUrl, url) {
     expression: js,
     returnByValue: true
   });
+  throwIfExceptionDetails(result);
 
   return result.result.value;
 }
@@ -1763,6 +1776,7 @@ async function extractText(tabIndexOrWsUrl, selector) {
     expression: js,
     returnByValue: true
   });
+  throwIfExceptionDetails(result);
   return result.result.value;
 }
 
@@ -1775,6 +1789,7 @@ async function getHtml(tabIndexOrWsUrl, selector = null) {
     expression: js,
     returnByValue: true
   });
+  throwIfExceptionDetails(result);
   return result.result.value;
 }
 
@@ -1785,6 +1800,7 @@ async function getAttribute(tabIndexOrWsUrl, selector, attrName) {
     expression: js,
     returnByValue: true
   });
+  throwIfExceptionDetails(result);
   return result.result.value;
 }
 
@@ -1865,6 +1881,7 @@ async function screenshot(tabIndexOrWsUrl, filename, selector = null, fullPage =
       expression: js,
       returnByValue: true
     });
+    throwIfExceptionDetails(result);
     clip = result.result.value;
   } else {
     // Viewport capture: explicitly clip to CSS pixel dimensions.
@@ -1874,6 +1891,7 @@ async function screenshot(tabIndexOrWsUrl, filename, selector = null, fullPage =
       expression: '({ width: window.innerWidth, height: window.innerHeight })',
       returnByValue: true
     });
+    throwIfExceptionDetails(vpResult);
     const { width, height } = vpResult.result.value;
     clip = { x: 0, y: 0, width, height, scale: 1 };
   }
@@ -2607,6 +2625,7 @@ async function generateDomSummary(tabIndexOrWsUrl) {
     expression: js,
     returnByValue: true
   });
+  throwIfExceptionDetails(result);
   return result.result.value;
 }
 
@@ -2624,6 +2643,7 @@ async function getPageSize(tabIndexOrWsUrl) {
     expression: js,
     returnByValue: true
   });
+  throwIfExceptionDetails(result);
   return result.result.value;
 }
 
@@ -2720,6 +2740,7 @@ async function generateMarkdown(tabIndexOrWsUrl) {
     expression: js,
     returnByValue: true
   });
+  throwIfExceptionDetails(result);
   return result.result.value;
 }
 
@@ -2847,6 +2868,7 @@ async function captureActionWithDiff(tabIndexOrWsUrl, actionType, actionFn, sett
       `,
       returnByValue: true
     });
+    throwIfExceptionDetails(result);
     return result.result?.value;
   }
 
@@ -2870,9 +2892,10 @@ async function captureActionWithDiff(tabIndexOrWsUrl, actionType, actionFn, sett
       })()`;
     }
     if (selector) {
-      await sendCdpCommand(wsUrl, 'Runtime.evaluate', {
+      const restoreResult = await sendCdpCommand(wsUrl, 'Runtime.evaluate', {
         expression: `(() => { const el = ${selector}; if (el) el.focus(); })()`
       });
+      throwIfExceptionDetails(restoreResult);
     }
   }
 
@@ -3087,10 +3110,7 @@ async function getViewport(tabIndexOrWsUrl) {
     })`,
     returnByValue: true
   });
-
-  if (result.exceptionDetails) {
-    throw new Error(`getViewport failed: ${result.exceptionDetails.text}`);
-  }
+  throwIfExceptionDetails(result);
   return result.result?.value || {};
 }
 
