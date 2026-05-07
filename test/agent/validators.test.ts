@@ -106,6 +106,39 @@ describe("parseReportResult", () => {
     if (!result.ok) expect(result.reason).toContain("observations");
   });
 
+  test("recovers observations passed as a JSON-encoded string", () => {
+    // Sonnet 4.6 has been observed to double-encode observations. The data
+    // is valid — we should accept it rather than discard a whole run.
+    const result = parseReportResult({
+      status: "pass",
+      summary: "x",
+      reasoning: "y",
+      observations: JSON.stringify([
+        { kind: "ux", description: "tight margins" },
+        { kind: "bug", description: "off-by-one in pagination" },
+      ]),
+    });
+    expect(result.ok).toBe(true);
+    if (result.ok) {
+      expect(result.value.observations).toHaveLength(2);
+      expect(result.value.observations[0]).toEqual({
+        kind: "ux",
+        description: "tight margins",
+      });
+    }
+  });
+
+  test("rejects a JSON string that decodes to a non-array", () => {
+    const result = parseReportResult({
+      status: "pass",
+      summary: "x",
+      reasoning: "y",
+      observations: JSON.stringify({ kind: "ux", description: "x" }),
+    });
+    expect(result.ok).toBe(false);
+    if (!result.ok) expect(result.reason).toContain("observations");
+  });
+
   test("rejects observation with bad kind", () => {
     const result = parseReportResult({
       status: "pass",

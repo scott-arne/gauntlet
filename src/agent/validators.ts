@@ -65,14 +65,28 @@ export function parseReportResult(args: unknown): ParseResult<{
 
   const observations: Observation[] = [];
   if (args.observations !== undefined && args.observations !== null) {
-    if (!Array.isArray(args.observations)) {
+    // Some models (observed on Sonnet 4.6) sometimes hand us the array
+    // already stringified — `observations: "[{...}, {...}]"`. The data is
+    // valid, just one level too encoded. Try a single JSON.parse before
+    // failing; if it doesn't decode to an array we fall through to the
+    // existing error.
+    let observationsValue: unknown = args.observations;
+    if (typeof observationsValue === "string") {
+      try {
+        const decoded = JSON.parse(observationsValue);
+        if (Array.isArray(decoded)) observationsValue = decoded;
+      } catch {
+        // not JSON; fall through to the type error below
+      }
+    }
+    if (!Array.isArray(observationsValue)) {
       return {
         ok: false,
-        reason: `observations: expected array, got ${typeName(args.observations)}`,
+        reason: `observations: expected array, got ${typeName(observationsValue)}`,
       };
     }
-    for (let i = 0; i < args.observations.length; i++) {
-      const obs = args.observations[i];
+    for (let i = 0; i < observationsValue.length; i++) {
+      const obs = observationsValue[i];
       if (!isRecord(obs)) {
         return { ok: false, reason: `observations[${i}]: expected object, got ${typeName(obs)}` };
       }
