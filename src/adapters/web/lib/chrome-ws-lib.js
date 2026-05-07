@@ -2228,7 +2228,29 @@ async function startChrome(headless = null, profileName = null, port = null) {
 }
 
 async function killChrome() {
-  if (!chromeProcess) {
+  // Determine which PID to kill.
+  // - If we launched Chrome ourselves, use chromeProcess.pid.
+  // - If we reconnected to a Chrome started by a previous session
+  //   (chromeProcess === null but activePort is alive), look up the
+  //   PID holding that port via findPidOnPort. Without this fallback,
+  //   showBrowser/hideBrowser on a reconnected session left the old
+  //   Chrome running and the new launch failed with 'did not become
+  //   ready on port X'. Hand-ported from upstream 4eb566d.
+  let pidToKill = null;
+  if (chromeProcess && chromeProcess.pid) {
+    pidToKill = chromeProcess.pid;
+  } else if (activePort) {
+    pidToKill = findPidOnPort(activePort);
+  }
+
+  if (pidToKill === null) {
+    // Nothing to kill. Still clear meta.json so other sessions don't
+    // think there's a Chrome here, and reset the user-data-dir cache
+    // (PRI-1280) so the next startChrome recomputes it.
+    clearProfileMeta(chromeProfileName);
+    chromeProcess = null;
+    activePort = hostOverride.getPort();
+    chromeUserDataDir = null;
     return;
   }
 
@@ -2241,14 +2263,11 @@ async function killChrome() {
       // Ignore errors, Chrome might already be dead
     }
 
-    // Force kill if still running
-    if (chromeProcess && chromeProcess.pid) {
-      try {
-        process.kill(chromeProcess.pid, 'SIGTERM');
-        await new Promise(resolve => setTimeout(resolve, 500));
-      } catch (e) {
-        // Process might already be dead
-      }
+    try {
+      process.kill(pidToKill, 'SIGTERM');
+      await new Promise(resolve => setTimeout(resolve, 500));
+    } catch (e) {
+      // Process might already be dead
     }
   } catch (e) {
     console.error(`Error killing Chrome: ${e.message}`);
@@ -2564,6 +2583,44 @@ async function isPortAlive(host, port, expectedPid = null) {
   } catch {
     return false;
   }
+}
+
+// Find the PID of the process holding `port`, or null if none.
+// Uses platform-native tools — `lsof -ti:PORT -sTCP:LISTEN` on
+// macOS/Linux (the LISTEN filter is load-bearing: without it lsof
+// returns every process with an open connection to that port,
+// including the caller itself), `netstat | findstr` on Windows.
+// Returns null on any failure (no listener, missing tool, parse error).
+//
+// Hand-ported from upstream 8a130e8 + 4eb566d.
+function findPidOnPort(port) {
+  const { execSync } = require('child_process');
+  try {
+    if (process.platform === 'darwin' || process.platform === 'linux') {
+      const out = execSync(`lsof -ti:${port} -sTCP:LISTEN`, {
+        encoding: 'utf8',
+        stdio: ['ignore', 'pipe', 'ignore']
+      }).trim();
+      if (!out) return null;
+      const first = out.split('\n')[0];
+      const pid = parseInt(first, 10);
+      return Number.isFinite(pid) ? pid : null;
+    }
+    if (process.platform === 'win32') {
+      const out = execSync(`netstat -ano | findstr :${port}`, {
+        encoding: 'utf8',
+        stdio: ['ignore', 'pipe', 'ignore']
+      });
+      const lines = out.split(/\r?\n/).filter(l => /LISTENING/i.test(l));
+      if (!lines.length) return null;
+      const cols = lines[0].trim().split(/\s+/);
+      const pid = parseInt(cols[cols.length - 1], 10);
+      return Number.isFinite(pid) ? pid : null;
+    }
+  } catch (_e) {
+    return null;
+  }
+  return null;
 }
 
 function getActivePort() {
