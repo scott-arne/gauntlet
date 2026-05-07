@@ -1,3 +1,4 @@
+import { existsSync, readFileSync } from "fs";
 import { join } from "path";
 import { CLIAdapter } from "../adapters/cli/adapter";
 import { snapshotViewport, type Adapter } from "../adapters/adapter";
@@ -16,6 +17,28 @@ import type { RunConfigSnapshot, VetResult } from "../types";
 import type { RunSetCtx } from "./run-set-types";
 
 export type RunAdapterType = "web" | "cli" | "tui";
+
+/**
+ * Resolve the Project prompt block. Explicit path wins; otherwise look
+ * for .gauntlet/project.md in the project root; otherwise undefined.
+ * Missing explicit path is a hard error (the caller asked for it).
+ */
+export function resolveProjectPrompt(
+  projectRoot: string,
+  explicitPath: string | undefined,
+): string | undefined {
+  if (explicitPath) {
+    if (!existsSync(explicitPath)) {
+      throw new Error(`--project-prompt file not found: ${explicitPath}`);
+    }
+    return readFileSync(explicitPath, "utf-8").replace(/\s+$/, "");
+  }
+  const defaultPath = join(projectRoot, ".gauntlet", "project.md");
+  if (existsSync(defaultPath)) {
+    return readFileSync(defaultPath, "utf-8").replace(/\s+$/, "");
+  }
+  return undefined;
+}
 
 export interface RunCoreConfig {
   projectRoot: string;
@@ -76,6 +99,10 @@ export interface ExecuteRunCoreOptions {
    * `mock.module`-ing adapter modules globally. Mirrors the
    * `clientFactory?` pattern from PRI-1505. */
   adapterFactory?: (ctx: AdapterFactoryCtx) => Adapter | Promise<Adapter>;
+  /** Optional explicit path to a Project prompt augmentation file. When
+   * unset, `resolveProjectPrompt` falls through to `.gauntlet/project.md`
+   * under `runConfig.projectRoot` (or no Project block if that's absent). */
+  projectPromptPath?: string;
 }
 
 export interface ExecuteRunCoreResult {
@@ -136,6 +163,7 @@ export async function executeRunCore(
 
   const contextRoot = join(outDir, "inputs", "context");
   const contextTree = renderContextTree(contextRoot);
+  const projectPrompt = resolveProjectPrompt(runConfig.projectRoot, opts.projectPromptPath);
 
   const adapter = await (opts.adapterFactory
     ? opts.adapterFactory({ contextRoot, runId, logger })
@@ -164,6 +192,7 @@ export async function executeRunCore(
 
     const result = await runAgent(card, adapter, client, logger, runConfig.target, {
       contextTree,
+      projectPrompt,
       runId,
       maxTurns: runConfig.turns,
       provider: resolveProvider(runConfig.model),
