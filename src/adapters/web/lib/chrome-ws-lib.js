@@ -849,9 +849,6 @@ async function click(tabIndexOrWsUrl, selector) {
   }
 }
 
-// Legacy alias for backwards compatibility
-const cdpClick = click;
-
 // =============================================================================
 // HOVER FUNCTION - CDP mouse move to element
 // =============================================================================
@@ -1509,9 +1506,6 @@ async function fill(tabIndexOrWsUrl, selector, value) {
   return { typed: true, value, chars: result.chars };
 }
 
-// Legacy alias
-const insertText = fill;
-
 /**
  * Press a special key using CDP Input.dispatchKeyEvent (JRV-127, JRV-125)
  * Supports: Tab, Enter, Escape, Arrow keys, F1-F12, etc.
@@ -1553,26 +1547,6 @@ async function keyboardPress(tabIndexOrWsUrl, keyName, modifiers = {}) {
   });
 
   return { pressed: keyName, modifiers };
-}
-
-/**
- * Type text character by character using CDP (for complex input scenarios)
- */
-async function keyboardType(tabIndexOrWsUrl, text) {
-  const wsUrl = await resolveWsUrl(tabIndexOrWsUrl);
-
-  for (const char of text) {
-    if (char === '\n') {
-      await keyboardPress(tabIndexOrWsUrl, 'Enter');
-    } else if (char === '\t') {
-      await keyboardPress(tabIndexOrWsUrl, 'Tab');
-    } else {
-      // Regular character - use insertText
-      await sendCdpCommand(wsUrl, 'Input.insertText', { text: char });
-    }
-  }
-
-  return { typed: text };
 }
 
 // =============================================================================
@@ -1750,70 +1724,6 @@ async function evaluateRaw(tabIndexOrWsUrl, expression) {
   });
   throwIfExceptionDetails(result);
   return result.result;
-}
-
-// =============================================================================
-// NAVIGATION FUNCTIONS (JRV-128: SPA navigation support)
-// =============================================================================
-
-/**
- * SPA-compatible navigation using history.pushState (JRV-128)
- * Doesn't reload the page, works with client-side routers
- */
-async function spaNavigate(tabIndexOrWsUrl, path, options = {}) {
-  const wsUrl = await resolveWsUrl(tabIndexOrWsUrl);
-
-  const { state = {}, title = '', dispatchPopstate = true } = options;
-
-  const js = `
-    (() => {
-      const path = ${JSON.stringify(path)};
-      const state = ${JSON.stringify(state)};
-      const title = ${JSON.stringify(title)};
-
-      // Use pushState for SPA navigation
-      history.pushState(state, title, path);
-
-      // Dispatch popstate event so React Router / Vue Router / etc. picks it up
-      ${dispatchPopstate ? `window.dispatchEvent(new PopStateEvent('popstate', { state }));` : ''}
-
-      return {
-        success: true,
-        path,
-        href: window.location.href
-      };
-    })()
-  `;
-
-  const result = await sendCdpCommand(wsUrl, 'Runtime.evaluate', {
-    expression: js,
-    returnByValue: true
-  });
-  throwIfExceptionDetails(result);
-
-  return result.result.value;
-}
-
-/**
- * Navigate using location.href (triggers page reload)
- */
-async function hrefNavigate(tabIndexOrWsUrl, url) {
-  const wsUrl = await resolveWsUrl(tabIndexOrWsUrl);
-
-  const js = `
-    (() => {
-      window.location.href = ${JSON.stringify(url)};
-      return { navigating: true, url: ${JSON.stringify(url)} };
-    })()
-  `;
-
-  const result = await sendCdpCommand(wsUrl, 'Runtime.evaluate', {
-    expression: js,
-    returnByValue: true
-  });
-  throwIfExceptionDetails(result);
-
-  return result.result.value;
 }
 
 async function extractText(tabIndexOrWsUrl, selector) {
@@ -3757,10 +3667,6 @@ return {
   sendCdpCommand,
   onCdpEvent,
   offCdpEvent,
-
-  // Legacy aliases (for backwards compatibility)
-  cdpClick: click,
-  insertText: fill,
 };
 }
 // ===== GAUNTLET DIVERGENCE END (createSession factory) =====
