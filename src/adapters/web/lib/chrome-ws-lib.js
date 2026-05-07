@@ -614,31 +614,54 @@ async function navigate(tabIndexOrWsUrl, url, autoCapture = false) {
   // Navigate and wait for page load on a single connection to avoid race conditions.
   // Page.enable must be sent before Page.navigate on the same connection so the
   // Page.loadEventFired event is received.
+  const NAVIGATE_TIMEOUT_MS = 30000;
+  const CONSOLE_LINGER_MS = 1000;
   const navigateId = 9997;
-  const result = await new Promise((resolve) => {
+  const result = await new Promise((resolve, reject) => {
     const ws = new WebSocketClient(wsUrl);
     let pageLoaded = false;
+    let settled = false; // guard against double-resolve from race between events
     let navigateResult = {};
+
+    function settle(action) {
+      if (settled) return;
+      settled = true;
+      try { ws.close(); } catch (_e) { /* ignore */ }
+      action();
+    }
+
+    // Listener WS errors / unexpected close → reject the navigate. Without
+    // this, a dropped WS mid-flight hangs until the hard-cap timeout.
+    ws.on('error', (err) => {
+      settle(() => reject(new Error(`navigate listener WebSocket error: ${err && err.message || err}`)));
+    });
+    ws.on('close', () => {
+      if (!pageLoaded) {
+        settle(() => reject(new Error('navigate listener WebSocket closed before Page.loadEventFired')));
+      }
+    });
 
     ws.on('message', (msg) => {
       const data = JSON.parse(msg);
 
       // Capture the Page.navigate response (contains frameId)
-      if (data.id === navigateId && data.result) {
-        navigateResult = data.result;
+      if (data.id === navigateId) {
+        if (data.error) {
+          settle(() => reject(new Error(`Page.navigate failed: ${data.error.message || JSON.stringify(data.error)}`)));
+          return;
+        }
+        if (data.result) {
+          navigateResult = data.result;
+        }
       }
 
       if (data.method === 'Page.loadEventFired' && !pageLoaded) {
         pageLoaded = true;
         // Keep connection alive a bit longer for console messages if auto-capture is on
         if (autoCapture) {
-          setTimeout(() => {
-            ws.close();
-            resolve(navigateResult);
-          }, 1000); // Wait 1 second for console messages
+          setTimeout(() => settle(() => resolve(navigateResult)), CONSOLE_LINGER_MS);
         } else {
-          ws.close();
-          resolve(navigateResult);
+          settle(() => resolve(navigateResult));
         }
       }
 
@@ -677,15 +700,15 @@ async function navigate(tabIndexOrWsUrl, url, autoCapture = false) {
         ws.send(JSON.stringify({ id: 9998, method: 'Runtime.enable', params: {} }));
       }
       ws.send(JSON.stringify({ id: navigateId, method: 'Page.navigate', params: { url } }));
-    });
+    }).catch((err) => settle(() => reject(err)));
 
-    // Timeout after 30s
+    // Hard cap on the wait — slow servers, hung pages. Reject (don't
+    // silently resolve) so the caller knows the page never loaded.
     setTimeout(() => {
       if (!pageLoaded) {
-        ws.close();
-        resolve(navigateResult);
+        settle(() => reject(new Error(`navigate timeout: ${url} did not fire Page.loadEventFired within ${NAVIGATE_TIMEOUT_MS}ms`)));
       }
-    }, 30000);
+    }, NAVIGATE_TIMEOUT_MS);
   });
 
   // Auto-capture if requested
