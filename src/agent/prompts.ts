@@ -17,23 +17,27 @@ export function buildSystemPrompt(
 
   parts.push(loadPromptFile("persona"));
 
-  parts.push(`\n## Story Card\n`);
-  parts.push(`**ID:** ${card.id}`);
-  parts.push(`**Title:** ${card.title}`);
-  if (card.stakeholder) parts.push(`**Stakeholder:** ${card.stakeholder}`);
-  parts.push(`\n${card.description}`);
+  // Story Card block — header, identifying lines, and description are
+  // one block (sub-lines joined by \n; the description is offset by a
+  // blank line within the block).
+  const storyLines: string[] = [`## Story Card`, ``, `**ID:** ${card.id}`, `**Title:** ${card.title}`];
+  if (card.stakeholder) storyLines.push(`**Stakeholder:** ${card.stakeholder}`);
+  storyLines.push(``, card.description);
+  parts.push(storyLines.join("\n"));
 
   if (card.acceptanceCriteria.length > 0) {
-    parts.push(`\n## Acceptance Criteria`);
+    // Acceptance Criteria block — header, bullets (adjacent), then the
+    // "Evaluate..." closer offset by a blank line. Single block so the
+    // joiner doesn't insert blanks between bullets.
+    const critLines: string[] = [`## Acceptance Criteria`];
     for (const criterion of card.acceptanceCriteria) {
-      parts.push(`- ${criterion}`);
+      critLines.push(`- ${criterion}`);
     }
-    parts.push(
-      `\nEvaluate each criterion based on what you observe. Use your judgment.`
-    );
+    critLines.push(``, `Evaluate each criterion based on what you observe. Use your judgment.`);
+    parts.push(critLines.join("\n"));
   } else {
     parts.push(
-      `\nThis story has no explicit acceptance criteria. You should explore the application freely and report what you find. Judge whether the story's intent is satisfied.`
+      `This story has no explicit acceptance criteria. You should explore the application freely and report what you find. Judge whether the story's intent is satisfied.`
     );
   }
 
@@ -53,9 +57,9 @@ export function buildSystemPrompt(
   // Context section — last block, only when populated. Spec §4.4.
   if (contextTree && contextTree.length > 0) {
     parts.push(
-      "\n" + loadPromptFile("context").replace("{{TREE_LISTING}}", contextTree),
+      loadPromptFile("context").replace("{{TREE_LISTING}}", contextTree),
     );
   }
 
-  return parts.join("\n");
+  return parts.join("\n\n");
 }

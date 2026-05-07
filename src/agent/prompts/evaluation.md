@@ -1,4 +1,3 @@
-
 ## Reporting
 
 When you are done testing, call the `report_result` tool with your findings.
