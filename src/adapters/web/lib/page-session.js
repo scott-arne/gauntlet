@@ -1,4 +1,4 @@
-// PRI-1535: per-page CDP session over the browser-WS, attached via
+// Per-page CDP session over the browser-WS, attached via
 // Target.attachToTarget({flatten:true}).
 //
 // Each pageSession wraps:
@@ -7,10 +7,10 @@
 //   - a per-session message id counter (independent of other sessions)
 //   - pendingRequests + eventListeners (held in the cdp-router)
 //
-// pageSession.send is the only way page-action commands reach Chrome.
-// There is no fallback. If the browser-WS dies, the call rejects and the
-// run aborts — the deliberate contract that retires the per-page WS pool's
-// silent single-use fallback (PRI-1446).
+// pageSession.send is the only way page-action commands reach Chrome
+// through this transport. There is no fallback. If the browser-WS dies,
+// the call rejects and the caller decides what to do — the deliberate
+// contract that retires the per-page WS pool's silent single-use fallback.
 
 async function attachPageSession({ browser, router }, targetId) {
   const { sessionId } = await browser.send('Target.attachToTarget', {
@@ -34,9 +34,9 @@ async function attachPageSession({ browser, router }, targetId) {
       sess.pendingRequests.set(id, { resolve, reject, timeout });
       // Send via browser-session, with the sessionId envelope.
       // browser.send doesn't natively envelope by sessionId, so we use the
-      // _sendRaw escape hatch with a pre-built JSON payload.
+      // sendRaw escape hatch with a pre-built JSON payload.
       try {
-        browser._sendRaw(JSON.stringify({ id, method, params, sessionId }));
+        browser.sendRaw(JSON.stringify({ id, method, params, sessionId }));
       } catch (e) {
         clearTimeout(timeout);
         sess.pendingRequests.delete(id);
@@ -71,7 +71,7 @@ async function attachPageSession({ browser, router }, targetId) {
    * Enable a CDP domain for this page session, idempotently. Multiple
    * callers (navigation auto-capture + console-logging stream, e.g.) can
    * call enableDomain('Runtime') without coordination — it's a no-op if
-   * already enabled. Spec §5.1 promises this behavior.
+   * already enabled.
    */
   async function enableDomain(name) {
     if (enabledDomains.has(name)) return;

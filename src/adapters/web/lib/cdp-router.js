@@ -1,4 +1,4 @@
-// PRI-1535: sessionId-aware dispatcher for browser-WS messages.
+// sessionId-aware dispatcher for browser-WS messages.
 //
 // Routes incoming browser-WS messages by sessionId:
 //   - msg.sessionId set         → page session's pendingRequests / event listeners
@@ -8,11 +8,9 @@
 //                                 responses; the router does NOT also try to.
 //                                 (Avoids duplicate correlation paths.)
 //
-// Per-session message id counters are independent. The CDP framework SKILL's
-// transport-and-sessions.md confirms `{id:1, sessionId:"A"}` and
-// `{id:1, sessionId:"B"}` correlate independently on one WS — a future
-// maintainer "consolidating" id space across sessions would silently break
-// correlation.
+// Per-session message id counters are independent. {id:1, sessionId:"A"}
+// and {id:1, sessionId:"B"} correlate independently on one WS — collapsing
+// id space across sessions would silently break correlation.
 
 function createCdpRouter({ browser }) {
   // sessionId -> { pendingRequests: Map<id, {resolve, reject, timeout}>,

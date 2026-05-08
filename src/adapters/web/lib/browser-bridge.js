@@ -1,4 +1,4 @@
-// PRI-1535: Target.* events + BrowserContext create/dispose, plus the
+// Target.* events + BrowserContext create/dispose, plus the
 // cdp-router and page-session attach point — all the browser-WS bridge's
 // consumer-facing surface in one module.
 
@@ -14,11 +14,11 @@ const { attachPageSession } = require('./page-session');
  *   - targets.onDestroyed(handler)
  *   - targets.waitForNew(predicate, {timeoutMs})
  *   - createBrowserContext({proxyServer?})
- *   - attachPageSession(targetId) — page session over the browser-WS
+ *   - attachPageSession(targetId)    — page session over the browser-WS
  *
  * host/port/rewriteWsUrl are needed by createBrowserContext.createPage to
- * construct per-page WS URLs (used by WebAuthn's pinned-socket pattern,
- * the only remaining per-target-WS consumer).
+ * construct per-page WS URLs for callers that still want one (the bridge
+ * itself never uses them — page sessions ride the browser-WS).
  */
 async function attachBrowserBridge({ browser, host, port, rewriteWsUrl }) {
   const ctxHost = host;
@@ -28,8 +28,8 @@ async function attachBrowserBridge({ browser, host, port, rewriteWsUrl }) {
   // The cdp-router sits between browser-session and bridge consumers.
   // Page-session-tagged messages dispatch to the right session; root-session
   // events (Target.*, etc.) fire root listeners. Command responses without
-  // sessionId are correlated by browser-session.js's pendingRequests (single
-  // when the bridge owns all dispatch in a follow-up).
+  // sessionId stay correlated by browser-session.js's pendingRequests
+  // (single source of truth for root-session correlation).
   const router = createCdpRouter({ browser });
 
   const targetMap = new Map();    // targetId -> targetInfo
@@ -37,28 +37,28 @@ async function attachBrowserBridge({ browser, host, port, rewriteWsUrl }) {
   const onDestroyedFns = new Set();
 
   router.getRootListeners().add((msg) => {
-    if (msg.method === "Target.targetCreated") {
+    if (msg.method === 'Target.targetCreated') {
       const t = msg.params.targetInfo;
       targetMap.set(t.targetId, t);
       for (const fn of onCreatedFns) {
-        try { fn(t); } catch (e) { console.error("targets onCreated handler threw:", e); }
+        try { fn(t); } catch (e) { console.error('targets onCreated handler threw:', e); }
       }
-    } else if (msg.method === "Target.targetInfoChanged") {
+    } else if (msg.method === 'Target.targetInfoChanged') {
       const t = msg.params.targetInfo;
       targetMap.set(t.targetId, t);
-    } else if (msg.method === "Target.targetDestroyed") {
+    } else if (msg.method === 'Target.targetDestroyed') {
       const t = targetMap.get(msg.params.targetId);
       targetMap.delete(msg.params.targetId);
       if (t) {
         for (const fn of onDestroyedFns) {
-          try { fn(t); } catch (e) { console.error("targets onDestroyed handler threw:", e); }
+          try { fn(t); } catch (e) { console.error('targets onDestroyed handler threw:', e); }
         }
       }
     }
   });
 
   // Subscribe — replays existing targets as targetCreated events.
-  await browser.send("Target.setDiscoverTargets", { discover: true });
+  await browser.send('Target.setDiscoverTargets', { discover: true });
 
   function list() { return Array.from(targetMap.values()); }
   function onCreated(fn) { onCreatedFns.add(fn); return () => onCreatedFns.delete(fn); }
@@ -95,8 +95,7 @@ async function attachBrowserBridge({ browser, host, port, rewriteWsUrl }) {
    *
    * createPage(url) calls Target.createTarget({url, browserContextId}) and
    * constructs a tab-shape-compatible page handle whose webSocketDebuggerUrl
-   * is run through rewriteWsUrl, so per-page actions that haven't migrated
-   * to page sessions yet continue to use the existing WS pool unchanged.
+   * is run through rewriteWsUrl.
    *
    * dispose() is atomic — Chrome tears down cookies/storage/IDB/SW for the
    * context in one call.
@@ -104,13 +103,13 @@ async function attachBrowserBridge({ browser, host, port, rewriteWsUrl }) {
   async function createBrowserContext(opts = {}) {
     const params = {};
     if (opts.proxyServer) params.proxyServer = opts.proxyServer;
-    const { browserContextId } = await browser.send("Target.createBrowserContext", params);
+    const { browserContextId } = await browser.send('Target.createBrowserContext', params);
 
     let disposed = false;
 
-    async function createPage(url = "about:blank") {
-      if (disposed) throw new Error("BrowserContext disposed");
-      const { targetId } = await browser.send("Target.createTarget", {
+    async function createPage(url = 'about:blank') {
+      if (disposed) throw new Error('BrowserContext disposed');
+      const { targetId } = await browser.send('Target.createTarget', {
         url,
         browserContextId,
       });
@@ -121,7 +120,7 @@ async function attachBrowserBridge({ browser, host, port, rewriteWsUrl }) {
         id: targetId,
         targetId,
         webSocketDebuggerUrl,
-        type: "page",
+        type: 'page',
         url,
         browserContextId,
       };
@@ -131,10 +130,10 @@ async function attachBrowserBridge({ browser, host, port, rewriteWsUrl }) {
       if (disposed) return;
       disposed = true;
       try {
-        await browser.send("Target.disposeBrowserContext", { browserContextId });
+        await browser.send('Target.disposeBrowserContext', { browserContextId });
       } catch (e) {
         // best-effort: log but don't throw — dispose is meant to be safe.
-        console.warn("BrowserContext.dispose() failed:", e && e.message);
+        console.warn('BrowserContext.dispose() failed:', e && e.message);
       }
     }
 

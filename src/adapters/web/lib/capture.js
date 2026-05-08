@@ -41,9 +41,8 @@ function ensureProcessHandlersRegistered() {
  *   - WithCapture wrappers: thin adapters that pair an action with a
  *     post-action capturePageArtifacts.
  *
- * `attachCapture({ state, getPageSession, getHtml, screenshot,
- *                 actions: { click, fill, selectOption, evaluate } })`
- * returns the bound API.
+ * Helpers accept `tabIndexOrPageSession` and route through
+ * `pageSession.send`.
  */
 function attachCapture({ state, getPageSession, getHtml, screenshot, actions }) {
   function initializeSession() {
@@ -115,6 +114,9 @@ function attachCapture({ state, getPageSession, getHtml, screenshot, actions }) 
     return result.result.value;
   }
 
+  // Render the page to markdown for token-efficient consumption. Includes
+  // images >= 100x100 in a header summary; inlines image references >= 50x50
+  // with size info; skips smaller icons.
   async function generateMarkdown(tabIndexOrPageSession) {
     const ps = await getPageSession(tabIndexOrPageSession);
     const result = await ps.send('Runtime.evaluate', {
@@ -132,16 +134,11 @@ function attachCapture({ state, getPageSession, getHtml, screenshot, actions }) 
     const prefix = createCapturePrefix(actionType);
     const dir = initializeSession();
 
-    // Resolve once and pass the pageSession through to all helpers — saves
-    // N redundant getTabs round-trips when capture is called with a numeric
-    // index.
-    const ps = await getPageSession(tabIndexOrPageSession);
-
     const [html, markdown, pageSize, domSummary] = await Promise.all([
-      getHtml(ps),
-      generateMarkdown(ps),
-      getPageSize(ps),
-      generateDomSummary(ps),
+      getHtml(tabIndexOrPageSession),
+      generateMarkdown(tabIndexOrPageSession),
+      getPageSize(tabIndexOrPageSession),
+      generateDomSummary(tabIndexOrPageSession),
     ]);
 
     const htmlPath = path.join(dir, `${prefix}.html`);
@@ -153,7 +150,7 @@ function attachCapture({ state, getPageSession, getHtml, screenshot, actions }) 
     fs.writeFileSync(markdownPath, markdown || '');
     fs.writeFileSync(consoleLogPath, '# Console Log\n# TODO: Console logging not yet implemented\n');
 
-    await screenshot(ps, screenshotPath);
+    await screenshot(tabIndexOrPageSession, screenshotPath);
 
     return {
       capturePrefix: prefix,
@@ -162,10 +159,10 @@ function attachCapture({ state, getPageSession, getHtml, screenshot, actions }) 
         html: htmlPath,
         markdown: markdownPath,
         screenshot: screenshotPath,
-        consoleLog: consoleLogPath
+        consoleLog: consoleLogPath,
       },
       pageSize,
-      domSummary
+      domSummary,
     };
   }
 
@@ -201,7 +198,7 @@ function attachCapture({ state, getPageSession, getHtml, screenshot, actions }) 
             return { type: 'path', value: focusPath };
           })()
         `,
-        returnByValue: true
+        returnByValue: true,
       });
       throwIfExceptionDetails(result);
       return result.result?.value;
@@ -279,12 +276,12 @@ function attachCapture({ state, getPageSession, getHtml, screenshot, actions }) 
           diff: diffPath,
           markdown: markdownPath,
           beforeScreenshot: beforeScreenshotPath,
-          afterScreenshot: afterScreenshotPath
+          afterScreenshot: afterScreenshotPath,
         },
         pageSize,
         domSummary,
-        diffSummary: diff.split('\n').slice(0, 5).join('\n') + (diff.split('\n').length > 5 ? '\n...' : '')
-      }
+        diffSummary: diff.split('\n').slice(0, 5).join('\n') + (diff.split('\n').length > 5 ? '\n...' : ''),
+      },
     };
   }
 
@@ -292,9 +289,8 @@ function attachCapture({ state, getPageSession, getHtml, screenshot, actions }) 
   // The MCP server consumes these directly; the bare action variants stay
   // exported for callers (and tests) that don't want auto-capture.
   async function clickWithCapture(tabIndexOrPageSession, selector) {
-    const ps = await getPageSession(tabIndexOrPageSession);
-    await actions.click(ps, selector);
-    const artifacts = await capturePageArtifacts(ps, 'click');
+    await actions.click(tabIndexOrPageSession, selector);
+    const artifacts = await capturePageArtifacts(tabIndexOrPageSession, 'click');
     return {
       action: 'click',
       selector,
@@ -303,14 +299,13 @@ function attachCapture({ state, getPageSession, getHtml, screenshot, actions }) 
       sessionDir: artifacts.sessionDir,
       files: artifacts.files,
       domSummary: artifacts.domSummary,
-      consoleLog: [] // Placeholder
+      consoleLog: [], // Placeholder
     };
   }
 
   async function fillWithCapture(tabIndexOrPageSession, selector, value) {
-    const ps = await getPageSession(tabIndexOrPageSession);
-    await actions.fill(ps, selector, value);
-    const artifacts = await capturePageArtifacts(ps, 'type');
+    await actions.fill(tabIndexOrPageSession, selector, value);
+    const artifacts = await capturePageArtifacts(tabIndexOrPageSession, 'type');
     return {
       action: 'type',
       selector,
@@ -320,14 +315,13 @@ function attachCapture({ state, getPageSession, getHtml, screenshot, actions }) 
       sessionDir: artifacts.sessionDir,
       files: artifacts.files,
       domSummary: artifacts.domSummary,
-      consoleLog: [] // Placeholder
+      consoleLog: [], // Placeholder
     };
   }
 
   async function selectOptionWithCapture(tabIndexOrPageSession, selector, value) {
-    const ps = await getPageSession(tabIndexOrPageSession);
-    await actions.selectOption(ps, selector, value);
-    const artifacts = await capturePageArtifacts(ps, 'select');
+    await actions.selectOption(tabIndexOrPageSession, selector, value);
+    const artifacts = await capturePageArtifacts(tabIndexOrPageSession, 'select');
     return {
       action: 'select',
       selector,
@@ -337,14 +331,13 @@ function attachCapture({ state, getPageSession, getHtml, screenshot, actions }) 
       sessionDir: artifacts.sessionDir,
       files: artifacts.files,
       domSummary: artifacts.domSummary,
-      consoleLog: [] // Placeholder
+      consoleLog: [], // Placeholder
     };
   }
 
   async function evaluateWithCapture(tabIndexOrPageSession, expression) {
-    const ps = await getPageSession(tabIndexOrPageSession);
-    const result = await actions.evaluate(ps, expression);
-    const artifacts = await capturePageArtifacts(ps, 'eval');
+    const result = await actions.evaluate(tabIndexOrPageSession, expression);
+    const artifacts = await capturePageArtifacts(tabIndexOrPageSession, 'eval');
     return {
       action: 'eval',
       expression,
@@ -354,7 +347,7 @@ function attachCapture({ state, getPageSession, getHtml, screenshot, actions }) 
       sessionDir: artifacts.sessionDir,
       files: artifacts.files,
       domSummary: artifacts.domSummary,
-      consoleLog: [] // Placeholder
+      consoleLog: [], // Placeholder
     };
   }
 

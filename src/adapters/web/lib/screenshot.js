@@ -27,8 +27,8 @@ const MAX_IMAGE_DIMENSION_PX = 1800;
  * ImageMagick on Linux, no-op on Windows). Failures are silent — better
  * to have a big PNG than no PNG.
  *
- * `attachScreenshot({ getPageSession })` returns the bound
- * action.
+ * Helpers accept `tabIndexOrPageSession` and route through
+ * `pageSession.send`.
  */
 function attachScreenshot({ getPageSession }) {
   async function downscaleImageIfNeeded(filepath, maxDimension = MAX_IMAGE_DIMENSION_PX) {
@@ -71,10 +71,10 @@ function attachScreenshot({ getPageSession }) {
   }
 
   // GAUNTLET DIVERGENCE #6 (PRI-1517): optional opts.timeoutMs threads to
-  // Page.captureScreenshot's CDP timeout. Default behavior unchanged for
-  // callers that pass nothing (page-session's 30s default applies). Used by
-  // the adapter's takeReturnScreenshot to cap bundled-screenshot wall-time
-  // at 5s instead of 30s.
+  // the page-session send timeout for Page.captureScreenshot. Default
+  // behavior unchanged for callers that pass nothing (page-session's 30s
+  // default applies). Used by the adapter's takeReturnScreenshot to cap
+  // bundled-screenshot wall-time at 5s instead of 30s.
   async function screenshot(tabIndexOrPageSession, filename, selector = null, fullPage = false, opts = {}) {
     const ps = await getPageSession(tabIndexOrPageSession);
 
@@ -117,8 +117,7 @@ function attachScreenshot({ getPageSession }) {
 
     // GAUNTLET DIVERGENCE #6 (PRI-1517): opts.timeoutMs threads to the
     // page-session send timeout. Mitigation for the screenshot-during-nav
-    // wedge — kept because the wedge mechanism wasn't pinned down and the
-    // architectural fix is conditional on it being at the per-page-WS layer.
+    // wedge — kept because the wedge mechanism wasn't pinned down.
     const result = await ps.send('Page.captureScreenshot', {
       format: 'png',
       fromSurface: true,

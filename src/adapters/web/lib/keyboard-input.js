@@ -9,20 +9,23 @@ const { throwIfExceptionDetails } = require('./cdp-utils');
  *
  * The headless/headed split inside humanType is load-bearing: in headed
  * mode we send full keyDown/keyUp events so JS keyboard event handlers
- * fire, but in headless mode rawKeyDown triggers Chrome browser shortcuts
- * that navigate away from the page — so headless skips key events and
- * relies on `Input.insertText` plus per-character timing.
+ * fire (and bot-detection sees them), but in headless mode rawKeyDown
+ * triggers Chrome browser shortcuts that navigate away from the page —
+ * so headless skips key events and relies on `Input.insertText` plus
+ * per-character timing for whatever realism it can offer.
  *
  * Helpers accept `tabIndexOrPageSession` (the orchestrator's
  * `getPageSession` resolver handles all shapes) and route through
- * `pageSession.send`.
+ * `pageSession.send`. `click` is the mouse-side click — humanType uses
+ * it to focus a target before typing.
  */
 function attachKeyboardInput({ state, getPageSession, click }) {
   /**
    * Press a named key (Tab, Enter, F1-F12, arrows, etc.) with optional
    * modifiers. Sends both keyDown and keyUp; if the key has a `text`
    * field (Tab → '\t', Enter → '\r'), it's included on keyDown so the
-   * browser fires the matching `input`/`keypress` events.
+   * browser fires the matching `input`/`keypress` events that form
+   * submission depends on.
    */
   async function keyboardPress(tabIndexOrPageSession, keyName, modifiers = {}) {
     const ps = await getPageSession(tabIndexOrPageSession);
@@ -64,8 +67,12 @@ function attachKeyboardInput({ state, getPageSession, click }) {
    * Smart text input. If `selector` is supplied, focuses the element
    * (via JS focus to avoid mouse-click side effects). Then types the
    * value, treating \t as Tab, \n as Enter (unless current focus is a
-   * <textarea>). Buffers runs of plain characters into single insertText
-   * calls.
+   * <textarea>, in which case \n is inserted as a literal newline).
+   * Buffers runs of plain characters into single insertText calls.
+   *
+   * Special characters in `value`: \t = Tab, \n = Enter (or newline in textarea).
+   * Literal "\\t" / "\\n" in the input are also normalised — MCP payloads
+   * often arrive with the escapes un-evaluated.
    */
   async function fill(tabIndexOrPageSession, selector, value) {
     const ps = await getPageSession(tabIndexOrPageSession);
@@ -143,6 +150,15 @@ function attachKeyboardInput({ state, getPageSession, click }) {
 
   /**
    * Type text character-by-character with realistic per-keystroke timing.
+   * In headed mode, sends keyDown/keyUp around each insertText so JS
+   * keyboard events fire — important for bot-detection-resistant input.
+   * In headless mode, skips key events because rawKeyDown is interpreted
+   * as a browser shortcut and navigates away from the page; relies on
+   * insertText + per-character delay for whatever realism it can offer.
+   *
+   * @param {object} options
+   * @param {number} [options.delay=80] - Base delay between keystrokes (ms)
+   * @param {number} [options.jitter=80] - Random jitter range (ms) — total ~80–160ms/char
    */
   async function humanType(tabIndexOrPageSession, selector, text, options = {}) {
     const ps = await getPageSession(tabIndexOrPageSession);
@@ -157,6 +173,7 @@ function attachKeyboardInput({ state, getPageSession, click }) {
       const keyDef = charToKeyDef(char);
 
       if (keyDef.special) {
+        // \n / \t — delegate to keyboardPress for the named-key path.
         await keyboardPress(ps, keyDef.special);
       } else {
         const sendKeyEvents = !state.chromeHeadless;

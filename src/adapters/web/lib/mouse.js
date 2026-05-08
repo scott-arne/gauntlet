@@ -9,7 +9,9 @@ const DRAG_SETTLE_MS = 50;
  * CDP mouse actions — click, hover, drag, mouse-move, scroll, double-click,
  * right-click. Every entry resolves to real `Input.dispatchMouseEvent`
  * calls so React (and other framework) synthetic-event handlers see
- * genuine input.
+ * genuine input. JRV-124 and friends established this as the default click
+ * path; the older `el.click()` route survives only as a fallback for
+ * hidden-element edge cases inside `click`.
  *
  * Helpers accept `tabIndexOrPageSession` (the orchestrator's
  * `getPageSession` resolver handles all shapes) and route through
@@ -71,6 +73,10 @@ function attachMouse({ getPageSession }) {
     }
   }
 
+  /**
+   * Hover over an element using CDP mouseMoved.
+   * Triggers CSS :hover, mouseenter/mouseover events, tooltips, dropdown menus.
+   */
   async function hover(tabIndexOrPageSession, selector) {
     const ps = await getPageSession(tabIndexOrPageSession);
     const { x, y } = await resolveCenter(ps, selector);
@@ -82,6 +88,18 @@ function attachMouse({ getPageSession }) {
     return { hovered: true, x, y };
   }
 
+  /**
+   * Drag from source element to target element or coordinates.
+   * Uses Input.dispatchMouseEvent to trigger native drag-and-drop, bypassing
+   * the DataTransfer restriction on synthetic JS DragEvents.
+   *
+   * @param {number|string|object} tabIndexOrPageSession - Tab index, ws URL, or page session
+   * @param {string} sourceSelector - CSS/XPath selector for the drag source
+   * @param {string|{x:number,y:number}} target - Target selector string or {x,y} coordinates
+   * @param {object} options
+   * @param {number} [options.steps=8] - Intermediate mouseMoved steps (must exceed
+   *                                     the browser's ~4px drag-detection threshold)
+   */
   async function drag(tabIndexOrPageSession, sourceSelector, target, options = {}) {
     const ps = await getPageSession(tabIndexOrPageSession);
     const steps = options.steps || 8;
@@ -123,6 +141,11 @@ function attachMouse({ getPageSession }) {
     return { dragged: true, from: { x: src.x, y: src.y }, to: { x: dst.x, y: dst.y }, steps };
   }
 
+  /**
+   * Move mouse to specific coordinates with optional intermediate steps.
+   * Useful for: pre-click mouse patterns (bot detection), captcha puzzles,
+   * hover effects on coordinate-based targets.
+   */
   async function mouseMove(tabIndexOrPageSession, x, y, options = {}) {
     const ps = await getPageSession(tabIndexOrPageSession);
     const steps = options.steps || 1;
@@ -149,6 +172,10 @@ function attachMouse({ getPageSession }) {
     return { moved: true, x, y };
   }
 
+  /**
+   * Scroll using CDP mouse-wheel events.
+   * Simulates real wheel input — bot detectors flag JavaScript `scrollTo`.
+   */
   async function scroll(tabIndexOrPageSession, options = {}) {
     const ps = await getPageSession(tabIndexOrPageSession);
 
@@ -192,6 +219,10 @@ function attachMouse({ getPageSession }) {
     return { scrolled: true, x, y, deltaX: options.deltaX || 0, deltaY: options.deltaY || 0 };
   }
 
+  /**
+   * Double-click an element using CDP mouse events.
+   * Fires mousedown, mouseup, click, mousedown, mouseup, click, dblclick.
+   */
   async function doubleClick(tabIndexOrPageSession, selector) {
     const ps = await getPageSession(tabIndexOrPageSession);
     const { x, y } = await resolveCenter(ps, selector);
@@ -212,6 +243,10 @@ function attachMouse({ getPageSession }) {
     return { doubleClicked: true, x, y };
   }
 
+  /**
+   * Right-click an element using CDP mouse events.
+   * Fires mousedown (button 2), mouseup (button 2), contextmenu.
+   */
   async function rightClick(tabIndexOrPageSession, selector) {
     const ps = await getPageSession(tabIndexOrPageSession);
     const { x, y } = await resolveCenter(ps, selector);

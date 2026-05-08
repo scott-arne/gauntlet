@@ -1,23 +1,38 @@
-// PRI-1535: browser-level CDP WebSocket primitive.
-//
 // One CDP WebSocket per Chrome process, talking to /devtools/browser/<id>.
-// Independent of the per-page connection pool in lib/cdp-connection.js — opened
-// lazily on first send()/onEvent() call, closed in killChrome().
+//
+// This is the transport for Target.* events, BrowserContext create/dispose,
+// and every page session attached via Target.attachToTarget({flatten:true}).
+// Page-action commands ride the per-page sessions (lib/page-session.js),
+// which envelope into this socket via sendRaw and correlate responses
+// through the cdp-router.
+//
+// Lazy: connect happens on first send() / onEvent() call. Both local and
+// remote-Chrome callers exercise the same code path — for the remote case
+// startChrome() is skipped entirely, and lazy-connect on first bridge use is
+// what serves both.
 
 const { WebSocketClient } = require('./websocket-client');
 
 /**
  * createBrowserSession({host, port, rewriteWsUrl, chromeHttp}) -> bridge handle.
  *
- * Lazy: connect happens on first send() / onEvent() call. The browser-WS URL
- * is discovered via chromeHttp('/json/version').webSocketDebuggerUrl and piped
- * through rewriteWsUrl (same pattern getTabs/newTab use for per-page URLs).
+ * Discovers the WS URL via chromeHttp('/json/version').webSocketDebuggerUrl
+ * and pipes it through rewriteWsUrl (same pattern getTabs/newTab use for
+ * per-page URLs).
  *
  * Returned API:
- *   send(method, params?, {timeoutMs?})  -> Promise<result>
- *   onEvent(handler)                     -> unsub fn
- *   close()                              -> Promise<void>
- *   isConnected()                        -> boolean
+ *   send(method, params?, {timeoutMs?})   -> Promise<result>   // root-session command
+ *   onEvent(handler)                      -> unsub fn
+ *   close()                               -> Promise<void>
+ *   isConnected()                         -> boolean
+ *   sendRaw(json)                         -> void              // pre-built envelope
+ *
+ * `sendRaw` is the page-session escape hatch: page sessions need to send
+ * messages with a `sessionId` envelope, but `send()` builds its own
+ * envelope (and would clash on the id-counter). The page session pre-builds
+ * the JSON, manages its own id-counter via the cdp-router, and pushes it
+ * onto the WS through `sendRaw`. Caller is responsible for matching
+ * responses (the cdp-router does this).
  */
 function createBrowserSession({ host, port, rewriteWsUrl, chromeHttp }) {
   let ws = null;
@@ -129,14 +144,14 @@ function createBrowserSession({ host, port, rewriteWsUrl, chromeHttp }) {
   /**
    * Send a pre-formed JSON payload. Used by page-session.js to send messages
    * with a sessionId envelope without browser-session needing to know about
-   * sessionIds. The leading underscore signals "internal — page-session only."
+   * sessionIds. Caller is responsible for response correlation (the
+   * cdp-router does this for page sessions).
    *
-   * Caller must ensure the browser-WS is open (page-session reaches this
+   * Caller must ensure the browser-WS is open. Page sessions reach this
    * path only after `attachPageSession` has already issued
-   * `Target.attachToTarget` via the regular `send`, which lazy-opens the
-   * WS).
+   * `Target.attachToTarget` via the regular `send`, which lazy-opens the WS.
    */
-  function _sendRaw(json) {
+  function sendRaw(json) {
     if (closed) throw new Error('Browser session closed');
     if (!ws || !ws.isConnected()) {
       throw new Error('Browser WS not connected (call send() first to lazy-open)');
@@ -144,7 +159,7 @@ function createBrowserSession({ host, port, rewriteWsUrl, chromeHttp }) {
     ws.send(json);
   }
 
-  return { send, onEvent, close, isConnected, _sendRaw };
+  return { send, onEvent, close, isConnected, sendRaw };
 }
 
 module.exports = { createBrowserSession };

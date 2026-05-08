@@ -7,7 +7,10 @@ const { chromeHttpAt } = require('./chrome-launcher-helpers');
  *     `state.activePort` and the session's host-override.
  *   - `resolveWsUrl` — accept a tab index, a numeric string, or a `ws://`
  *     URL and return a usable WebSocket URL. Auto-creates a tab if none
- *     exist (mirrors the auto-start-Chrome behaviour).
+ *     exist (mirrors the auto-start-Chrome behaviour). Kept around for
+ *     compatibility with callers that still consume per-page WS URLs
+ *     (notably the orchestrator's getPageSession resolver, which uses
+ *     it to map ws-URL args back to tabs).
  *   - `getTabs` / `newTab` / `closeTab` — list, open, close.
  *
  * Returned tab handles carry a lazy `getPageSession()` thunk that
@@ -16,16 +19,17 @@ const { chromeHttpAt } = require('./chrome-launcher-helpers');
  * session.
  *
  * `attachTabs({ state })` returns the bound API plus a `setPageSessionAttacher`
- * setter the orchestrator wires after `_ensureBridge` is constructed
- * (avoids a circular dependency at construction time).
+ * setter the orchestrator wires after the bridge is constructed (avoids a
+ * circular dependency at construction time — tabs.js is created first, the
+ * bridge wants tab handles, the bridge later supplies the attacher).
  */
 function attachTabs({ state }) {
   const CHROME_DEBUG_HOST = state.hostOverride.getHost();
   const { rewriteWsUrl } = state;
 
-  // Per-targetId memoized page-session attaches. Keyed
-  // by targetId so two getPageSession() calls on the same tab share the
-  // same in-flight Promise (and the resolved session afterwards).
+  // Per-targetId memoized page-session attaches. Keyed by targetId so
+  // two getPageSession() calls on the same tab share the same in-flight
+  // Promise (and the resolved session afterwards).
   const pageSessionCache = new Map();
   let pageSessionAttacher = null;
 
@@ -63,7 +67,8 @@ function attachTabs({ state }) {
       }
       const pageTabs = tabs.filter(t => t.type === 'page');
 
-      // Auto-create tab if none exist.
+      // Auto-create tab if none exist (matches the auto-start-Chrome behaviour
+      // — callers shouldn't have to special-case "fresh Chrome with no tabs").
       if (pageTabs.length === 0) {
         const newTabInfo = await newTab();
         return newTabInfo.webSocketDebuggerUrl;

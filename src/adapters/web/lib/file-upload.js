@@ -1,6 +1,11 @@
 /**
  * Programmatic file upload via `DOM.setFileInputFiles` — the only way to
- * set files on an `<input type="file">` from outside the page.
+ * set files on an `<input type="file">` from outside the page, since JS
+ * security restrictions block synthetic file assignment.
+ *
+ * Resolves the input element via `DOM.querySelector` for CSS selectors
+ * or `DOM.performSearch` + `DOM.getSearchResults` for XPath, then attaches
+ * the absolute file paths to the input.
  *
  * Helpers accept `tabIndexOrPageSession` and route through
  * `pageSession.send`.

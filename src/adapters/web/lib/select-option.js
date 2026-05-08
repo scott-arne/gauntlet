@@ -5,9 +5,15 @@ const { throwIfExceptionDetails } = require('./cdp-utils');
  * Native HTML `<select>` element control.
  *
  * Each requested value matches an `<option>` by its `value` attribute
- * first, then by trimmed visible label. Multi-element warning (JRV-129):
- * if the selector matches more than one element, we use the element at
- * `index` (default 0) and emit a warning.
+ * first, then by trimmed visible label. Arrays of values require a
+ * `<select multiple>` — passing more than one to a single-select is an
+ * error. Selection replaces (every existing `selected` is cleared
+ * before applying the new set), matching Playwright's `selectOption`
+ * semantics.
+ *
+ * Multi-element warning (JRV-129): if the selector matches more than
+ * one element on the page, we use the element at `index` (default 0)
+ * and emit a warning so the caller knows the selector is ambiguous.
  *
  * Helpers accept `tabIndexOrPageSession` and route through
  * `pageSession.send`.

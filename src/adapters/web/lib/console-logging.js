@@ -8,12 +8,13 @@
  * and `clearConsoleMessages` resets the buffer for a tab.
  *
  * `enableDomain('Runtime')` is idempotent so navigation's auto-capture
- * and `enableConsoleLogging` can coexist on the same page session.
+ * and `enableConsoleLogging` can coexist on the same page session without
+ * stomping on each other.
  *
  * Keying: `state.consoleMessages` is keyed by `ps.sessionId`. The public
- * adapter API (`getConsoleMessages(arg, sinceTimestamp)`, `clearConsoleMessages(arg)`)
- * accepts tabIndex / wsUrl / pageSession — all resolve through
- * `getPageSession` to `ps.sessionId`. Agents see no API change.
+ * adapter API (`getConsoleMessages(arg, sinceTimestamp)`,
+ * `clearConsoleMessages(arg)`) accepts tabIndex / wsUrl / pageSession —
+ * all resolve through `getPageSession` to `ps.sessionId`.
  */
 function attachConsoleLogging({ state, getPageSession }) {
   async function enableConsoleLogging(tabIndexOrPageSession) {
@@ -45,8 +46,7 @@ function attachConsoleLogging({ state, getPageSession }) {
       state.consoleMessages.set(ps.sessionId, messages);
     });
 
-    // Match upstream's return shape — { close: () => {...} }. The page
-    // session detach handles event-listener cleanup via router
+    // The page session detach handles event-listener cleanup via router
     // unregisterSession; close() here just unsubscribes this specific
     // listener so a caller that wants to stop capturing without detaching
     // the whole page session can do so.

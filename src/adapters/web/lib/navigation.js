@@ -16,23 +16,20 @@ const CONSOLE_LINGER_MS = 1000;
  * `Page.loadEventFired` rides `pageSession.onEvent` over the browser-WS
  * — no second WebSocket per navigation. The 30s hard cap and the
  * "listener-ready-before-navigate" ordering are preserved (Page.enable +
- * onEvent registered before Page.navigate so fast-loading data: URLs
+ * waitForEvent registered before Page.navigate so fast-loading data: URLs
  * can't fire loadEventFired before we're listening).
  *
  * Auto-capture: when `autoCapture: true`, Runtime.consoleAPICalled events
  * are subscribed via the page session's event stream. Idempotent —
  * pageSession.enableDomain('Runtime') is a no-op if console-logging.js's
  * enableConsoleLogging has already enabled it.
- *
- * `attachNavigation({ state, getPageSession, capturePageArtifacts, evaluate })`
- * returns the bound methods.
  */
 function attachNavigation({ state, getPageSession, capturePageArtifacts, evaluate }) {
   async function navigate(tabIndexOrPageSession, url, autoCapture = false) {
     const ps = await getPageSession(tabIndexOrPageSession);
 
     // Clear any stale console messages so the auto-capture log is scoped
-    // to just this navigation. Keyed by sessionId — see plan Task 14 step 3.
+    // to just this navigation. Keyed by sessionId.
     if (autoCapture) {
       state.consoleMessages.set(ps.sessionId, []);
     }

@@ -16,17 +16,16 @@ modular layout:
 - `src/adapters/web/lib/host-override.js` ←
   `skills/browsing/host-override.js`
 - `src/adapters/web/lib/<module>.js` ←
-  `skills/browsing/lib/<module>.js` (23 sibling modules)
+  `skills/browsing/lib/<module>.js`
 - `src/adapters/web/lib/page-scripts/` ←
   `skills/browsing/lib/page-scripts/`
 
-Phase A.5 also adds the following Gauntlet-only files (no upstream
-counterpart) under `src/adapters/web/lib/`:
-
-- `browser-session.js`, `browser-bridge.js` (PRI-1535 Phase A:
-  browser-WS bridge + targets API + BrowserContext)
-- `page-session.js`, `cdp-router.js` (PRI-1535 Phase A.5: page sessions
-  on the browser-WS, sessionId-based router)
+The browser-WS bridge files — `browser-session.js`, `browser-bridge.js`,
+`page-session.js`, `cdp-router.js` — used to be Gauntlet-only (added in
+PRI-1535) but as of the 2026-05-08 sync are now upstream files: the
+flatten-mode migration was contributed back to
+`obra/superpowers-chrome` and merged. Treat them like any other
+synced module going forward.
 
 Everything else under `src/adapters/web/` (adapter.ts, passkey.ts, etc.)
 is Gauntlet-native and not synced from upstream.
@@ -37,7 +36,7 @@ is Gauntlet-native and not synced from upstream.
 |---|---|
 | Upstream repo | `https://github.com/obra/superpowers-chrome` |
 | Fork point | `70b2c6c` (v1.8.0) — 2026-02-25 |
-| Last synced upstream HEAD | `a9e2d0c` (v2.0.0) — 2026-05-06; modular layout adopted 2026-05-08 (PRI-1535 Phase A.5) |
+| Last synced upstream HEAD | `60b44e2` (`mhat/flatten-mode-bridge`) — 2026-05-08; flatten-mode + bridge primitives upstreamed (PRI-1535) |
 
 > Bump "last synced upstream HEAD" each time a sync cycle completes.
 
@@ -105,24 +104,6 @@ Grep `chrome-ws-lib.js` for `GAUNTLET DIVERGENCE` to find these in-line.
 > `CHROME_DEBUG_PORT` / `CHROME_DEBUG_BASE` / `WS_OVERRIDE_ENABLED` /
 > top-level `rewriteWsUrl` exports; Gauntlet preserves them as part of
 > Divergence #2 above and did NOT port that removal.
-
-## Deferred: incremental extraction to `lib/*.js`
-
-Between `81bc7b0` (prior sync) and `a9e2d0c` (this sync), upstream moved its
-monolithic `chrome-ws-lib.js` from ~3500 lines into a 234-line orchestrator
-plus ~25 sibling files under `skills/browsing/lib/`. That's effectively the
-flatten-mode migration the team has discussed: once Gauntlet adopts the same
-shape, future upstream syncs get materially smaller per-file deltas (most of
-upstream's ongoing work is now per-extracted-file bugfixes, not whole-file
-rewrites).
-
-The 2026-05-06 sync deliberately did NOT do that migration — the goal was to
-stay scoped to ride-along bugfixes. The decision on flattening is for the
-team to make separately. The 22 `Extract X into lib/Y` commits, the 2 page-
-script extractions, the biome/lint cleanups that ride on top, and
-`51d0d68` (which is incompatible with Divergence #2) are all unported as a
-group. When the flatten lands, those upstream commits become mechanical
-follow-ups and the divergence list in this file should shrink.
 
 ## Sync recipe
 
