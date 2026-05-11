@@ -14,7 +14,7 @@ describe("buildSystemPrompt baseline snapshot", () => {
   const card: StoryCard = JSON.parse(readFileSync(CARD_PATH, "utf-8"));
 
   test("web adapter, with context tree — matches frozen baseline", () => {
-    const prompt = buildSystemPrompt(card, FIXTURE_CONTEXT_TREE, "web");
+    const prompt = buildSystemPrompt(card, FIXTURE_CONTEXT_TREE, "web", undefined, 5);
     if (!existsSync(SNAPSHOT_PATH) || process.env.UPDATE_SNAPSHOTS === "1") {
       writeFileSync(SNAPSHOT_PATH, prompt, "utf-8");
     }

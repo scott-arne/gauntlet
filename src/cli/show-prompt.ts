@@ -18,6 +18,7 @@ export interface ShowPromptOptions {
   projectRoot: string;
   projectPromptPath?: string;
   viewport: string;
+  maxStuckRetries: number;
 }
 
 const SEP = "─".repeat(3);
@@ -77,6 +78,15 @@ export function showPromptAndExit(opts: ShowPromptOptions): void {
 
   out.push(h("Evaluation", `src/agent/prompts/evaluation.md`));
   out.push(loadPromptFile("evaluation"));
+  out.push("");
+
+  out.push(h("Stuck-handling", `src/agent/prompts/stuck-handling.md`));
+  out.push(
+    loadPromptFile("stuck-handling").replace(
+      "{{MAX_STUCK_RETRIES}}",
+      String(opts.maxStuckRetries),
+    ),
+  );
   out.push("");
 
   const adapterFile = `src/agent/prompts/adapter-${opts.adapter}.md`;

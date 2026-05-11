@@ -34,6 +34,7 @@ async function main() {
         // resolving project root and viewport ourselves rather than
         // through loadConfig (which would demand LLM creds).
         const { showPromptAndExit } = await import("./cli/show-prompt");
+        const { DEFAULT_MAX_STUCK_RETRIES } = await import("./config");
         const projectRoot = args.cli.projectRoot ?? process.env.GAUNTLET_PROJECT_ROOT ?? process.cwd();
         const viewport = args.cli.viewport ?? "1440x900";
         showPromptAndExit({
@@ -43,6 +44,7 @@ async function main() {
           projectRoot,
           projectPromptPath: args.projectPromptPath,
           viewport,
+          maxStuckRetries: DEFAULT_MAX_STUCK_RETRIES,
         });
         break;
       }

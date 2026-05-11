@@ -129,6 +129,7 @@ export async function runAgent(
     options.contextTree,
     adapter.name,
     options.projectPrompt,
+    maxStuckRetries,
   );
   const tools = [...adapter.toolDefinitions(), REPORT_TOOL];
 
