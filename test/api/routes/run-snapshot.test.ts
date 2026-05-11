@@ -47,7 +47,8 @@ describe("POST /run/:id — snapshot", () => {
         sources: { defaultChrome: "default" },
         defaultChrome: undefined,
         defaultViewport: undefined,
-        defaultTurns: 1,
+        defaultBudgetMs: 60_000,
+        defaultMaxStuckRetries: 5,
       } as unknown as AppConfig;
 
       const app = new Hono();
