@@ -45,7 +45,8 @@ export interface RunCoreConfig {
   model: string;
   adapter: RunAdapterType;
   target: string;
-  turns: number;
+  budgetMs: number;
+  maxStuckRetries: number;
   /** Already-resolved Chrome endpoint, or undefined to let WebAdapter
    * auto-launch. Surfaces collapse "default" → undefined themselves. */
   chrome?: ChromeEndpoint;
@@ -186,7 +187,7 @@ export async function executeRunCore(
       model: runConfig.model,
       adapter: runConfig.adapter,
       chrome: runConfig.chrome ? `${runConfig.chrome.host}:${runConfig.chrome.port}` : undefined,
-      turns: runConfig.turns,
+      budgetMs: runConfig.budgetMs,
       viewport: snapshotViewport(adapter),
     };
 
@@ -194,7 +195,8 @@ export async function executeRunCore(
       contextTree,
       projectPrompt,
       runId,
-      maxTurns: runConfig.turns,
+      budgetMs: runConfig.budgetMs,
+      maxStuckRetries: runConfig.maxStuckRetries,
       provider: resolveProvider(runConfig.model),
       model: runConfig.model,
       outDir,

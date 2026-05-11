@@ -4,7 +4,10 @@
 // v2: added optional `config` block capturing the per-run knobs (target,
 //     model, adapter, chrome, turns) so the UI can offer a "Run again"
 //     action without re-eliciting the parameters.
-export const RESULT_SCHEMA_VERSION = 2;
+// v3: RunConfigSnapshot.turns replaced with budgetMs (wall-clock budget
+//     in ms). Reflects the time-budget loop replacing maxTurns. See
+//     docs/superpowers/specs/2026-05-11-time-budget-and-stuck-detection-spec.md.
+export const RESULT_SCHEMA_VERSION = 3;
 
 import type { RunSetCtx } from "./runs/run-set-types";
 
@@ -14,7 +17,8 @@ export interface RunConfigSnapshot {
   adapter: "web" | "cli" | "tui";
   /** `host:port`, omitted when the adapter auto-launched Chrome. */
   chrome?: string;
-  turns: number;
+  /** Wall-clock budget in ms that this run was launched with. */
+  budgetMs: number;
   /**
    * Viewport this run actually used, reported by the adapter. Units are
    * adapter-dependent: CSS pixels for web, character cells for tui.

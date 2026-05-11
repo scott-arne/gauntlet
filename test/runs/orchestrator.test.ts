@@ -39,7 +39,8 @@ describe("executeRunCore — happy path", () => {
         model: "claude-sonnet-4-6",
         adapter: "cli",
         target: "true",
-        turns: 5,
+        budgetMs: 600_000,
+        maxStuckRetries: 5,
       },
     });
 
@@ -72,7 +73,8 @@ describe("executeRunCore — result metadata", () => {
         model: "claude-sonnet-4-6",
         adapter: "cli",
         target: "true",
-        turns: 7,
+        budgetMs: 600_000,
+        maxStuckRetries: 5,
       },
     });
 
@@ -81,7 +83,7 @@ describe("executeRunCore — result metadata", () => {
       target: "true",
       model: "claude-sonnet-4-6",
       adapter: "cli",
-      turns: 7,
+      budgetMs: 600_000,
     });
   });
 
@@ -110,7 +112,8 @@ describe("executeRunCore — result metadata", () => {
         model: "claude-sonnet-4-6",
         adapter: "cli",
         target: "true",
-        turns: 5,
+        budgetMs: 600_000,
+        maxStuckRetries: 5,
       },
       runSetCtx: ctx,
     });
@@ -135,7 +138,8 @@ describe("executeRunCore — result metadata", () => {
         model: "claude-sonnet-4-6",
         adapter: "cli",
         target: "true",
-        turns: 5,
+        budgetMs: 600_000,
+        maxStuckRetries: 5,
       },
     });
 
@@ -164,7 +168,8 @@ describe("executeRunCore — onLogger hook", () => {
         model: "claude-sonnet-4-6",
         adapter: "cli",
         target: "true",
-        turns: 5,
+        budgetMs: 600_000,
+        maxStuckRetries: 5,
       },
       hooks: {
         onLogger: (logger) => {
@@ -199,7 +204,8 @@ describe("executeRunCore — onLogger hook", () => {
         model: "claude-sonnet-4-6",
         adapter: "cli",
         target: "true",
-        turns: 5,
+        budgetMs: 600_000,
+        maxStuckRetries: 5,
       },
       hooks: {
         onLogger: () => {
@@ -230,7 +236,8 @@ describe("executeRunCore — lifecycle hooks", () => {
         model: "claude-sonnet-4-6",
         adapter: "cli",
         target: "true",
-        turns: 5,
+        budgetMs: 600_000,
+        maxStuckRetries: 5,
       },
       hooks: {
         onLogger: () => {
@@ -277,7 +284,8 @@ describe("executeRunCore — error path", () => {
           model: "claude-sonnet-4-6",
           adapter: "cli",
           target: "true",
-          turns: 5,
+          budgetMs: 600_000,
+          maxStuckRetries: 5,
         },
         hooks: {
           onLogger: () => { calls.push("attach"); return () => calls.push("detach"); },

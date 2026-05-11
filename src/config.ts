@@ -155,6 +155,8 @@ export interface EffectiveRunConfig {
    */
   saveScreencast: boolean;
   projectRoot: string;
+  budgetMs: number;
+  maxStuckRetries: number;
 }
 
 const RUN_BODY_ALLOWED = new Set(["target", "model", "chrome", "adapter", "viewport", "saveScreencast", "passes"]);
@@ -266,6 +268,8 @@ export function mergeRunConfig(app: AppConfig, body: RunRequestBody): EffectiveR
     viewport: body.viewport ?? app.defaultViewport,
     saveScreencast: body.saveScreencast ?? app.defaultSaveScreencast,
     projectRoot: app.projectRoot,
+    budgetMs: app.defaultBudgetMs,
+    maxStuckRetries: app.defaultMaxStuckRetries,
   };
 }
 
