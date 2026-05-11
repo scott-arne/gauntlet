@@ -2,7 +2,7 @@
 // Documented in docs/format.md.
 //
 // v2: added optional `config` block capturing the per-run knobs (target,
-//     model, adapter, chrome, turns) so the UI can offer a "Run again"
+//     model, adapter, chrome, budgetMs) so the UI can offer a "Run again"
 //     action without re-eliciting the parameters.
 // v3: RunConfigSnapshot.turns replaced with budgetMs (wall-clock budget
 //     in ms) and maxStuckRetries (prompt-injected stuck-retry hint).
