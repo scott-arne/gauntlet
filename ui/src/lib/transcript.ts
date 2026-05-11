@@ -18,7 +18,8 @@ export interface RunStartEvent extends BaseEvent {
   provider: string;
   model: string;
   adapter: string;
-  maxTurns: number;
+  budgetMs: number;
+  maxStuckRetries: number;
   toolTimeoutMs: number;
   contextTreeBytes: number;
 }

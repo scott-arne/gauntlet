@@ -7,7 +7,6 @@ export interface NewRunPrefill {
   target?: string;
   model?: string;
   chrome?: string;
-  turns?: number;
   adapter?: "web" | "cli" | "tui";
   viewport?: { width: number; height: number };
   saveScreencast?: boolean;
@@ -22,7 +21,6 @@ interface NewRunModalProps {
       target: string;
       model?: string;
       chrome?: string;
-      turns?: number;
       adapter?: string;
       viewport?: { width: number; height: number };
       saveScreencast?: boolean;
@@ -42,10 +40,6 @@ export function NewRunModal({ onClose, onStarted, prefill }: NewRunModalProps) {
   const [target, setTarget] = useState(prefill?.target ?? "");
   const [model, setModel] = useState(prefill?.model ?? "");
   const [chrome, setChrome] = useState(prefill?.chrome ?? "");
-  // Blank string === "use server default"; see handleStart.
-  const [turns, setTurns] = useState<string>(
-    prefill?.turns !== undefined ? String(prefill.turns) : "",
-  );
   const [passes, setPasses] = useState<string>(
     prefill?.passes !== undefined ? String(prefill.passes) : "",
   );
@@ -73,7 +67,6 @@ export function NewRunModal({ onClose, onStarted, prefill }: NewRunModalProps) {
         // value the user (or a "Run again" caller) explicitly supplied.
         if (!prefill?.model && config.defaultModel) setModel(config.defaultModel);
         if (!prefill?.target && config.defaultTarget) setTarget(config.defaultTarget);
-        if (!prefill?.turns && config.defaultTurns) setTurns(String(config.defaultTurns));
         if (prefill?.saveScreencast === undefined) setSaveScreencast(config.defaultSaveScreencast);
       })
       .catch(() => { /* config fetch is best-effort */ });
@@ -90,15 +83,6 @@ export function NewRunModal({ onClose, onStarted, prefill }: NewRunModalProps) {
       setError("Target URL is required");
       return;
     }
-    let turnsNum: number | undefined;
-    if (turns.trim() !== "") {
-      const parsed = Number.parseInt(turns, 10);
-      if (Number.isNaN(parsed) || parsed < 1) {
-        setError("Turns must be a positive integer");
-        return;
-      }
-      turnsNum = parsed;
-    }
     let passesNum: number | undefined;
     if (passes.trim() !== "") {
       const parsed = Number.parseInt(passes, 10);
@@ -112,7 +96,6 @@ export function NewRunModal({ onClose, onStarted, prefill }: NewRunModalProps) {
       target: target.trim(),
       model: model.trim() || undefined,
       chrome: chrome.trim() || undefined,
-      turns: turnsNum,
       adapter: prefill?.adapter,
       // Viewport is not yet a user-visible field — we pass through the
       // prefill (from "Run Again") so a re-run lands at the same
@@ -208,21 +191,6 @@ export function NewRunModal({ onClose, onStarted, prefill }: NewRunModalProps) {
                 No model configured. Set GAUNTLET_MODELS or GAUNTLET_AGENT_MODEL on the server.
               </p>
             )}
-          </div>
-
-          <div>
-            <label className="section-label block mb-1">Max Turns</label>
-            <input
-              className="input-field"
-              type="number"
-              min={1}
-              value={turns}
-              onChange={(e) => setTurns(e.target.value)}
-              placeholder="50"
-            />
-            <p className="text-xs text-slate mt-1">
-              Hard cap on agent turns. Leave blank to use the server default.
-            </p>
           </div>
 
           <div>

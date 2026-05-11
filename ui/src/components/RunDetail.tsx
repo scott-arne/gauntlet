@@ -180,7 +180,6 @@ export function RunDetail({ result, onFanout, onRunAgain }: RunDetailProps) {
                 target: result.config!.target,
                 model: result.config!.model,
                 chrome: result.config!.chrome,
-                turns: result.config!.turns,
                 adapter: result.config!.adapter,
                 viewport: result.config!.viewport,
                 passes: result.runSet?.passes,

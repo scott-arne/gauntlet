@@ -22,7 +22,8 @@ export interface RunConfigSnapshot {
   model: string;
   adapter: "web" | "cli" | "tui";
   chrome?: string;
-  turns: number;
+  budgetMs: number;
+  maxStuckRetries: number;
   viewport?: { width: number; height: number };
 }
 
@@ -141,7 +142,8 @@ export interface ServerConfig {
   models: string[];
   defaultModel: string | null;
   defaultTarget: string | null;
-  defaultTurns: number;
+  defaultBudgetMs: number;
+  defaultMaxStuckRetries: number;
   defaultViewport: { width: number; height: number };
   /**
    * Server's default for "persist screencast frames to disk". The UI
@@ -234,7 +236,6 @@ export const api = {
       model?: string;
       adapter?: string;
       chrome?: string;
-      turns?: number;
       viewport?: { width: number; height: number };
       saveScreencast?: boolean;
       passes?: number;
