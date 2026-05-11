@@ -8,16 +8,22 @@ import { buildSystemPrompt } from "./prompts";
 import { buildInitialUserMessage } from "./initial-message";
 import { parseReportResult } from "./validators";
 
-const DEFAULT_MAX_TURNS = 50;
 const DEFAULT_TOOL_TIMEOUT_MS = 30000;
 
 export interface AgentOptions {
   toolTimeoutMs?: number;
   /**
-   * Max agent turns. Defaults to 50. Surfaces as `--turns` on the CLI
-   * and `turns` on the run request body.
+   * Wall-clock budget for the agent loop in milliseconds. The loop exits
+   * when `Date.now() >= startTime + budgetMs`. Required: the orchestrator
+   * threads this through from config; tests must construct deliberately.
    */
-  maxTurns?: number;
+  budgetMs: number;
+
+  /**
+   * Hint injected into the system prompt for how many retries on the same
+   * action before the model should give up. Not enforced in code.
+   */
+  maxStuckRetries: number;
   /**
    * Rendered tree listing for the system prompt's Context section,
    * produced by `renderContextTree` in `src/context/tree.ts`. May be
@@ -117,7 +123,7 @@ export async function runAgent(
   options: AgentOptions,
 ): Promise<VetResult> {
   const startTime = Date.now();
-  const { runId } = options;
+  const { runId, budgetMs, maxStuckRetries } = options;
   const systemPrompt = buildSystemPrompt(
     card,
     options.contextTree,
@@ -133,7 +139,8 @@ export async function runAgent(
     provider: options.provider ?? "unknown",
     model: options.model ?? "unknown",
     adapter: adapter.name ?? "unknown",
-    maxTurns: options.maxTurns ?? DEFAULT_MAX_TURNS,
+    budgetMs,
+    maxStuckRetries,
     toolTimeoutMs: options.toolTimeoutMs ?? DEFAULT_TOOL_TIMEOUT_MS,
     contextTreeBytes: options.contextTree ? Buffer.byteLength(options.contextTree, "utf8") : 0,
     outDir: options.outDir,
@@ -154,7 +161,7 @@ export async function runAgent(
   let totalCacheCreation = 0;
   let totalCacheRead = 0;
   let turns = 0;
-  const maxTurns = options.maxTurns ?? DEFAULT_MAX_TURNS;
+  const deadline = startTime + budgetMs;
 
   /**
    * Build a terminal VetResult with shared scaffolding (schema, evidence,
@@ -209,7 +216,7 @@ export async function runAgent(
     return result;
   };
 
-  for (let turn = 0; turn < maxTurns; turn++) {
+  while (Date.now() < deadline) {
     logger.logLlmRequest(turns + 1, messages.length);
     const response = await client.chat(messages, tools, systemPrompt);
 
@@ -371,17 +378,18 @@ export async function runAgent(
     }
   }
 
-  // Max turns reached. The run promised the caller `maxTurns` turns of tool
-  // access and delivered them. Rather than ending with a generic "exhausted"
+  // Time budget exhausted. The run promised `budgetMs` wall-clock of tool
+  // access and delivered it. Rather than ending with a generic "exhausted"
   // verdict, we inject one final SYSTEM-REMINDER and let the agent call
   // report_result with a best-effort summary of where it got stuck and why.
   // This extra LLM call does not count against `usage.turns` — the caller
   // contract is preserved; the grace turn is overhead.
-  logger.logEvent("max_turns_reminder", { maxTurns });
+  logger.logEvent("deadline_reminder", { budgetMs, elapsedMs: Date.now() - startTime });
 
+  const elapsedSec = Math.round((Date.now() - startTime) / 1000);
   const reminderText =
     `<SYSTEM-REMINDER>\n` +
-    `You have used all ${maxTurns} of your available turns without calling report_result. ` +
+    `You have used your time budget (${elapsedSec}s of ${Math.round(budgetMs/1000)}s) without calling report_result. ` +
     `No more application tools are available — only report_result can be called now. ` +
     `This is your final response.\n` +
     `\n` +
@@ -389,7 +397,7 @@ export async function runAgent(
     `  - Set status to "investigate" (the run did not complete).\n` +
     `  - In summary, describe what you did and what you observed.\n` +
     `  - In reasoning, explain where you got stuck and why you couldn't finish ` +
-    `within the turn budget.\n` +
+    `within the time budget.\n` +
     `  - Include concrete recommendations as observations (kind: "suggestion") ` +
     `for whoever picks this up next.\n` +
     `</SYSTEM-REMINDER>`;
@@ -447,12 +455,12 @@ export async function runAgent(
     // Grace turn produced report_result but it was malformed. Log and fall
     // through to the generic result — same posture as the in-loop malformed
     // path, minus the raw-args dump (already captured in logLlmResponse).
-    logger.logEvent("max_turns_grace_malformed_report", { reason: parsed.reason });
+    logger.logEvent("deadline_grace_malformed_report", { reason: parsed.reason });
   }
 
   return buildResult({
     status: "investigate",
-    summary: "Agent reached maximum turn limit without reporting a result",
-    reasoning: `Exhausted ${maxTurns} turns; grace-turn reminder did not yield a valid report_result.`,
+    summary: "Agent reached time budget without reporting a result",
+    reasoning: `Exceeded ${Math.round(budgetMs/1000)}s budget; grace-turn reminder did not yield a valid report_result.`,
   });
 }
