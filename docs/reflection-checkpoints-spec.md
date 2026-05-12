@@ -11,11 +11,11 @@ progress. The existing `src/agent/prompts/stuck-handling.md` is read into
 the system prompt once at run start; by turn 20+ it is buried under
 megabytes of tool-call/tool-result traffic and stops driving behavior.
 
-Empirical evidence from `examples/tutorial/.gauntlet/results/`: the
-`tutorial-04-login-credentials_20260512T200505Z_bjm1` run burned 23 tool
-calls (24 LLM turns) without ever calling `report_result`, and ultimately
-hit the deadline grace path. Several sibling runs in that directory show
-the same shape — the agent keeps trying variations rather than concluding
+Empirical evidence from `examples/tutorial/.gauntlet/results/`: a
+representative `tutorial-04-login-credentials` run burned 23 tool calls
+(24 LLM turns) without ever calling `report_result`, and ultimately hit
+the deadline grace path. Several sibling runs in that directory show the
+same shape — the agent keeps trying variations rather than concluding
 the target may be broken.
 
 The agent needs a periodic, in-context invitation to step outside its
@@ -214,10 +214,11 @@ Each checkpoint emits:
   `reflection_checkpoint` event in its `run.jsonl`.
 - The injected text appears as a `user_message` row in the evidence log
   with the literal trace embedded.
-- On the same tutorial-04 fixture that produced the `bjm1` failure mode,
-  the agent calls `report_result` (any status) before hitting the
-  deadline grace path on a majority of runs. (Eval design TBD — likely
-  a small `run-sets` configuration.)
+- On the `tutorial-04-login-credentials` fixture that has historically
+  produced "burn the budget without reporting" failures, the agent calls
+  `report_result` (any status) before hitting the deadline grace path on
+  a majority of runs. (Eval design TBD — likely a small `run-sets`
+  configuration.)
 - `bun test` passes; new unit tests cover trace rendering (argument
   truncation, level selection, ordering).
 
