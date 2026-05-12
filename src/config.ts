@@ -1,4 +1,5 @@
 import { ADAPTER_TYPES, isAdapterType, type AdapterType } from "./adapters/adapter";
+import { parseDuration } from "./util/parse-duration";
 
 export interface ChromeEndpoint {
   host: string;
@@ -22,10 +23,17 @@ export interface AppConfig {
    */
   defaultTarget?: string;
   /**
-   * Hard cap on agent turns per run. Applies to every adapter. Per-run
-   * overrides (request body `turns` or CLI `--turns`) take precedence.
+   * Wall-clock budget for an agent run in milliseconds. The agent loop
+   * exits when `Date.now() >= deadline`. Default 300_000 (5 min); override
+   * via `--max-time` or `GAUNTLET_MAX_TIME`.
    */
-  defaultTurns: number;
+  defaultBudgetMs: number;
+  /**
+   * Hint to the model (injected into the system prompt) for how many
+   * retries on the same action before giving up and calling
+   * report_result with status=investigate. Not enforced in code.
+   */
+  defaultMaxStuckRetries: number;
   /**
    * Viewport applied to the browsing tab on web-adapter runs (via
    * `Emulation.setDeviceMetricsOverride`). Per-run overrides (request
@@ -57,13 +65,6 @@ export interface AppConfig {
    * `/api/run` returns 429 with `Retry-After: 5` when at cap. PRI-1478.
    */
   maxConcurrentRuns: number;
-  /**
-   * Hard upper bound on the `turns` field in run request bodies. The
-   * existing `defaultTurns` is the *default* applied when the body
-   * omits `turns`; this cap rejects requests with an explicit value
-   * higher than the cap. PRI-1478.
-   */
-  maxTurnsCap: number;
   /**
    * Maximum length (bytes) of a `target` URL surfaced in the
    * `/api/runs/active` list payload. Targets longer than this are
@@ -98,13 +99,13 @@ export interface AppConfig {
     port: "default" | "env" | "flag";
     defaultChrome: "default" | "env" | "flag";
     defaultTarget: "default" | "env" | "flag" | "unset";
-    defaultTurns: "default" | "env" | "flag";
+    defaultBudgetMs: "default" | "env" | "flag";
+    defaultMaxStuckRetries: "default" | "env" | "flag";
     defaultViewport: "default" | "env" | "flag";
     defaultSaveScreencast: "default" | "env" | "flag";
     shutdownGraceMs: "default" | "env";
     maxRequestBodySize: "default" | "env";
     maxConcurrentRuns: "default" | "env";
-    maxTurnsCap: "default" | "env";
     activeRunTargetMaxBytes: "default" | "env";
     wsIdleTimeoutSec: "default" | "env";
     wsOriginAllowlist: "default" | "env";
@@ -119,7 +120,8 @@ export interface CliArgsInput {
   port?: number;
   chrome?: string;
   target?: string;
-  turns?: number;
+  maxTime?: string;
+  maxStuckRetries?: number;
   viewport?: string;
   saveScreencast?: boolean;
   models?: { agent?: string; fanout?: string };
@@ -130,7 +132,6 @@ export interface RunRequestBody {
   model?: string;
   chrome?: string;
   adapter?: AdapterType;
-  turns?: number;
   viewport?: Viewport;
   saveScreencast?: boolean;
   passes?: number;
@@ -146,7 +147,6 @@ export interface EffectiveRunConfig {
    */
   chrome: ChromeEndpoint | undefined;
   adapter: AdapterType;
-  turns: number;
   viewport: Viewport;
   /**
    * Whether this run should persist screencast frames to disk. The live
@@ -155,10 +155,13 @@ export interface EffectiveRunConfig {
    */
   saveScreencast: boolean;
   projectRoot: string;
+  budgetMs: number;
+  maxStuckRetries: number;
 }
 
-const RUN_BODY_ALLOWED = new Set(["target", "model", "chrome", "adapter", "turns", "viewport", "saveScreencast", "passes"]);
-export const DEFAULT_MAX_TURNS = 50;
+const RUN_BODY_ALLOWED = new Set(["target", "model", "chrome", "adapter", "viewport", "saveScreencast", "passes"]);
+export const DEFAULT_BUDGET_MS = 300_000;
+export const DEFAULT_MAX_STUCK_RETRIES = 5;
 export const DEFAULT_VIEWPORT: Viewport = { width: 1440, height: 900 };
 
 function parseViewportString(raw: string, label: string): Viewport {
@@ -181,26 +184,18 @@ function assertViewportBounds(v: Viewport, label: string): void {
   }
 }
 
-export class TurnsTooHighError extends Error {
-  readonly code = "turns_too_high";
-  constructor(readonly requested: number, readonly cap: number) {
-    super(`run request body: turns ${requested} exceeds cap of ${cap}`);
-    this.name = "TurnsTooHighError";
-  }
-}
-
-export interface ValidateRunBodyOptions {
-  /** Hard upper bound on body.turns. Requests with `turns > maxTurnsCap`
-   * throw `TurnsTooHighError`, which the route translates to a 400 with
-   * `{error: "turns_too_high"}`. PRI-1478. */
-  maxTurnsCap?: number;
-}
-
-export function validateRunBody(body: unknown, opts: ValidateRunBodyOptions = {}): RunRequestBody {
+export function validateRunBody(body: unknown, opts: Record<string, never> = {}): RunRequestBody {
   if (!body || typeof body !== "object") {
     throw new Error("run request body must be an object");
   }
   const bodyObj = body as Record<string, unknown>;
+  // Check for `turns` before the generic unknown-field gate so callers get
+  // a targeted error instead of "unknown field: turns".
+  if (bodyObj.turns !== undefined) {
+    throw new Error(
+      "run request body: field `turns` is no longer accepted; configure budget server-side via --max-time or GAUNTLET_MAX_TIME",
+    );
+  }
   const unknown = Object.keys(bodyObj).filter((k) => !RUN_BODY_ALLOWED.has(k));
   if (unknown.length > 0) {
     throw new Error(
@@ -214,16 +209,6 @@ export function validateRunBody(body: unknown, opts: ValidateRunBodyOptions = {}
     throw new Error(
       `run request body: adapter must be one of: ${ADAPTER_TYPES.join(", ")}`,
     );
-  }
-  let turns: number | undefined;
-  if (bodyObj.turns !== undefined) {
-    if (typeof bodyObj.turns !== "number" || !Number.isFinite(bodyObj.turns) || !Number.isInteger(bodyObj.turns) || bodyObj.turns < 1) {
-      throw new Error("run request body: turns must be a positive integer");
-    }
-    if (opts.maxTurnsCap !== undefined && bodyObj.turns > opts.maxTurnsCap) {
-      throw new TurnsTooHighError(bodyObj.turns, opts.maxTurnsCap);
-    }
-    turns = bodyObj.turns;
   }
   let viewport: Viewport | undefined;
   if (bodyObj.viewport !== undefined) {
@@ -258,7 +243,6 @@ export function validateRunBody(body: unknown, opts: ValidateRunBodyOptions = {}
     model: typeof bodyObj.model === "string" ? bodyObj.model : undefined,
     chrome: typeof bodyObj.chrome === "string" ? bodyObj.chrome : undefined,
     adapter: bodyObj.adapter,
-    turns,
     viewport,
     saveScreencast,
     passes,
@@ -281,10 +265,11 @@ export function mergeRunConfig(app: AppConfig, body: RunRequestBody): EffectiveR
     model: body.model ?? app.models.agent,
     chrome,
     adapter: body.adapter ?? "web",
-    turns: body.turns ?? app.defaultTurns,
     viewport: body.viewport ?? app.defaultViewport,
     saveScreencast: body.saveScreencast ?? app.defaultSaveScreencast,
     projectRoot: app.projectRoot,
+    budgetMs: app.defaultBudgetMs,
+    maxStuckRetries: app.defaultMaxStuckRetries,
   };
 }
 
@@ -294,7 +279,6 @@ const DEFAULT_CHROME: ChromeEndpoint = { host: "127.0.0.1", port: 9222 };
 const DEFAULT_SHUTDOWN_GRACE_MS = 10000;
 const DEFAULT_MAX_REQUEST_BODY_SIZE = 1024 * 1024; // 1 MB
 const DEFAULT_MAX_CONCURRENT_RUNS = 4;
-const DEFAULT_MAX_TURNS_CAP = 200;
 const DEFAULT_ACTIVE_RUN_TARGET_MAX_BYTES = 1024;
 const DEFAULT_WS_IDLE_TIMEOUT_SEC = 60;
 const DEFAULT_AGENT_MODEL = "claude-sonnet-4-6";
@@ -444,23 +428,47 @@ export function loadConfig(args: CliArgsInput, env: NodeJS.ProcessEnv): AppConfi
     saveScreencastSource = "flag";
   }
 
-  // defaultTurns — hard cap on agent turns per run.
-  let defaultTurns = DEFAULT_MAX_TURNS;
-  let turnsSource: "default" | "env" | "flag" = "default";
-  if (env.GAUNTLET_TURNS) {
-    const parsed = parseInt(env.GAUNTLET_TURNS, 10);
-    if (Number.isNaN(parsed) || parsed < 1) {
-      throw new Error(`Invalid GAUNTLET_TURNS "${env.GAUNTLET_TURNS}": expected a positive integer`);
+  // defaultBudgetMs — wall-clock budget for the agent loop.
+  let defaultBudgetMs = DEFAULT_BUDGET_MS;
+  let budgetSource: "default" | "env" | "flag" = "default";
+  if (env.GAUNTLET_MAX_TIME) {
+    try {
+      defaultBudgetMs = parseDuration(env.GAUNTLET_MAX_TIME);
+    } catch (err) {
+      throw new Error(`Invalid GAUNTLET_MAX_TIME "${env.GAUNTLET_MAX_TIME}": ${(err as Error).message}`);
     }
-    defaultTurns = parsed;
-    turnsSource = "env";
+    budgetSource = "env";
   }
-  if (args.turns !== undefined) {
-    if (!Number.isInteger(args.turns) || args.turns < 1) {
-      throw new Error(`Invalid --turns ${args.turns}: expected a positive integer`);
+  if (args.maxTime !== undefined) {
+    try {
+      defaultBudgetMs = parseDuration(args.maxTime);
+    } catch (err) {
+      throw new Error(`Invalid --max-time "${args.maxTime}": ${(err as Error).message}`);
     }
-    defaultTurns = args.turns;
-    turnsSource = "flag";
+    budgetSource = "flag";
+  }
+
+  // defaultMaxStuckRetries — prompt-injected, not enforced.
+  let defaultMaxStuckRetries = DEFAULT_MAX_STUCK_RETRIES;
+  let stuckSource: "default" | "env" | "flag" = "default";
+  if (env.GAUNTLET_MAX_STUCK_RETRIES) {
+    const raw = env.GAUNTLET_MAX_STUCK_RETRIES;
+    if (!/^\d+$/.test(raw)) {
+      throw new Error(`Invalid GAUNTLET_MAX_STUCK_RETRIES "${raw}": expected positive integer`);
+    }
+    const parsed = parseInt(raw, 10);
+    if (parsed < 1) {
+      throw new Error(`Invalid GAUNTLET_MAX_STUCK_RETRIES "${raw}": expected positive integer`);
+    }
+    defaultMaxStuckRetries = parsed;
+    stuckSource = "env";
+  }
+  if (args.maxStuckRetries !== undefined) {
+    if (!Number.isInteger(args.maxStuckRetries) || args.maxStuckRetries < 1) {
+      throw new Error(`Invalid --max-stuck-retries ${args.maxStuckRetries}: expected positive integer`);
+    }
+    defaultMaxStuckRetries = args.maxStuckRetries;
+    stuckSource = "flag";
   }
 
   // shutdownGraceMs — drain window for graceful shutdown (PRI-1477).
@@ -489,14 +497,6 @@ export function loadConfig(args: CliArgsInput, env: NodeJS.ProcessEnv): AppConfi
   );
   const maxConcurrentRunsSource: "default" | "env" =
     env.GAUNTLET_MAX_CONCURRENT_RUNS ? "env" : "default";
-
-  const maxTurnsCap = parseNonNegIntEnv(
-    env.GAUNTLET_MAX_TURNS_CAP,
-    "GAUNTLET_MAX_TURNS_CAP",
-    DEFAULT_MAX_TURNS_CAP,
-  );
-  const maxTurnsCapSource: "default" | "env" =
-    env.GAUNTLET_MAX_TURNS_CAP ? "env" : "default";
 
   const activeRunTargetMaxBytes = parseNonNegIntEnv(
     env.GAUNTLET_ACTIVE_RUN_TARGET_MAX_BYTES,
@@ -566,13 +566,13 @@ export function loadConfig(args: CliArgsInput, env: NodeJS.ProcessEnv): AppConfi
     port,
     defaultChrome,
     defaultTarget,
-    defaultTurns,
+    defaultBudgetMs,
+    defaultMaxStuckRetries,
     defaultViewport,
     defaultSaveScreencast,
     shutdownGraceMs,
     maxRequestBodySize,
     maxConcurrentRuns,
-    maxTurnsCap,
     activeRunTargetMaxBytes,
     wsIdleTimeoutSec,
     wsOriginAllowlist,
@@ -587,13 +587,13 @@ export function loadConfig(args: CliArgsInput, env: NodeJS.ProcessEnv): AppConfi
       port: portSource,
       defaultChrome: chromeSource,
       defaultTarget: targetSource,
-      defaultTurns: turnsSource,
+      defaultBudgetMs: budgetSource,
+      defaultMaxStuckRetries: stuckSource,
       defaultViewport: viewportSource,
       defaultSaveScreencast: saveScreencastSource,
       shutdownGraceMs: shutdownGraceMsSource,
       maxRequestBodySize: maxRequestBodySizeSource,
       maxConcurrentRuns: maxConcurrentRunsSource,
-      maxTurnsCap: maxTurnsCapSource,
       activeRunTargetMaxBytes: activeRunTargetMaxBytesSource,
       wsIdleTimeoutSec: wsIdleTimeoutSecSource,
       wsOriginAllowlist: wsOriginAllowlistSource,

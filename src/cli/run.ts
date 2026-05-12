@@ -50,7 +50,6 @@ function makeRunObserver(
           table.setRunning(
             cardId,
             currentRunId,
-            Number((ev as any).maxTurns ?? 0),
             attemptNumber,
             passes,
           );

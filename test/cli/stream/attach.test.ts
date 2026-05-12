@@ -40,7 +40,7 @@ describe("attachRenderer", () => {
 
   test("format=pretty writes something human-readable for run_start", () => {
     const cleanup = attachRenderer(logger, { silent: false, format: "pretty", color: false, columns: 100 }, sink);
-    logger.logRunStart({ runId: "r1", cardId: "c", target: "t", provider: "a", model: "m", adapter: "web", maxTurns: 50, toolTimeoutMs: 1, contextTreeBytes: 0 });
+    logger.logRunStart({ runId: "r1", cardId: "c", target: "t", provider: "a", model: "m", adapter: "web", budgetMs: 300_000, maxStuckRetries: 5, toolTimeoutMs: 1, contextTreeBytes: 0 });
     cleanup();
     expect(captured).toContain("runId");
     expect(captured).toContain("r1");

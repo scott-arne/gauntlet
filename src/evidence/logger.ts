@@ -21,7 +21,18 @@ export interface RunStartFields {
   provider: string;
   model: string;
   adapter: string;
-  maxTurns: number;
+  /**
+   * Wall-clock budget for the run, in milliseconds. The agent loop exits
+   * when Date.now() >= startTime + budgetMs.
+   */
+  budgetMs: number;
+
+  /**
+   * Hint injected into the system prompt for how many retries on the same
+   * action before the model should give up. Observational only — not
+   * enforced in the loop.
+   */
+  maxStuckRetries: number;
   toolTimeoutMs: number;
   contextTreeBytes: number;
   /** Absolute path to this run's evidence directory. Optional to keep

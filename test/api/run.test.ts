@@ -70,6 +70,21 @@ describe("Run API", () => {
     expect(body.error).toContain("target");
   });
 
+  test("POST /api/run/:id returns 400 when body includes turns field", async () => {
+    const config = loadConfig({ projectRoot }, { GAUNTLET_AGENT_MODEL: "claude-sonnet-4-6" } as NodeJS.ProcessEnv);
+    const app = new Hono();
+    app.route("/api/run", runRoutes(config));
+
+    const res = await app.request("/api/run/story-001", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ target: "http://localhost:3000", turns: 10 }),
+    });
+    expect(res.status).toBe(400);
+    const body = await res.json();
+    expect(body.error).toMatch(/`turns` is no longer accepted/);
+  });
+
   test("POST /api/run/:id returns JSON 400 for unknown model prefix before registering a run", async () => {
     const config = loadConfig({ projectRoot }, { GAUNTLET_AGENT_MODEL: "claude-sonnet-4-6" } as NodeJS.ProcessEnv);
     const registry = new ActiveRunRegistry();

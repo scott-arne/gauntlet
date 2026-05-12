@@ -4,7 +4,7 @@
   target    https://example.com
   model     claude-sonnet-4-6
   adapter   web · viewport 1440×900
-  max turns 50
+  max time  5m
   evidence  .gauntlet/results/r-fa01/
 ──────────────────────────────────────────────────────
 
@@ -12,5 +12,5 @@
 
 ─── Run failed ────────────────────────────────── ✗ error
   runId     r-fa01
-  turn      1 / 50
+  turn      1
   error     anthropic: rate_limit_error (40s remaining)

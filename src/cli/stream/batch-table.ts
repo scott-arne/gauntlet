@@ -11,7 +11,6 @@ interface CardRow {
   runId: string | null;
   state: "queued" | "running" | "done" | "errored";
   turn: number;
-  maxTurns: number;
   finalStatus: VetStatus | null;
   errorTurn: number | null;
   errorMessage: string | null;
@@ -81,7 +80,6 @@ export class BatchTableRenderer {
       runId: null,
       state: "queued",
       turn: 0,
-      maxTurns: 0,
       finalStatus: null,
       errorTurn: null,
       errorMessage: null,
@@ -92,18 +90,17 @@ export class BatchTableRenderer {
     // TTY: queued cards aren't shown until they start; the model is enough.
   }
 
-  setRunning(cardId: string, runId: string, maxTurns: number, attemptNumber = 1, passes = 1): void {
+  setRunning(cardId: string, runId: string, attemptNumber = 1, passes = 1): void {
     const key = this.rowKey(cardId, attemptNumber);
     const row = this.rows.get(key);
     if (!row) return;
     row.runId = runId;
     row.state = "running";
-    row.maxTurns = maxTurns;
     row.passes = passes;
     row.startedAt = Date.now();
 
     if (!this.opts.isTTY) {
-      this.sink.write(`${cardId}: running turn 0 / ${maxTurns}\n`);
+      this.sink.write(`${cardId}: running turn 0\n`);
       return;
     }
 
@@ -130,7 +127,7 @@ export class BatchTableRenderer {
     if (!row || row.state !== "running") return;
     row.turn = turn;
     if (!this.opts.isTTY) {
-      this.sink.write(`${cardId}: running turn ${turn} / ${row.maxTurns}\n`);
+      this.sink.write(`${cardId}: running turn ${turn}\n`);
       return;
     }
     if (this.activeKey === key) this.drawSpinner();
@@ -243,7 +240,7 @@ export class BatchTableRenderer {
     const total = this.order.length;
     const turn = row.turn === 0 && row.state === "running"
       ? `starting…`
-      : `turn ${row.turn} / ${row.maxTurns}`;
+      : `turn ${row.turn}`;
     this.sink.write(
       `${ERASE_LINE}${c.bold}${frame}${c.reset} ${c.dim}[${idx}/${total}]${c.reset} ${row.cardId}   ${c.dim}${turn}${c.reset}`,
     );

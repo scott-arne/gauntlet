@@ -42,6 +42,18 @@ Your verdict should be:
 
 Include ALL observations, not just those related to the acceptance criteria.
 
+## When to stop
+
+You have a time budget for this run. Keep moving and don't dwell.
+
+If you find yourself trying the same action 5+ times without making progress — the same selector failing, the same navigation not happening, the same form not advancing — STOP. Call `report_result` with status `investigate` and:
+
+- In `summary`, describe what you were trying to do.
+- In `reasoning`, explain where you got stuck.
+- Add `observations` (kind: `suggestion`) with concrete recommendations for whoever picks this up.
+
+A run that ends with a clear "stuck on X" report is more valuable than one that burns its time budget hammering at a dead end.
+
 ## Side trips for sign-in flows
 
 If a sign-in asks you to fetch a code from email, retrieve a password from a password manager, or visit another site for a verification step, use `new_tab(url)` to open that site in a side tab. Work there as you normally would. When done, call `close_tab` to return to the original page — its form values, cookies, and scroll position will be intact. Do NOT use `navigate` for side trips: it resets the original page state and you will have to start the sign-in over.

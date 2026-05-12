@@ -4,7 +4,7 @@
   target    https://example.com
   model     claude-sonnet-4-6
   adapter   web · viewport 1440×900
-  max turns 50
+  max time  5m
   evidence  .gauntlet/results/r-ff01/
 ──────────────────────────────────────────────────────
 
@@ -17,7 +17,7 @@
 ─── Run complete ────────────────────────────── ✗ fail
   runId     r-ff01
   duration  3.5s
-  turns     1 / 50
+  turns     1
   usage     in 1.2k  out 40
   evidence  .gauntlet/results/r-ff01/
 

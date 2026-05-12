@@ -7,7 +7,7 @@ import { runRoutes } from "../../src/api/routes/run";
 import { activeRunRoutes } from "../../src/api/routes/active-runs";
 import { ActiveRunRegistry } from "../../src/api/active-runs";
 import { createApp } from "../../src/api/server";
-import { loadConfig, validateRunBody, TurnsTooHighError } from "../../src/config";
+import { loadConfig, validateRunBody } from "../../src/config";
 import { gauntletPath } from "../../src/paths";
 
 const STORY_MD = `---
@@ -31,44 +31,58 @@ function makeProjectRoot(): string {
   return root;
 }
 
-describe("PRI-1478: turns cap (validateRunBody)", () => {
-  test("rejects body.turns > maxTurnsCap with TurnsTooHighError", () => {
-    expect(() => validateRunBody({ target: "http://x", turns: 1000 }, { maxTurnsCap: 200 }))
-      .toThrow(TurnsTooHighError);
+describe("validateRunBody: body.turns is rejected", () => {
+  test("rejects any body.turns value with a clear 400-suitable error", () => {
+    expect(() => validateRunBody({ target: "http://x", turns: 5 }, {}))
+      .toThrow(/`turns` is no longer accepted/);
   });
 
-  test("accepts body.turns at cap", () => {
-    expect(() => validateRunBody({ target: "http://x", turns: 200 }, { maxTurnsCap: 200 }))
-      .not.toThrow();
+  test("accepts body without turns", () => {
+    expect(() => validateRunBody({ target: "http://x" }, {})).not.toThrow();
+  });
+});
+
+describe("loadConfig: GAUNTLET_MAX_TIME and GAUNTLET_MAX_STUCK_RETRIES", () => {
+  test("default budget is 5 minutes; default stuck retries is 5", () => {
+    const c = loadConfig({}, {} as NodeJS.ProcessEnv);
+    expect(c.defaultBudgetMs).toBe(300_000);
+    expect(c.defaultMaxStuckRetries).toBe(5);
   });
 
-  test("when no cap is provided, behaves like before", () => {
-    expect(() => validateRunBody({ target: "http://x", turns: 1000000 })).not.toThrow();
+  test("GAUNTLET_MAX_TIME accepts duration strings", () => {
+    const c = loadConfig({}, { GAUNTLET_MAX_TIME: "30s" } as NodeJS.ProcessEnv);
+    expect(c.defaultBudgetMs).toBe(30_000);
   });
 
-  test("route returns 400 turns_too_high when over cap", async () => {
-    const projectRoot = makeProjectRoot();
-    try {
-      const config = loadConfig({ projectRoot }, {
-        GAUNTLET_AGENT_MODEL: "claude-sonnet-4-6",
-        GAUNTLET_MAX_TURNS_CAP: "200",
-      } as NodeJS.ProcessEnv);
-      const app = new Hono();
-      app.route("/api/run", runRoutes(config));
+  test("GAUNTLET_MAX_STUCK_RETRIES accepts positive integer", () => {
+    const c = loadConfig({}, { GAUNTLET_MAX_STUCK_RETRIES: "3" } as NodeJS.ProcessEnv);
+    expect(c.defaultMaxStuckRetries).toBe(3);
+  });
 
-      const res = await app.request("/api/run/cap-test-card", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ target: "http://x", turns: 1000 }),
-      });
-      expect(res.status).toBe(400);
-      const body = await res.json() as { error: string; cap: number; requested: number };
-      expect(body.error).toBe("turns_too_high");
-      expect(body.cap).toBe(200);
-      expect(body.requested).toBe(1000);
-    } finally {
-      rmSync(projectRoot, { recursive: true, force: true });
-    }
+  test("rejects GAUNTLET_MAX_STUCK_RETRIES with trailing garbage like '3abc'", () => {
+    expect(() =>
+      loadConfig({ args: {} } as any, { GAUNTLET_MAX_STUCK_RETRIES: "3abc" } as NodeJS.ProcessEnv),
+    ).toThrow(/GAUNTLET_MAX_STUCK_RETRIES.*3abc/);
+  });
+
+  test("rejects fractional GAUNTLET_MAX_STUCK_RETRIES", () => {
+    expect(() =>
+      loadConfig({ args: {} } as any, { GAUNTLET_MAX_STUCK_RETRIES: "3.5" } as NodeJS.ProcessEnv),
+    ).toThrow(/GAUNTLET_MAX_STUCK_RETRIES.*3.5/);
+  });
+
+  test("CLI --max-time overrides env", () => {
+    const c = loadConfig(
+      { maxTime: "10s" } as any,
+      { GAUNTLET_MAX_TIME: "5m" } as NodeJS.ProcessEnv,
+    );
+    expect(c.defaultBudgetMs).toBe(10_000);
+  });
+
+  test("invalid GAUNTLET_MAX_TIME throws with the offending value", () => {
+    expect(() =>
+      loadConfig({}, { GAUNTLET_MAX_TIME: "xyz" } as NodeJS.ProcessEnv),
+    ).toThrow(/GAUNTLET_MAX_TIME.*xyz/);
   });
 });
 
@@ -225,13 +239,12 @@ describe("PRI-1478: body size cap (Hono bodyLimit middleware)", () => {
 });
 
 describe("PRI-1478: config env var parsing", () => {
-  test("loadConfig populates the four caps with defaults when env unset", () => {
+  test("loadConfig populates caps with defaults when env unset", () => {
     const projectRoot = mkdtempSync(join(tmpdir(), "caps-cfg-"));
     try {
       const c = loadConfig({ projectRoot }, { GAUNTLET_AGENT_MODEL: "claude-sonnet-4-6" } as NodeJS.ProcessEnv);
       expect(c.maxRequestBodySize).toBe(1024 * 1024);
       expect(c.maxConcurrentRuns).toBe(4);
-      expect(c.maxTurnsCap).toBe(200);
       expect(c.activeRunTargetMaxBytes).toBe(1024);
     } finally {
       rmSync(projectRoot, { recursive: true, force: true });
@@ -245,12 +258,10 @@ describe("PRI-1478: config env var parsing", () => {
         GAUNTLET_AGENT_MODEL: "claude-sonnet-4-6",
         GAUNTLET_MAX_REQUEST_BODY_SIZE: "65536",
         GAUNTLET_MAX_CONCURRENT_RUNS: "8",
-        GAUNTLET_MAX_TURNS_CAP: "500",
         GAUNTLET_ACTIVE_RUN_TARGET_MAX_BYTES: "2048",
       } as NodeJS.ProcessEnv);
       expect(c.maxRequestBodySize).toBe(65536);
       expect(c.maxConcurrentRuns).toBe(8);
-      expect(c.maxTurnsCap).toBe(500);
       expect(c.activeRunTargetMaxBytes).toBe(2048);
     } finally {
       rmSync(projectRoot, { recursive: true, force: true });
@@ -261,8 +272,8 @@ describe("PRI-1478: config env var parsing", () => {
     expect(() =>
       loadConfig({}, {
         GAUNTLET_AGENT_MODEL: "claude-sonnet-4-6",
-        GAUNTLET_MAX_TURNS_CAP: "not-a-number",
+        GAUNTLET_MAX_REQUEST_BODY_SIZE: "not-a-number",
       } as NodeJS.ProcessEnv)
-    ).toThrow(/GAUNTLET_MAX_TURNS_CAP/);
+    ).toThrow(/GAUNTLET_MAX_REQUEST_BODY_SIZE/);
   });
 });

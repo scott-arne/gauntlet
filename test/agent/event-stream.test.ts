@@ -72,6 +72,8 @@ describe("agent event stream", () => {
 
     await runAgent(makeCard(), makeAdapter(), client, logger, undefined, {
       runId: "card-001_20260421T000000Z_aaaa",
+      budgetMs: 600_000,
+      maxStuckRetries: 5,
     });
 
     const rows = readLog(outDir);
@@ -99,6 +101,8 @@ describe("agent event stream", () => {
     }]);
     await runAgent(makeCard(), makeAdapter(), client, logger, "http://x", {
       runId: "card-001_20260421T000000Z_aaaa",
+      budgetMs: 600_000,
+      maxStuckRetries: 5,
     });
 
     const rows = readLog(outDir);
@@ -139,6 +143,8 @@ describe("agent event stream", () => {
 
     await runAgent(makeCard(), adapter, client, logger, undefined, {
       runId: "card-001_20260421T000000Z_aaaa",
+      budgetMs: 600_000,
+      maxStuckRetries: 5,
     });
 
     const rows = readLog(outDir);
@@ -181,6 +187,8 @@ describe("agent event stream", () => {
 
     await runAgent(makeCard(), adapter, client, logger, undefined, {
       runId: "card-001_20260421T000000Z_aaaa",
+      budgetMs: 600_000,
+      maxStuckRetries: 5,
     });
 
     const result = readLog(outDir).find((r) => r.type === "tool_result");
@@ -196,6 +204,8 @@ describe("agent event stream", () => {
     }]);
     await runAgent(makeCard(), makeAdapter(), client, logger, undefined, {
       runId: "card-001_20260421T000000Z_aaaa",
+      budgetMs: 600_000,
+      maxStuckRetries: 5,
       provider: "anthropic",
       model: "claude-opus-4-7",
     });
@@ -212,6 +222,8 @@ describe("agent event stream", () => {
     }]);
     await runAgent(makeCard(), makeAdapter(), client, logger, undefined, {
       runId: "card-001_20260421T000000Z_aaaa",
+      budgetMs: 600_000,
+      maxStuckRetries: 5,
     });
 
     const rows = readLog(outDir);

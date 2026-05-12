@@ -9,7 +9,7 @@ import {
 } from "../../models/resolve";
 import { makeRunId } from "../../util/id";
 import { gauntletPath } from "../../paths";
-import { mergeRunConfig, validateRunBody, TurnsTooHighError, type AppConfig } from "../../config";
+import { mergeRunConfig, validateRunBody, type AppConfig } from "../../config";
 import { runRunSet } from "../../runs/run-set";
 import {
   executeRunCore,
@@ -146,7 +146,8 @@ export async function executeHttpRun(
         model: effective.model,
         adapter: effective.adapter,
         target: effective.target,
-        turns: effective.turns,
+        budgetMs: effective.budgetMs,
+        maxStuckRetries: effective.maxStuckRetries,
         chrome: effective.chrome,
         viewport: effective.viewport,
       },
@@ -183,16 +184,8 @@ export function runRoutes(
     const rawBody = await c.req.json().catch(() => ({}));
     let body;
     try {
-      body = validateRunBody(rawBody, { maxTurnsCap: config.maxTurnsCap });
+      body = validateRunBody(rawBody);
     } catch (err) {
-      if (err instanceof TurnsTooHighError) {
-        return c.json({
-          error: "turns_too_high",
-          message: err.message,
-          requested: err.requested,
-          cap: err.cap,
-        }, 400);
-      }
       return c.json({ error: err instanceof Error ? err.message : String(err) }, 400);
     }
 

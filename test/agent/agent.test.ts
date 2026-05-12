@@ -126,7 +126,7 @@ describe("runAgent", () => {
       },
     ]);
 
-    const result = await runAgent(card, makeMockAdapter(), client, makeMockLogger(), undefined, { runId: makeRunId(card.id) });
+    const result = await runAgent(card, makeMockAdapter(), client, makeMockLogger(), undefined, { runId: makeRunId(card.id), budgetMs: 600_000, maxStuckRetries: 5 });
 
     expect(result.status).toBe("pass");
     expect(result.summary).toBe("All good");
@@ -166,7 +166,7 @@ describe("runAgent", () => {
       },
     ]);
 
-    await runAgent(card, makeMockAdapter(), client, makeMockLogger(), undefined, { runId: makeRunId(card.id) });
+    await runAgent(card, makeMockAdapter(), client, makeMockLogger(), undefined, { runId: makeRunId(card.id), budgetMs: 600_000, maxStuckRetries: 5 });
 
     // Second chat() call should have: initial user message + rawAssistantMessage + tool result
     const secondCallMessages = (client as any)._chatCalls[1];
@@ -238,7 +238,7 @@ describe("runAgent", () => {
       click: "clicked .btn",
     });
 
-    const result = await runAgent(card, adapter, client, makeMockLogger(), undefined, { runId: makeRunId(card.id) });
+    const result = await runAgent(card, adapter, client, makeMockLogger(), undefined, { runId: makeRunId(card.id), budgetMs: 600_000, maxStuckRetries: 5 });
 
     expect(result.status).toBe("pass");
     expect(result.summary).toBe("UI renders correctly");
@@ -311,7 +311,7 @@ describe("runAgent", () => {
       },
     ]);
 
-    const result = await runAgent(card, makeMockAdapter(), client, makeMockLogger(), undefined, { runId: makeRunId(card.id) });
+    const result = await runAgent(card, makeMockAdapter(), client, makeMockLogger(), undefined, { runId: makeRunId(card.id), budgetMs: 600_000, maxStuckRetries: 5 });
 
     expect(result.usage).toEqual({
       inputTokens: 750,
@@ -373,7 +373,7 @@ describe("runAgent", () => {
 
     const result = await runAgent(
       card, slowAdapter as any, client, makeMockLogger(), undefined,
-      { toolTimeoutMs: 500, runId: makeRunId(card.id) }
+      { toolTimeoutMs: 500, runId: makeRunId(card.id), budgetMs: 600_000, maxStuckRetries: 5 }
     );
 
     expect(result.status).toBe("fail");
@@ -392,7 +392,7 @@ describe("runAgent", () => {
       },
     ]);
 
-    const result = await runAgent(card, makeMockAdapter(), client, makeMockLogger(), undefined, { runId: makeRunId(card.id) });
+    const result = await runAgent(card, makeMockAdapter(), client, makeMockLogger(), undefined, { runId: makeRunId(card.id), budgetMs: 600_000, maxStuckRetries: 5 });
 
     expect(result.status).toBe("investigate");
     expect(result.summary).toContain("max_tokens");
@@ -411,7 +411,7 @@ describe("runAgent", () => {
       },
     ]);
 
-    const result = await runAgent(card, makeMockAdapter(), client, makeMockLogger(), undefined, { runId: makeRunId(card.id) });
+    const result = await runAgent(card, makeMockAdapter(), client, makeMockLogger(), undefined, { runId: makeRunId(card.id), budgetMs: 600_000, maxStuckRetries: 5 });
 
     expect(result.status).toBe("investigate");
     expect(result.summary).toContain("neither tool call nor text");
@@ -439,7 +439,7 @@ describe("runAgent", () => {
       },
     ]);
 
-    const result = await runAgent(card, makeMockAdapter(), client, makeMockLogger(), undefined, { runId: makeRunId(card.id) });
+    const result = await runAgent(card, makeMockAdapter(), client, makeMockLogger(), undefined, { runId: makeRunId(card.id), budgetMs: 600_000, maxStuckRetries: 5 });
 
     expect(result.status).toBe("investigate");
     expect(result.summary).toContain("malformed report_result");
@@ -480,7 +480,7 @@ describe("runAgent", () => {
       },
     ]);
 
-    const result = await runAgent(card, makeMockAdapter(), client, makeMockLogger(), undefined, { runId: makeRunId(card.id) });
+    const result = await runAgent(card, makeMockAdapter(), client, makeMockLogger(), undefined, { runId: makeRunId(card.id), budgetMs: 600_000, maxStuckRetries: 5 });
 
     expect(result.usage).toEqual({
       inputTokens: 1200,
@@ -516,7 +516,7 @@ describe("runAgent", () => {
       },
     ]);
 
-    const result = await runAgent(card, makeMockAdapter(), client, logger, undefined, { runId: makeRunId(card.id) });
+    const result = await runAgent(card, makeMockAdapter(), client, logger, undefined, { runId: makeRunId(card.id), budgetMs: 600_000, maxStuckRetries: 5 });
 
     expect(result.status).toBe("pass");
     // Exactly one logged dropped-tools event, and it names the two.
@@ -566,7 +566,7 @@ describe("runAgent", () => {
         },
       ]);
 
-      await runAgent(card, makeMockAdapter(), client, makeMockLogger(), undefined, { runId: makeRunId(card.id) });
+      await runAgent(card, makeMockAdapter(), client, makeMockLogger(), undefined, { runId: makeRunId(card.id), budgetMs: 600_000, maxStuckRetries: 5 });
 
       // Every setTimeout in the race path should be matched by a clearTimeout.
       // We had at least one tool call, so created must be >= 1.
@@ -622,7 +622,7 @@ describe("runAgent", () => {
       client,
       makeMockLogger(),
       undefined,
-      { runId: makeRunId(card.id) }
+      { runId: makeRunId(card.id), budgetMs: 600_000, maxStuckRetries: 5 }
     );
 
     expect(result.status).toBe("fail");
@@ -637,37 +637,30 @@ describe("runAgent", () => {
     });
   });
 
-  test("max_turns exhaustion injects SYSTEM-REMINDER grace turn and honors the agent's final report", async () => {
+  test("deadline exhaustion injects SYSTEM-REMINDER grace turn and honors the agent's final report", async () => {
     const eventLog: Array<{ name: string; params: Record<string, unknown> }> = [];
     const logger = makeMockLogger();
     (logger as any).logEvent = (name: string, params: Record<string, unknown>) => {
       eventLog.push({ name, params });
     };
 
+    // budgetMs: 0 means the deadline is already past before the loop runs —
+    // the while condition is false immediately, so we skip straight to the
+    // grace turn. Only one chat() call is made (the grace turn itself).
     const client = makeMockClient([
-      // Turn 1 (the only working turn): agent takes a screenshot, doesn't
-      // report — this would normally fall through to the generic exhausted
-      // result before this feature.
-      {
-        text: "Taking a look",
-        toolCalls: [{ id: "c1", name: "screenshot", arguments: {} }],
-        stopReason: "tool_use",
-        rawAssistantMessage: { role: "assistant", content: "t1" },
-        usage: { inputTokens: 10, outputTokens: 5 },
-      },
       // Grace turn: agent responds to the SYSTEM-REMINDER with a proper report.
       {
-        text: "Out of turns; summarizing",
+        text: "Out of time; summarizing",
         toolCalls: [
           {
-            id: "c2",
+            id: "c1",
             name: "report_result",
             arguments: {
               status: "investigate",
               summary: "Did not finish within turn budget",
-              reasoning: "Reached turn limit after one screenshot; still exploring",
+              reasoning: "Budget expired before any work; still exploring",
               observations: [
-                { kind: "suggestion", description: "Increase --turns for this scenario" },
+                { kind: "suggestion", description: "Configure a longer --max-time for this scenario" },
               ],
             },
           },
@@ -680,7 +673,8 @@ describe("runAgent", () => {
 
     const result = await runAgent(card, makeMockAdapter(), client, logger, undefined, {
       runId: makeRunId(card.id),
-      maxTurns: 1,
+      budgetMs: 0,
+      maxStuckRetries: 5,
     });
 
     // Honor the agent's verdict from the grace turn.
@@ -689,50 +683,43 @@ describe("runAgent", () => {
     expect(result.observations).toHaveLength(1);
     expect(result.observations[0]).toEqual({
       kind: "suggestion",
-      description: "Increase --turns for this scenario",
+      description: "Configure a longer --max-time for this scenario",
     });
 
-    // usage.turns reflects the caller's budget (1), not the extra grace call.
-    // Token counts still accumulate across both calls.
+    // usage.turns is 0 — loop never ran. Token counts accumulate from grace call.
     expect(result.usage).toEqual({
-      inputTokens: 30,
-      outputTokens: 20,
-      turns: 1,
+      inputTokens: 20,
+      outputTokens: 15,
+      turns: 0,
     });
 
-    // Two chat() calls happened: one working turn + one grace turn.
+    // Only one chat() call: the grace turn. The loop never executed.
     const chatCalls = (client as any)._chatCalls;
-    expect(chatCalls).toHaveLength(2);
+    expect(chatCalls).toHaveLength(1);
 
     // The grace turn's final user message is the SYSTEM-REMINDER.
-    const graceMessages = chatCalls[1];
+    const graceMessages = chatCalls[0];
     const lastMessage = graceMessages[graceMessages.length - 1];
     expect(lastMessage).toMatchObject({ role: "user" });
     expect(String(lastMessage.content)).toContain("<SYSTEM-REMINDER>");
-    expect(String(lastMessage.content)).toContain("all 1 of your available turns");
+    expect(String(lastMessage.content)).toContain("time budget");
     expect(String(lastMessage.content)).toContain("report_result");
 
     // Grace turn was called with ONLY report_result exposed — no adapter tools.
     const toolsPerCall = (client as any)._toolsPerCall;
-    expect(toolsPerCall[0]).toContain("screenshot");
-    expect(toolsPerCall[1]).toEqual(["report_result"]);
+    expect(toolsPerCall[0]).toEqual(["report_result"]);
 
-    // max_turns_reminder event was logged (for stream renderers).
-    const reminder = eventLog.find((e) => e.name === "max_turns_reminder");
+    // deadline_reminder event was logged (for stream renderers).
+    const reminder = eventLog.find((e) => e.name === "deadline_reminder");
     expect(reminder).toBeDefined();
-    expect(reminder?.params.maxTurns).toBe(1);
+    expect(reminder?.params.budgetMs).toBe(0);
   });
 
   test("falls through to generic exhausted result when grace turn also fails to report", async () => {
+    // budgetMs: 0 — loop never runs, grace turn fires immediately.
+    // The grace turn returns text-only (no report_result call), triggering
+    // the fallthrough path.
     const client = makeMockClient([
-      // Turn 1: works but doesn't report.
-      {
-        text: "working",
-        toolCalls: [{ id: "c1", name: "screenshot", arguments: {} }],
-        stopReason: "tool_use",
-        rawAssistantMessage: { role: "assistant", content: "t1" },
-        usage: { inputTokens: 10, outputTokens: 5 },
-      },
       // Grace turn: text only, no tool calls — the agent ignored the reminder.
       {
         text: "I should have called report_result",
@@ -745,13 +732,14 @@ describe("runAgent", () => {
 
     const result = await runAgent(card, makeMockAdapter(), client, makeMockLogger(), undefined, {
       runId: makeRunId(card.id),
-      maxTurns: 1,
+      budgetMs: 0,
+      maxStuckRetries: 5,
     });
 
     expect(result.status).toBe("investigate");
-    expect(result.summary).toContain("maximum turn limit");
+    expect(result.summary).toContain("time budget");
     expect(result.reasoning).toContain("grace");
-    // Still two chat() calls — we tried the grace turn before falling through.
-    expect((client as any)._chatCalls).toHaveLength(2);
+    // One chat() call: the grace turn. The loop never ran (budgetMs: 0).
+    expect((client as any)._chatCalls).toHaveLength(1);
   });
 });

@@ -11,7 +11,8 @@ function makeConfig(): AppConfig {
     projectRoot: "/tmp/x",
     port: 4400,
     defaultChrome: { host: "127.0.0.1", port: 9222 },
-    defaultTurns: 5,
+    defaultBudgetMs: 300000,
+    defaultMaxStuckRetries: 5,
     defaultViewport: { width: 1440, height: 900 },
     saveScreencast: false,
     models: { agent: "claude-sonnet-4-6", fanout: undefined },
@@ -38,7 +39,7 @@ describe("runBatch", () => {
         logEvent: () => {},
       };
       const detach = opts.onLogger?.(fakeLog) ?? (() => {});
-      observer?.({ type: "run_start", runId: `run-${opts.scenarioPath}`, cardId: opts.scenarioPath, maxTurns: 20 } as any);
+      observer?.({ type: "run_start", runId: `run-${opts.scenarioPath}`, cardId: opts.scenarioPath, budgetMs: 300_000, maxStuckRetries: 5 } as any);
       observer?.({ type: "llm_response", turn: 3, stopReason: "end_turn" } as any);
       observer?.({ type: "run_end", status: "pass", durationMs: 1000, usage: { turns: 4 } } as any);
       detach();
@@ -88,7 +89,7 @@ describe("runBatch — error handling", () => {
         const fakeLog: any = { addEventObserver: (fn: EventObserver) => { resolve(fn); return () => {}; }, logEvent: () => {} };
         opts.onLogger?.(fakeLog);
       }));
-      observer({ type: "run_start", runId: "r2", cardId: "b.md", maxTurns: 20 } as any);
+      observer({ type: "run_start", runId: "r2", cardId: "b.md", budgetMs: 300_000, maxStuckRetries: 5 } as any);
       observer({ type: "run_end", status: "pass", usage: { turns: 1 } } as any);
       return { runId: "r2", outDir: "/tmp/b.md", result: { status: "pass" } };
     };
@@ -121,7 +122,7 @@ describe("runBatch — error handling", () => {
         const fakeLog: any = { addEventObserver: (fn: EventObserver) => { resolve(fn); return () => {}; }, logEvent: () => {} };
         opts.onLogger?.(fakeLog);
       }));
-      observer({ type: "run_start", runId: "r", cardId: opts.scenarioPath, maxTurns: 20 } as any);
+      observer({ type: "run_start", runId: "r", cardId: opts.scenarioPath, budgetMs: 300_000, maxStuckRetries: 5 } as any);
       observer({ type: "run_end", status: "investigate", usage: { turns: 1 } } as any);
       return { runId: "r", outDir: "/tmp/x", result: { status: "investigate" } };
     };
@@ -149,7 +150,7 @@ describe("runBatch — output modes", () => {
         const fakeLog: any = { addEventObserver: (fn: EventObserver) => { resolve(fn); return () => {}; }, logEvent: () => {} };
         opts.onLogger?.(fakeLog);
       }));
-      observer({ type: "run_start", runId: "RUN-1", cardId: "a", maxTurns: 20 } as any);
+      observer({ type: "run_start", runId: "RUN-1", cardId: "a", budgetMs: 300_000, maxStuckRetries: 5 } as any);
       observer({ type: "llm_response", turn: 1, stopReason: "end_turn" } as any);
       observer({ type: "run_end", status: "pass", usage: { turns: 1 } } as any);
       return { runId: "RUN-1", outDir: "/tmp/a", result: { status: "pass" } };
@@ -187,7 +188,7 @@ describe("runBatch — output modes", () => {
         const fakeLog: any = { addEventObserver: (fn: EventObserver) => { resolve(fn); return () => {}; }, logEvent: () => {} };
         opts.onLogger?.(fakeLog);
       }));
-      observer({ type: "run_start", runId: "r", cardId: "a", maxTurns: 20 } as any);
+      observer({ type: "run_start", runId: "r", cardId: "a", budgetMs: 300_000, maxStuckRetries: 5 } as any);
       observer({ type: "run_end", status: "pass", usage: { turns: 1 } } as any);
       return { runId: "r", outDir: "/tmp/a", result: { status: "pass" } };
     };
@@ -228,7 +229,8 @@ describe("runBatch — RunSet artifact", () => {
       projectRoot,
       port: 4400,
       defaultChrome: { host: "127.0.0.1", port: 9222 },
-      defaultTurns: 5,
+      defaultBudgetMs: 300000,
+      defaultMaxStuckRetries: 5,
       defaultViewport: { width: 1440, height: 900 },
       saveScreencast: false,
       models: { agent: "claude-sonnet-4-6", fanout: undefined },
@@ -246,7 +248,7 @@ describe("runBatch — RunSet artifact", () => {
       };
       const detach = opts.onLogger?.(fakeLog) ?? (() => {});
       const runId = opts.runId ?? `run-${opts.scenarioPath}`;
-      observer?.({ type: "run_start", runId, cardId: opts.scenarioPath, maxTurns: 20 } as any);
+      observer?.({ type: "run_start", runId, cardId: opts.scenarioPath, budgetMs: 300_000, maxStuckRetries: 5 } as any);
       observer?.({ type: "run_end", status: "pass", durationMs: 500, usage: { turns: 2 } } as any);
       detach();
       return { runId, outDir: `/tmp/${runId}`, result: { status: "pass" } as any };

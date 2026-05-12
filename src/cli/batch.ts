@@ -53,7 +53,6 @@ function makeBatchObserver(
           table.setRunning(
             cardId,
             currentRunId,
-            Number((ev as any).maxTurns ?? 0),
             attemptNumber,
             passes,
           );
@@ -192,7 +191,7 @@ export async function runBatch(
         if (t === "run_start") {
           currentRunId = String((ev as any).runId);
           if (table) {
-            table.setRunning(c.id, currentRunId, Number((ev as any).maxTurns ?? 0));
+            table.setRunning(c.id, currentRunId);
           }
         } else if (t === "llm_response") {
           if (table) table.onTurn(c.id, Number((ev as any).turn ?? 0));

@@ -15,7 +15,8 @@ export function configRoutes(config: AppConfig) {
       models: config.models.available,
       defaultModel: config.models.agent,
       defaultTarget: config.defaultTarget ?? null,
-      defaultTurns: config.defaultTurns,
+      defaultBudgetMs: config.defaultBudgetMs,
+      defaultMaxStuckRetries: config.defaultMaxStuckRetries,
       defaultViewport: config.defaultViewport,
       defaultSaveScreencast: config.defaultSaveScreencast,
     });

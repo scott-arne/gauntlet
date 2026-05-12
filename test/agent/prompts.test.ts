@@ -14,7 +14,7 @@ describe("buildSystemPrompt", () => {
       raw: "",
     };
 
-    const prompt = buildSystemPrompt(card);
+    const prompt = buildSystemPrompt(card, undefined, undefined, undefined, 5);
     expect(prompt).toContain("story-001");
     expect(prompt).toContain("User can add a todo");
     expect(prompt).toContain("Item appears in list");
@@ -32,7 +32,7 @@ describe("buildSystemPrompt", () => {
       raw: "",
     };
 
-    const prompt = buildSystemPrompt(card);
+    const prompt = buildSystemPrompt(card, undefined, undefined, undefined, 5);
     expect(prompt).toContain("observation");
   });
 
@@ -47,7 +47,7 @@ describe("buildSystemPrompt", () => {
       raw: "",
     };
 
-    const prompt = buildSystemPrompt(card);
+    const prompt = buildSystemPrompt(card, undefined, undefined, undefined, 5);
     expect(prompt).toContain("explore");
   });
 
@@ -93,29 +93,29 @@ describe("buildSystemPrompt", () => {
       SAMPLE_TREE;
 
     test("section is appended verbatim when a tree is provided", () => {
-      const prompt = buildSystemPrompt(baseCard, SAMPLE_TREE);
+      const prompt = buildSystemPrompt(baseCard, SAMPLE_TREE, undefined, undefined, 5);
       expect(prompt).toContain(EXPECTED_CONTEXT_SECTION);
     });
 
     test("section is the last block in the prompt", () => {
-      const prompt = buildSystemPrompt(baseCard, SAMPLE_TREE);
+      const prompt = buildSystemPrompt(baseCard, SAMPLE_TREE, undefined, undefined, 5);
       expect(prompt.endsWith(EXPECTED_CONTEXT_SECTION)).toBe(true);
     });
 
     test("section is omitted when contextTree is undefined", () => {
-      const prompt = buildSystemPrompt(baseCard);
+      const prompt = buildSystemPrompt(baseCard, undefined, undefined, undefined, 5);
       expect(prompt).not.toContain("## Context");
       expect(prompt).not.toContain(".gauntlet/context/");
     });
 
     test("section is omitted when contextTree is the empty string", () => {
-      const prompt = buildSystemPrompt(baseCard, "");
+      const prompt = buildSystemPrompt(baseCard, "", undefined, undefined, 5);
       expect(prompt).not.toContain("## Context");
       expect(prompt).not.toContain(".gauntlet/context/");
     });
 
     test("immutability-invariant prose is present", () => {
-      const prompt = buildSystemPrompt(baseCard, SAMPLE_TREE);
+      const prompt = buildSystemPrompt(baseCard, SAMPLE_TREE, undefined, undefined, 5);
       // This is the prose face of spec §4.2 — it must not drift.
       expect(prompt).toContain(
         "built once at the start\nof the run and does not change while the run is in flight",
@@ -139,14 +139,14 @@ describe("buildSystemPrompt", () => {
     };
 
     test("web adapter prompt mentions new_tab, close_tab, and side trips", () => {
-      const prompt = buildSystemPrompt(baseCard, undefined, "web");
+      const prompt = buildSystemPrompt(baseCard, undefined, "web", undefined, 5);
       expect(prompt).toContain("new_tab");
       expect(prompt).toContain("close_tab");
       expect(prompt.toLowerCase()).toContain("side trip");
     });
 
     test("web prompt warns off `navigate` for side trips", () => {
-      const prompt = buildSystemPrompt(baseCard, undefined, "web");
+      const prompt = buildSystemPrompt(baseCard, undefined, "web", undefined, 5);
       // The agent's natural instinct is `navigate(url)`. The prompt has
       // to flag this explicitly or the side-trip guidance is just noise
       // alongside a more familiar tool.
@@ -157,14 +157,14 @@ describe("buildSystemPrompt", () => {
       // cli/tui adapters don't expose new_tab — telling the agent to
       // call it would be a hallucination invitation.
       for (const name of ["cli", "tui", undefined]) {
-        const prompt = buildSystemPrompt(baseCard, undefined, name);
+        const prompt = buildSystemPrompt(baseCard, undefined, name, undefined, 5);
         expect(prompt).not.toContain("new_tab");
         expect(prompt).not.toContain("close_tab");
       }
     });
 
     test("web side-trip section sits before the context section", () => {
-      const prompt = buildSystemPrompt(baseCard, "  alice.md  (5 bytes)", "web");
+      const prompt = buildSystemPrompt(baseCard, "  alice.md  (5 bytes)", "web", undefined, 5);
       const sideTripIdx = prompt.indexOf("Side trips");
       const contextIdx = prompt.indexOf("## Context");
       expect(sideTripIdx).toBeGreaterThan(0);

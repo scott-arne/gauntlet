@@ -7,13 +7,13 @@ interface ConfigOutput {
     port: number;
     defaultChrome: { host: string; port: number };
     defaultTarget: string | null;
-    defaultTurns: number;
+    defaultBudgetMs: number;
+    defaultMaxStuckRetries: number;
     defaultViewport: { width: number; height: number };
     defaultSaveScreencast: boolean;
     shutdownGraceMs: number;
     maxRequestBodySize: number;
     maxConcurrentRuns: number;
-    maxTurnsCap: number;
     activeRunTargetMaxBytes: number;
     wsIdleTimeoutSec: number;
     wsOriginAllowlist: string[];
@@ -46,13 +46,13 @@ export function buildConfigOutput(config: AppConfig, env: NodeJS.ProcessEnv): Co
       port: config.port,
       defaultChrome: config.defaultChrome,
       defaultTarget: config.defaultTarget ?? null,
-      defaultTurns: config.defaultTurns,
+      defaultBudgetMs: config.defaultBudgetMs,
+      defaultMaxStuckRetries: config.defaultMaxStuckRetries,
       defaultViewport: config.defaultViewport,
       defaultSaveScreencast: config.defaultSaveScreencast,
       shutdownGraceMs: config.shutdownGraceMs,
       maxRequestBodySize: config.maxRequestBodySize,
       maxConcurrentRuns: config.maxConcurrentRuns,
-      maxTurnsCap: config.maxTurnsCap,
       activeRunTargetMaxBytes: config.activeRunTargetMaxBytes,
       wsIdleTimeoutSec: config.wsIdleTimeoutSec,
       wsOriginAllowlist: config.wsOriginAllowlist,
@@ -90,13 +90,13 @@ export function formatConfigText(output: ConfigOutput): string {
   lines.push(`  port:           ${output.gauntlet.port}  (${output.gauntlet.sources.port})`);
   lines.push(`  defaultChrome:  ${output.gauntlet.defaultChrome.host}:${output.gauntlet.defaultChrome.port}  (${output.gauntlet.sources.defaultChrome})`);
   lines.push(`  defaultTarget:  ${output.gauntlet.defaultTarget ?? "(unset)"}  (${output.gauntlet.sources.defaultTarget})`);
-  lines.push(`  defaultTurns:   ${output.gauntlet.defaultTurns}  (${output.gauntlet.sources.defaultTurns})`);
+  lines.push(`  defaultBudgetMs: ${output.gauntlet.defaultBudgetMs}  (${output.gauntlet.sources.defaultBudgetMs})`);
+  lines.push(`  defaultMaxStuckRetries: ${output.gauntlet.defaultMaxStuckRetries}  (${output.gauntlet.sources.defaultMaxStuckRetries})`);
   lines.push(`  defaultViewport: ${output.gauntlet.defaultViewport.width}x${output.gauntlet.defaultViewport.height}  (${output.gauntlet.sources.defaultViewport})`);
   lines.push(`  defaultSaveScreencast: ${output.gauntlet.defaultSaveScreencast}  (${output.gauntlet.sources.defaultSaveScreencast})`);
   lines.push(`  shutdownGraceMs: ${output.gauntlet.shutdownGraceMs}  (${output.gauntlet.sources.shutdownGraceMs})`);
   lines.push(`  maxRequestBodySize: ${output.gauntlet.maxRequestBodySize}  (${output.gauntlet.sources.maxRequestBodySize})`);
   lines.push(`  maxConcurrentRuns: ${output.gauntlet.maxConcurrentRuns}  (${output.gauntlet.sources.maxConcurrentRuns})`);
-  lines.push(`  maxTurnsCap:    ${output.gauntlet.maxTurnsCap}  (${output.gauntlet.sources.maxTurnsCap})`);
   lines.push(`  activeRunTargetMaxBytes: ${output.gauntlet.activeRunTargetMaxBytes}  (${output.gauntlet.sources.activeRunTargetMaxBytes})`);
   lines.push(`  wsIdleTimeoutSec: ${output.gauntlet.wsIdleTimeoutSec}  (${output.gauntlet.sources.wsIdleTimeoutSec})`);
   lines.push(`  wsOriginAllowlist: [${output.gauntlet.wsOriginAllowlist.join(", ")}]  (${output.gauntlet.sources.wsOriginAllowlist})`);

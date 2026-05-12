@@ -4,6 +4,7 @@ import contextText from "./context.md" with { type: "text" };
 import adapterWebText from "./adapter-web.md" with { type: "text" };
 import adapterCliText from "./adapter-cli.md" with { type: "text" };
 import adapterTuiText from "./adapter-tui.md" with { type: "text" };
+import stuckHandlingText from "./stuck-handling.md" with { type: "text" };
 
 const FILES: Record<string, string> = {
   "persona": personaText,
@@ -12,6 +13,7 @@ const FILES: Record<string, string> = {
   "adapter-web": adapterWebText,
   "adapter-cli": adapterCliText,
   "adapter-tui": adapterTuiText,
+  "stuck-handling": stuckHandlingText,
 };
 
 /**

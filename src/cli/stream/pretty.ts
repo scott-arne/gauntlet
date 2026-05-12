@@ -13,9 +13,16 @@ export interface PrettyOptions {
   columns: number;
 }
 
+function humanizeDuration(ms: number): string {
+  if (ms % 3_600_000 === 0) return `${ms / 3_600_000}h`;
+  if (ms % 60_000 === 0)    return `${ms / 60_000}m`;
+  if (ms % 1_000 === 0)     return `${ms / 1_000}s`;
+  return `${ms}ms`;
+}
+
 export class PrettyRenderer implements StreamRenderer {
   private paint: Paint;
-  private maxTurns: number | undefined;
+  private budgetMs: number | undefined;
   private runId: string | undefined;
   private model: string | undefined;
   private outDir: string | undefined;
@@ -93,7 +100,7 @@ export class PrettyRenderer implements StreamRenderer {
 
   private renderRunStart(e: StreamEvent): void {
     const p = this.paint;
-    this.maxTurns = Number(e.maxTurns ?? 0);
+    this.budgetMs = Number(e.budgetMs ?? 0);
     this.runId = String(e.runId ?? "");
     this.model = String(e.model ?? "");
     this.outDir = e.outDir ? String(e.outDir) : undefined;
@@ -106,7 +113,7 @@ export class PrettyRenderer implements StreamRenderer {
     this.write(`  ${p.dim("target   ")} ${e.target ?? "—"}`);
     this.write(`  ${p.dim("model    ")} ${e.model}`);
     this.write(`  ${p.dim("adapter  ")} ${adapterLine}`);
-    this.write(`  ${p.dim("max turns")} ${e.maxTurns}`);
+    this.write(`  ${p.dim("max time ")} ${humanizeDuration(this.budgetMs)}`);
     if (this.outDir) this.write(`  ${p.dim("evidence ")} ${this.outDir}`);
     this.write(p.dim(RULE));
     this.write("");
@@ -128,8 +135,7 @@ export class PrettyRenderer implements StreamRenderer {
     this.write(`  ${p.dim("duration")}  ${formatDuration(Number(e.durationMs ?? 0))}`);
     const usage = e.usage as Record<string, number> | undefined;
     const turns = usage?.turns ?? 0;
-    const max = this.maxTurns ?? "?";
-    this.write(`  ${p.dim("turns")}     ${turns} / ${max}`);
+    this.write(`  ${p.dim("turns")}     ${turns}`);
     if (usage) {
       const parts = [
         `in ${formatThousands(usage.inputTokens)}`,
@@ -329,7 +335,7 @@ export class PrettyRenderer implements StreamRenderer {
     this.write("");
     this.write(`${p.dim("─── Run failed ──────────────────────────────────")} ${p.red("✗")} ${p.red("error")}`);
     this.write(`  ${p.dim("runId")}     ${this.runId ?? ""}`);
-    this.write(`  ${p.dim("turn")}      ${turn} / ${this.maxTurns ?? "?"}`);
+    this.write(`  ${p.dim("turn")}      ${turn}`);
     this.write(`  ${p.dim("error")}     ${String(e.message ?? "")}`);
   }
 

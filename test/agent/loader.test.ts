@@ -40,9 +40,9 @@ describe("loadPromptFile", () => {
     expect(() => loadPromptFile("does-not-exist")).toThrow(/does-not-exist\.md/);
   });
 
-  test("BUNDLED_PROMPT_NAMES exposes all six known names", () => {
+  test("BUNDLED_PROMPT_NAMES exposes all seven known names", () => {
     expect(new Set(BUNDLED_PROMPT_NAMES)).toEqual(
-      new Set(["persona", "evaluation", "context", "adapter-web", "adapter-cli", "adapter-tui"]),
+      new Set(["persona", "evaluation", "context", "adapter-web", "adapter-cli", "adapter-tui", "stuck-handling"]),
     );
   });
 });

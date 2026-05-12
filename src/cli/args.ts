@@ -46,7 +46,7 @@ function parsePasses(raw: string | undefined): number {
 
 const RUN_ALLOWED = new Set([
   "target", "out", "adapter", "model", "chrome", "project-dir",
-  "turns", "viewport", "save-screencast",
+  "max-time", "max-stuck-retries", "viewport", "save-screencast",
   "silent", "format", "no-color", "passes",
   "project-prompt",
   "show-prompt-and-exit",
@@ -60,8 +60,8 @@ const BATCH_ALLOWED = new Set([...RUN_ALLOWED].filter(
 ));
 const VALIDATE_ALLOWED = new Set<string>([]);
 const FANOUT_ALLOWED = new Set(["out", "model", "from-result"]);
-const SERVE_ALLOWED = new Set(["port", "project-dir", "chrome", "target", "model", "turns", "viewport", "save-screencast"]);
-const CONFIG_ALLOWED = new Set(["json", "project-dir", "port", "chrome", "target", "model", "turns", "viewport", "save-screencast"]);
+const SERVE_ALLOWED = new Set(["port", "project-dir", "chrome", "target", "model", "max-time", "max-stuck-retries", "viewport", "save-screencast"]);
+const CONFIG_ALLOWED = new Set(["json", "project-dir", "port", "chrome", "target", "model", "max-time", "max-stuck-retries", "viewport", "save-screencast"]);
 
 function rejectUnknownFlags(
   flags: Record<string, unknown>,
@@ -172,10 +172,11 @@ function parseConfigArgs(args: string[]): ConfigArgs {
       port: parseIntFlag(flags.port, "--port"),
       chrome: flags.chrome,
       target: flags.target,
-      turns: parseIntFlag(flags.turns, "--turns"),
       viewport: flags.viewport,
       saveScreencast: parseBoolFlag(flags["save-screencast"], "--save-screencast"),
       models: parseModelFlagArray(flags.model),
+      maxTime: typeof flags["max-time"] === "string" ? flags["max-time"] : undefined,
+      maxStuckRetries: parseIntFlag(flags["max-stuck-retries"], "--max-stuck-retries"),
     },
   };
 }
@@ -225,10 +226,11 @@ function parseRunArgs(args: string[]): RunArgs {
       projectRoot: flags["project-dir"],
       chrome: flags.chrome,
       target: flags.target,
-      turns: parseIntFlag(flags.turns, "--turns"),
       viewport: flags.viewport,
       saveScreencast: parseBoolFlag(flags["save-screencast"], "--save-screencast"),
       models: parseModelFlagArray(flags.model),
+      maxTime: typeof flags["max-time"] === "string" ? flags["max-time"] : undefined,
+      maxStuckRetries: parseIntFlag(flags["max-stuck-retries"], "--max-stuck-retries"),
     },
   };
 }
@@ -282,10 +284,11 @@ function parseBatchArgs(args: string[]): BatchArgs {
       projectRoot: flags["project-dir"],
       chrome: flags.chrome,
       target: flags.target,
-      turns: parseIntFlag(flags.turns, "--turns"),
       viewport: flags.viewport,
       saveScreencast: parseBoolFlag(flags["save-screencast"], "--save-screencast"),
       models: parseModelFlagArray(flags.model),
+      maxTime: typeof flags["max-time"] === "string" ? flags["max-time"] : undefined,
+      maxStuckRetries: parseIntFlag(flags["max-stuck-retries"], "--max-stuck-retries"),
     },
   };
 }
@@ -337,10 +340,11 @@ function parseServeArgs(args: string[]): ServeArgs {
       port: parseIntFlag(flags.port, "--port"),
       chrome: flags.chrome,
       target: flags.target,
-      turns: parseIntFlag(flags.turns, "--turns"),
       viewport: flags.viewport,
       saveScreencast: parseBoolFlag(flags["save-screencast"], "--save-screencast"),
       models: parseModelFlagArray(flags.model),
+      maxTime: typeof flags["max-time"] === "string" ? flags["max-time"] : undefined,
+      maxStuckRetries: parseIntFlag(flags["max-stuck-retries"], "--max-stuck-retries"),
     },
   };
 }
@@ -418,7 +422,8 @@ Commands:
     --model agent=<name> Model for the agent (default: claude-sonnet-4-6)
     --chrome host:port   Chrome debugging endpoint (default: 127.0.0.1:9222)
     --adapter <type>     web | cli | tui (default: web)
-    --turns <n>          Max agent turns for this run (default: 50)
+    --max-time <duration>   Max wall-clock time per run (default: 5m). Accepts ms/s/m/h suffixes or bare seconds.
+    --max-stuck-retries <n> Hint to model: give up after N unproductive retries (default: 5)
     --viewport WxH       Browser viewport (default: 1440x900)
     --save-screencast    Persist screencast frames to disk (default: off; live WS stream is always on)
     --out <dir>          Evidence output directory (default: <project>/.gauntlet/results/<runId>)
@@ -434,7 +439,8 @@ Commands:
     --model agent=<name> Model for the agent
     --chrome host:port   Chrome debugging endpoint
     --adapter <type>     web | cli | tui (default: web)
-    --turns <n>          Max agent turns per run
+    --max-time <duration>   Max wall-clock time per run (default: 5m). Accepts ms/s/m/h suffixes or bare seconds.
+    --max-stuck-retries <n> Hint to model: give up after N unproductive retries (default: 5)
     --viewport WxH       Browser viewport
     --save-screencast    Persist screencast frames to disk
     --project-dir <dir>  Project root
@@ -454,7 +460,8 @@ Commands:
     --project-dir <dir>      Project root (contains .gauntlet/ state dir)
     --chrome host:port       Default Chrome endpoint for runs
     --target <url>           Default target (prefilled in the UI; request body still overrides)
-    --turns <n>              Default max turns per run (default: 50)
+    --max-time <duration>    Default time budget per run (default: 5m). Accepts ms/s/m/h suffixes or bare seconds.
+    --max-stuck-retries <n>  Default stuck-retries hint (default: 5)
     --viewport WxH           Default browser viewport (default: 1440x900)
     --save-screencast        Default: persist screencast frames to disk (default: off)
     --model agent=<name>     Default agent model
@@ -464,16 +471,17 @@ Commands:
     (also accepts the same knobs as serve/run, for "what would happen if...")
 
 Environment:
-  GAUNTLET_PORT            Server port
-  GAUNTLET_PROJECT_ROOT    Project root (contains .gauntlet/ state dir)
-  GAUNTLET_CHROME          Default Chrome endpoint (host:port)
-  GAUNTLET_TARGET          Default target URL (UI prefill)
-  GAUNTLET_TURNS           Default max turns per run
-  GAUNTLET_VIEWPORT        Default browser viewport (WxH, e.g. 1440x900)
-  GAUNTLET_SAVE_SCREENCAST Persist screencast frames to disk (1/0, default: 0)
-  GAUNTLET_AGENT_MODEL     Default agent model
-  GAUNTLET_FANOUT_MODEL    Default fanout model
-  GAUNTLET_MODELS          Comma-separated model allow-list
+  GAUNTLET_PORT              Server port
+  GAUNTLET_PROJECT_ROOT      Project root (contains .gauntlet/ state dir)
+  GAUNTLET_CHROME            Default Chrome endpoint (host:port)
+  GAUNTLET_TARGET            Default target URL (UI prefill)
+  GAUNTLET_MAX_TIME          Default time budget (duration string, e.g. 5m)
+  GAUNTLET_MAX_STUCK_RETRIES Default stuck-retries hint
+  GAUNTLET_VIEWPORT          Default browser viewport (WxH, e.g. 1440x900)
+  GAUNTLET_SAVE_SCREENCAST   Persist screencast frames to disk (1/0, default: 0)
+  GAUNTLET_AGENT_MODEL       Default agent model
+  GAUNTLET_FANOUT_MODEL      Default fanout model
+  GAUNTLET_MODELS            Comma-separated model allow-list
 
   ANTHROPIC_API_KEY        Read by the Anthropic SDK (if using Claude models)
   OPENAI_API_KEY           Read by the OpenAI SDK (if using GPT models)

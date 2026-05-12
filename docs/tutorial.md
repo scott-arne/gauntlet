@@ -105,7 +105,7 @@ the prompts.
 gauntlet run .gauntlet/stories/01-npm-init.md \
   --adapter cli \
   --target "mkdir -p scratch-npm && cd scratch-npm && npm init" \
-  --turns 30
+  --max-time 3m
 ```
 
 `--target` here is **a shell command**, not a URL. The CLI
@@ -162,7 +162,7 @@ agent picks the wrong profile, you will see it.)
 gauntlet run .gauntlet/stories/02-bun-init.md \
   --adapter tui \
   --target "mkdir -p scratch-bun && cd scratch-bun && bun init" \
-  --turns 30
+  --max-time 3m
 ```
 
 Same scratch-dir pattern as tutorial 1.
@@ -228,7 +228,7 @@ What's new at this level:
 gauntlet run .gauntlet/stories/03-vim-split.md \
   --adapter tui \
   --target "vim -u ./vimrc notes.md" \
-  --turns 50
+  --max-time 5m
 ```
 
 ### What to notice
@@ -286,7 +286,7 @@ a clean slate (sessions, posts are all in process memory).
 gauntlet run .gauntlet/stories/04-login-credentials.md \
   --adapter web \
   --target "http://localhost:4444" \
-  --turns 50
+  --max-time 5m
 ```
 
 The webapp's sign-in form lives at `/login`. The agent
@@ -338,7 +338,7 @@ The teaching points are:
 gauntlet run .gauntlet/stories/05-login-cookies.md \
   --adapter web \
   --target "http://localhost:4444" \
-  --turns 50
+  --max-time 5m
 ```
 
 ### What to notice
@@ -395,10 +395,10 @@ last invariant.
 gauntlet run .gauntlet/stories/06-post-and-verify.md \
   --adapter web \
   --target "http://localhost:4444" \
-  --turns 80
+  --max-time 8m
 ```
 
-The bigger turn budget reflects the cross-identity flow.
+The longer time budget reflects the cross-identity flow.
 
 ### What to notice
 

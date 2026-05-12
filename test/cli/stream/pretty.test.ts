@@ -63,7 +63,7 @@ describe("PrettyRenderer", () => {
   test("spinner writes waiting line on llm_request and clears on next event (TTY/color on)", () => {
     const sink = collect();
     const r = new PrettyRenderer(sink, { color: true, columns: 100 });
-    r.handle({ eventId: 1, parentEventId: 0, ts: "t", type: "run_start", runId: "r", cardId: "c", target: "t", provider: "a", model: "claude-sonnet-4-6", adapter: "web", maxTurns: 50, toolTimeoutMs: 1, contextTreeBytes: 0 } as any);
+    r.handle({ eventId: 1, parentEventId: 0, ts: "t", type: "run_start", runId: "r", cardId: "c", target: "t", provider: "a", model: "claude-sonnet-4-6", adapter: "web", budgetMs: 300_000, maxStuckRetries: 5, toolTimeoutMs: 1, contextTreeBytes: 0 } as any);
     r.handle({ eventId: 2, parentEventId: 1, ts: "t", type: "llm_request", turn: 1, messageCount: 1 } as any);
     // Spinner writes once synchronously — we don't advance timers in this test
     expect(sink.out).toContain("waiting for model");
@@ -76,7 +76,7 @@ describe("PrettyRenderer", () => {
   test("spinner is not emitted when color is off", () => {
     const sink = collect();
     const r = new PrettyRenderer(sink, { color: false, columns: 100 });
-    r.handle({ eventId: 1, parentEventId: 0, ts: "t", type: "run_start", runId: "r", cardId: "c", target: "t", provider: "a", model: "claude-sonnet-4-6", adapter: "web", maxTurns: 50, toolTimeoutMs: 1, contextTreeBytes: 0 } as any);
+    r.handle({ eventId: 1, parentEventId: 0, ts: "t", type: "run_start", runId: "r", cardId: "c", target: "t", provider: "a", model: "claude-sonnet-4-6", adapter: "web", budgetMs: 300_000, maxStuckRetries: 5, toolTimeoutMs: 1, contextTreeBytes: 0 } as any);
     r.handle({ eventId: 2, parentEventId: 1, ts: "t", type: "llm_request", turn: 1, messageCount: 1 } as any);
     expect(sink.out).not.toContain("waiting for model");
     r.close();
@@ -86,7 +86,7 @@ describe("PrettyRenderer", () => {
     const longText = "alpha beta gamma delta epsilon zeta eta theta iota kappa lambda mu nu xi omicron";
     const sink = collect();
     const r = new PrettyRenderer(sink, { color: false, columns: 24 }); // effective wrap width: 22
-    r.handle({ eventId: 1, parentEventId: 0, ts: "t", type: "run_start", runId: "r", cardId: "c", target: "t", provider: "a", model: "m", adapter: "cli", maxTurns: 1, toolTimeoutMs: 1, contextTreeBytes: 0 } as any);
+    r.handle({ eventId: 1, parentEventId: 0, ts: "t", type: "run_start", runId: "r", cardId: "c", target: "t", provider: "a", model: "m", adapter: "cli", budgetMs: 300_000, maxStuckRetries: 5, toolTimeoutMs: 1, contextTreeBytes: 0 } as any);
     r.handle({ eventId: 2, parentEventId: 1, ts: "t", type: "llm_response", turn: 1, stopReason: "end_turn", text: longText, thinking: [], toolCalls: [], usage: { inputTokens: 0, outputTokens: 0 }, rawAssistantMessage: null } as any);
     r.close();
     // First line carries a leading `»`; wrap continuations indent to 2 spaces.

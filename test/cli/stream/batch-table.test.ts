@@ -28,18 +28,18 @@ describe("BatchTableRenderer (append mode)", () => {
     const r = new BatchTableRenderer(sink, NON_TTY);
     r.setQueued("story-a");
     r.setQueued("story-b");
-    r.setRunning("story-a", "run-a-1", 20);
+    r.setRunning("story-a", "run-a-1");
     r.onTurn("story-a", 7);
     r.setDone("story-a", "investigate", 8);
-    r.setRunning("story-b", "run-b-1", 20);
+    r.setRunning("story-b", "run-b-1");
     r.setErrored("story-b", 3, "boom");
     r.finalize();
 
     const lines = sink.out.split("\n").filter(Boolean);
     expect(lines).toContain("story-a: queued");
     expect(lines).toContain("story-b: queued");
-    expect(lines).toContain("story-a: running turn 0 / 20");
-    expect(lines).toContain("story-a: running turn 7 / 20");
+    expect(lines).toContain("story-a: running turn 0");
+    expect(lines).toContain("story-a: running turn 7");
     expect(lines).toContain("story-a: done (investigate) on turn 8");
     expect(lines).toContain("story-b: errored on turn 3");
     expect(sink.out).toContain("batch: 0 pass · 0 fail · 1 investigate · 1 errored");
@@ -69,7 +69,7 @@ describe("BatchTableRenderer (attemptNumber)", () => {
     const sink = collect();
     const r = new BatchTableRenderer(sink, NON_TTY);
     r.setQueued("story-a");
-    r.setRunning("story-a", "story-a_t1_x", 50);
+    r.setRunning("story-a", "story-a_t1_x");
     r.onTurn("story-a", 1);
     r.setDone("story-a", "pass", 5);
     r.finalize();
@@ -82,9 +82,9 @@ describe("BatchTableRenderer (attemptNumber)", () => {
     const r = new BatchTableRenderer(sink, NON_TTY);
     r.setQueued("story-a", 1);
     r.setQueued("story-a", 2);
-    r.setRunning("story-a", "story-a_t1_x", 50, 1);
+    r.setRunning("story-a", "story-a_t1_x", 1);
     r.setDone("story-a", "pass", 5, 1);
-    r.setRunning("story-a", "story-a_t2_y", 50, 2);
+    r.setRunning("story-a", "story-a_t2_y", 2);
     r.setDone("story-a", "fail", 7, 2);
     r.finalize();
     // Both attempts represented in non-TTY append output:
@@ -101,11 +101,11 @@ describe("BatchTableRenderer rollup line", () => {
     r.setQueued("story-a", 1, 3);
     r.setQueued("story-a", 2, 3);
     r.setQueued("story-a", 3, 3);
-    r.setRunning("story-a", "rA1", 50, 1, 3);
+    r.setRunning("story-a", "rA1", 1, 3);
     r.setDone("story-a", "pass", 5, 1);
-    r.setRunning("story-a", "rA2", 50, 2, 3);
+    r.setRunning("story-a", "rA2", 2, 3);
     r.setDone("story-a", "pass", 6, 2);
-    r.setRunning("story-a", "rA3", 50, 3, 3);
+    r.setRunning("story-a", "rA3", 3, 3);
     r.setDone("story-a", "investigate", 8, 3);
     r.finalize();
     expect(sink.out).toContain("mixed");
@@ -118,7 +118,7 @@ describe("BatchTableRenderer rollup line", () => {
     const sink = collect();
     const r = new BatchTableRenderer(sink, NON_TTY);
     r.setQueued("story-a");
-    r.setRunning("story-a", "rA1", 50);
+    r.setRunning("story-a", "rA1");
     r.setDone("story-a", "pass", 5);
     r.finalize();
     expect(sink.out).not.toContain("mixed");
@@ -150,9 +150,9 @@ describe("BatchTableRenderer rollup line (TTY mode)", () => {
     // Two passes of story-a: pass + fail → mixed
     r.setQueued("story-a", 1, 2);
     r.setQueued("story-a", 2, 2);
-    r.setRunning("story-a", "rA1", 10, 1, 2);
+    r.setRunning("story-a", "rA1", 1, 2);
     r.setDone("story-a", "pass", 3, 1);
-    r.setRunning("story-a", "rA2", 10, 2, 2);
+    r.setRunning("story-a", "rA2", 2, 2);
     r.setDone("story-a", "fail", 5, 2);
     r.finalize();
     // Rollup line must appear exactly once in the TTY output.
@@ -175,22 +175,22 @@ describe("BatchTableRenderer rollup line (TTY mode)", () => {
     r.setQueued("story-b", 1, 2);
     r.setQueued("story-b", 2, 2);
 
-    r.setRunning("story-a", "rA1", 10, 1, 2);
+    r.setRunning("story-a", "rA1", 1, 2);
     r.setDone("story-a", "pass", 3, 1);
     // After attempt 1 of A, not all A attempts are done → no rollup yet.
     expect(sink.out).not.toContain("story-a: rollup");
 
-    r.setRunning("story-a", "rA2", 10, 2, 2);
+    r.setRunning("story-a", "rA2", 2, 2);
     r.setDone("story-a", "pass", 4, 2);
     // Now all A attempts done → rollup emitted.
     expect(sink.out).toContain("story-a: rollup consistent_pass");
 
-    r.setRunning("story-b", "rB1", 10, 1, 2);
+    r.setRunning("story-b", "rB1", 1, 2);
     r.setDone("story-b", "pass", 5, 1);
     // B not fully done yet → no B rollup.
     expect(sink.out).not.toContain("story-b: rollup");
 
-    r.setRunning("story-b", "rB2", 10, 2, 2);
+    r.setRunning("story-b", "rB2", 2, 2);
     r.setDone("story-b", "fail", 7, 2);
     // B done → rollup.
     expect(sink.out).toContain("story-b: rollup mixed");
@@ -207,7 +207,7 @@ describe("BatchTableRenderer header", () => {
     const sink = collect();
     const r = new BatchTableRenderer(sink, TTY);
     r.setQueued("story-a", 1, 1);
-    r.setRunning("story-a", "run-a-1", 20, 1, 1);
+    r.setRunning("story-a", "run-a-1", 1, 1);
     r.setDone("story-a", "pass", 5, 1);
     r.finalize();
     expect(sink.out).toContain("Gauntlet");
@@ -220,9 +220,9 @@ describe("BatchTableRenderer header", () => {
     const r = new BatchTableRenderer(sink, TTY);
     r.setQueued("story-a", 1, 1);
     r.setQueued("story-b", 1, 1);
-    r.setRunning("story-a", "run-a-1", 20, 1, 1);
+    r.setRunning("story-a", "run-a-1", 1, 1);
     r.setDone("story-a", "pass", 5, 1);
-    r.setRunning("story-b", "run-b-1", 20, 1, 1);
+    r.setRunning("story-b", "run-b-1", 1, 1);
     r.setDone("story-b", "pass", 6, 1);
     r.finalize();
     expect(sink.out).toContain("2 cards");
@@ -235,7 +235,7 @@ describe("BatchTableRenderer header", () => {
     r.setQueued("story-a", 1, 3);
     r.setQueued("story-a", 2, 3);
     r.setQueued("story-a", 3, 3);
-    r.setRunning("story-a", "run-a-1", 20, 1, 3);
+    r.setRunning("story-a", "run-a-1", 1, 3);
     r.setDone("story-a", "pass", 5, 1);
     r.finalize();
     expect(sink.out).toContain("story-a · 3 attempts");
@@ -248,7 +248,7 @@ describe("BatchTableRenderer header", () => {
     r.setQueued("story-a", 2, 2);
     r.setQueued("story-b", 1, 2);
     r.setQueued("story-b", 2, 2);
-    r.setRunning("story-a", "run-a-1", 20, 1, 2);
+    r.setRunning("story-a", "run-a-1", 1, 2);
     r.setDone("story-a", "pass", 5, 1);
     r.finalize();
     expect(sink.out).toContain("2 cards × 2 attempts");
@@ -270,7 +270,7 @@ describe("BatchTableRenderer (TTY mode — Mock B ticker)", () => {
     const r = new BatchTableRenderer(sink, TTY);
     r.setQueued("a");
     r.setQueued("b");
-    r.setRunning("a", "run-a-1", 10);
+    r.setRunning("a", "run-a-1");
     expect(sink.out).toContain("Gauntlet");
     expect(sink.out).toContain("2 cards");
     expect(sink.out).toContain("https://app.local");
@@ -286,7 +286,7 @@ describe("BatchTableRenderer (TTY mode — Mock B ticker)", () => {
     const sink = collect();
     const r = new BatchTableRenderer(sink, TTY);
     r.setQueued("a");
-    r.setRunning("a", "run-a-1", 10);
+    r.setRunning("a", "run-a-1");
     r.onTurn("a", 5);
     r.setDone("a", "investigate", 7);
     r.finalize();
@@ -314,9 +314,9 @@ describe("BatchTableRenderer (TTY mode — Mock B ticker)", () => {
     const r = new BatchTableRenderer(sink, TTY);
     r.setQueued("a");
     r.setQueued("b");
-    r.setRunning("a", "run-a-1", 10);
+    r.setRunning("a", "run-a-1");
     r.setDone("a", "pass", 3);
-    r.setRunning("b", "run-b-1", 10);
+    r.setRunning("b", "run-b-1");
     r.setErrored("b", 2, "timeout");
     r.finalize();
 
