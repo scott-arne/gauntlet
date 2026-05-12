@@ -37,8 +37,11 @@ report.[0-9]_.[0-9]_.[0-9]_.[0-9]_.json
 # committed (team artifacts). Run results, user context, and profiles
 # often contain sensitive or per-user data and should not be.
 .gauntlet/results/
+.gauntlet/run-sets/
 .gauntlet/context/
-.gauntlet/profiles/
+
+examples/tutorial/.gauntlet/results/
+examples/tutorial/.gauntlet/run-sets/
 
 # Claude Code local data (worktrees, agent state, etc.)
 .claude/
