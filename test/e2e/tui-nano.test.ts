@@ -75,7 +75,7 @@ describe.skipIf(!hasTmux || !hasNano)("TUI adapter e2e — nano editor", () => {
     const client = makeScriptedClient(steps, 500);
 
     await adapter.start(`nano ${tempFile}`);
-    const result = await runAgent(card, adapter, client, logger, undefined, { runId: makeRunId(card.id) });
+    const result = await runAgent(card, adapter, client, logger, undefined, { runId: makeRunId(card.id), budgetMs: 60_000, reflectionInterval: 0 });
 
     expect(result.status).toBe("pass");
     expect(result.scenario).toBe("nano-open-save-pass");
@@ -102,7 +102,7 @@ describe.skipIf(!hasTmux || !hasNano)("TUI adapter e2e — nano editor", () => {
     const client = makeScriptedClient(steps, 500);
 
     await adapter.start(`nano ${tempFile}`);
-    const result = await runAgent(card, adapter, client, logger, undefined, { runId: makeRunId(card.id) });
+    const result = await runAgent(card, adapter, client, logger, undefined, { runId: makeRunId(card.id), budgetMs: 60_000, reflectionInterval: 0 });
 
     expect(result.status).toBe("fail");
     expect(result.scenario).toBe("nano-tabs-fail");

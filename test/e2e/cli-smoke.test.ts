@@ -103,7 +103,7 @@ describe("CLI adapter e2e smoke test", () => {
 
     try {
       await adapter.start(`bash ${FIXTURE_PATH}`);
-      const result = await runAgent(card, adapter, client, logger, undefined, { runId: makeRunId(card.id) });
+      const result = await runAgent(card, adapter, client, logger, undefined, { runId: makeRunId(card.id), budgetMs: 60_000, reflectionInterval: 0 });
 
       expect(result.status).toBe("pass");
       expect(result.scenario).toBe("cli-smoke-001");

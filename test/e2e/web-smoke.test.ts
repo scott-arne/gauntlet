@@ -143,7 +143,7 @@ describe("Web e2e smoke test", () => {
         );
         const card = makeCard();
         const result = await withTimeout(
-          runAgent(card, adapter, client, logger, undefined, { runId: makeRunId(card.id) }),
+          runAgent(card, adapter, client, logger, undefined, { runId: makeRunId(card.id), budgetMs: 60_000, reflectionInterval: 0 }),
           15_000,
           "runAgent()"
         );

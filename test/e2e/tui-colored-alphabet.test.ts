@@ -59,6 +59,8 @@ describe.skipIf(!hasTmux)("TUI adapter e2e — colored-alphabet capture evidence
     await adapter.start(`sh ${fixturePath}`);
     const result = await runAgent(card, adapter, client, logger, undefined, {
       runId: makeRunId(card.id),
+      budgetMs: 60_000,
+      reflectionInterval: 0,
     });
 
     // Agent flow succeeded end-to-end.

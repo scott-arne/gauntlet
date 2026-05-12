@@ -28,7 +28,7 @@ describe("CLI adapter e2e — bc calculator", () => {
 
     try {
       await adapter.start("bc -q");
-      const result = await runAgent(card, adapter, client, logger, undefined, { runId: makeRunId(card.id) });
+      const result = await runAgent(card, adapter, client, logger, undefined, { runId: makeRunId(card.id), budgetMs: 60_000, reflectionInterval: 0 });
 
       expect(result.status).toBe("pass");
       expect(result.scenario).toBe("bc-arithmetic-pass");
@@ -57,7 +57,7 @@ describe("CLI adapter e2e — bc calculator", () => {
 
     try {
       await adapter.start("bc -q");
-      const result = await runAgent(card, adapter, client, logger, undefined, { runId: makeRunId(card.id) });
+      const result = await runAgent(card, adapter, client, logger, undefined, { runId: makeRunId(card.id), budgetMs: 60_000, reflectionInterval: 0 });
 
       expect(result.status).toBe("fail");
       expect(result.scenario).toBe("bc-help-fail");
