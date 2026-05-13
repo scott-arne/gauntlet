@@ -786,26 +786,10 @@ export class WebAdapter implements Adapter {
           },
         },
       },
-      {
-        name: "eval",
-        description: "Evaluate a JavaScript expression in the page context",
-        parameters: {
-          type: "object",
-          properties: {
-            expression: {
-              type: "string",
-              description: "JavaScript expression to evaluate",
-            },
-            return_screenshot: {
-              type: "boolean",
-              description:
-                "Screenshot after the action. Set true when the outcome " +
-                "is visual (image loads, modal/chart appears, layout shifts).",
-            },
-          },
-          required: ["expression"],
-        },
-      },
+      // `eval` is intentionally not exposed (PRI-1590 experiment). The
+      // executor below still implements it so re-enabling is one line, but
+      // keeping it out of toolDefinitions() removes its pull on the agent
+      // toward developer-pattern escapes (form.submit(), raw fetch, etc.).
       {
         name: "wait_for",
         description: "Wait for an element or text to appear on the page",

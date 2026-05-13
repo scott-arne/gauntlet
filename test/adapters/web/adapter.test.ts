@@ -47,7 +47,7 @@ describe("WebAdapter", () => {
   test("action tools have return_screenshot parameter", () => {
     const adapter = new WebAdapter();
     const tools = adapter.toolDefinitions();
-    const toolsWithReturnScreenshot = ["click", "type", "press", "navigate", "eval", "wait_for"];
+    const toolsWithReturnScreenshot = ["click", "type", "press", "navigate", "wait_for"];
     for (const name of toolsWithReturnScreenshot) {
       const tool = tools.find((t) => t.name === name);
       expect(tool).toBeDefined();
@@ -87,7 +87,7 @@ describe("WebAdapter", () => {
   test("return_screenshot descriptions cue visual-outcome usage", () => {
     const adapter = new WebAdapter();
     const tools = adapter.toolDefinitions();
-    const sampled = ["click", "navigate", "wait_for", "eval"];
+    const sampled = ["click", "navigate", "wait_for"];
     for (const name of sampled) {
       const props = (tools.find((t) => t.name === name)!.parameters as any).properties;
       const desc = String(props.return_screenshot.description).toLowerCase();
