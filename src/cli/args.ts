@@ -62,6 +62,7 @@ const VALIDATE_ALLOWED = new Set<string>([]);
 const FANOUT_ALLOWED = new Set(["out", "model", "from-result"]);
 const SERVE_ALLOWED = new Set(["port", "project-dir", "chrome", "target", "model", "max-time", "reflection-interval", "viewport", "save-screencast"]);
 const CONFIG_ALLOWED = new Set(["json", "project-dir", "port", "chrome", "target", "model", "max-time", "reflection-interval", "viewport", "save-screencast"]);
+const ASK_ALLOWED = new Set(["turn", "model", "project-dir"]);
 
 function rejectUnknownFlags(
   flags: Record<string, unknown>,
@@ -126,7 +127,15 @@ export interface ConfigArgs {
   cli: CliArgsInput;
 }
 
-export type ParsedArgs = RunArgs | BatchArgs | ValidateArgs | FanoutArgs | ServeArgs | ConfigArgs;
+export interface AskArgs {
+  command: "ask";
+  runId: string;
+  upToTurn?: number;
+  modelOverride?: string;
+  cli: CliArgsInput;
+}
+
+export type ParsedArgs = RunArgs | BatchArgs | ValidateArgs | FanoutArgs | ServeArgs | ConfigArgs | AskArgs;
 
 export function parseArgs(argv: string[]): ParsedArgs {
   // Skip "bun" and script name. Strip `--verbose` here so it works on
@@ -153,6 +162,8 @@ export function parseArgs(argv: string[]): ParsedArgs {
       return parseServeArgs(args.slice(1));
     case "config":
       return parseConfigArgs(args.slice(1));
+    case "ask":
+      return parseAskArgs(args.slice(1));
     default:
       throw new Error(`Unknown command: ${command}\n${usage()}`);
   }
@@ -178,6 +189,27 @@ function parseConfigArgs(args: string[]): ConfigArgs {
       maxTime: typeof flags["max-time"] === "string" ? flags["max-time"] : undefined,
       reflectionInterval: parseIntFlag(flags["reflection-interval"], "--reflection-interval"),
     },
+  };
+}
+
+function parseAskArgs(args: string[]): AskArgs {
+  const positional = extractPositional(args);
+  if (!positional) {
+    throw new Error("Missing runId\n\nUsage: gauntlet ask <runId> [--turn N] [--model MODEL]");
+  }
+  const flags = parseFlags(args);
+  rejectUnknownFlags(flags, ASK_ALLOWED, "ask");
+  // parseFlags accumulates --model into flags.model (string[])
+  const modelOverride =
+    Array.isArray(flags.model) && flags.model.length > 0
+      ? flags.model[0]
+      : undefined;
+  return {
+    command: "ask",
+    runId: positional,
+    upToTurn: parseIntFlag(flags.turn, "--turn"),
+    modelOverride,
+    cli: { projectRoot: flags["project-dir"] },
   };
 }
 
@@ -469,6 +501,11 @@ Commands:
   config                   Print effective configuration
     --json                   Emit JSON instead of text (also accepts --json true)
     (also accepts the same knobs as serve/run, for "what would happen if...")
+
+  ask <runId>              Chat with the agent from a completed run.
+    --turn N                 Cut off at turn N (default: include all turns)
+    --model <model-id>       Override the recorded model (default: pin to recorded)
+    --project-dir <dir>      Project root (contains .gauntlet/results/<runId>)
 
 Environment:
   GAUNTLET_PORT              Server port

@@ -110,6 +110,13 @@ async function main() {
       console.log(runConfigCommand(args, process.env));
       break;
     }
+    case "ask": {
+      const config = await loadConfigOrThrow(args.cli);
+      await requireLlmCapableOrThrow(config);
+      const { ask } = await import("./cli/ask");
+      const code = await ask(args, config);
+      process.exit(code);
+    }
     case "serve": {
       const { createApp } = await import("./api/server");
       const { RunBroadcaster } = await import("./api/ws");
