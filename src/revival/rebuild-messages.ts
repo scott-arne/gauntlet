@@ -105,6 +105,13 @@ export function rebuildMessages(
     const llmResp = turnEvents.find((e) => e.type === "llm_response");
     const toolResultEvts = turnEvents.filter((e) => e.type === "tool_result");
     const toolCallEvts = turnEvents.filter((e) => e.type === "tool_call");
+    const userMsg = turnEvents.find((e) => e.type === "user_message");
+
+    // Grace turn: a user_message at this turn with NO tool_result group →
+    // standalone user turn (must come BEFORE the assistant response).
+    if (userMsg && toolResultEvts.length === 0) {
+      messages.push(client.userMessage(String(userMsg.content ?? "")));
+    }
 
     if (llmResp) {
       messages.push(llmResp.rawAssistantMessage);
@@ -119,7 +126,44 @@ export function rebuildMessages(
       const results: ToolResult[] = toolResultEvts.map((tr) =>
         rebuildToolResult(tr, runDir, warnings),
       );
-      messages.push(...client.toolResultMessages(calls, results));
+      // A user_message at this turn co-existing with tool_results is the
+      // reflection-checkpoint reminder. The provider's toolResultMessages
+      // weaves it correctly (Anthropic: trailing text block; OpenAI:
+      // separate user message after the per-call tool messages).
+      const extraUserText = userMsg
+        ? String(userMsg.content ?? "")
+        : undefined;
+      messages.push(...client.toolResultMessages(calls, results, extraUserText));
+    }
+  }
+
+  // Terminal-turn stub synthesis (spec §"Terminal-turn handling"). Source
+  // of truth is the llm_response events, not the rebuilt messages — the
+  // rebuilt assistant messages are in provider-native shape, while the
+  // logged toolCalls are provider-neutral.
+  const includedLlmResponses = events.filter(
+    (e) => e.type === "llm_response" && (e.turn as number) <= cutoff,
+  );
+  const finalLlmResp = includedLlmResponses[includedLlmResponses.length - 1];
+  if (finalLlmResp) {
+    const finalCalls = (finalLlmResp.toolCalls as ToolCall[]) ?? [];
+    if (finalCalls.length > 0) {
+      const executedIds = new Set(
+        events
+          .filter(
+            (e) =>
+              e.type === "tool_result" &&
+              (e.turn as number) === (finalLlmResp.turn as number),
+          )
+          .map((e) => String(e.toolUseId)),
+      );
+      const unmatched = finalCalls.filter((c) => !executedIds.has(c.id));
+      if (unmatched.length > 0) {
+        const stubResults: ToolResult[] = unmatched.map(() => ({
+          text: "[revival: tool was not executed during the original run]",
+        }));
+        messages.push(...client.toolResultMessages(unmatched, stubResults));
+      }
     }
   }
 
