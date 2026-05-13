@@ -66,21 +66,44 @@ export async function ask(args: AskArgs, config: AppConfig): Promise<number> {
   rl.prompt();
 
   return new Promise<number>((resolveExit) => {
+    // Guard against re-entrant line events: chat() takes seconds against
+    // a long transcript, and any input typed while it's in flight
+    // (including stray newlines) would otherwise spawn a parallel
+    // listener — racy and confusing. pause/resume around the call.
+    let inFlight = false;
+
     rl.on("line", async (line) => {
+      if (inFlight) return;
       const q = line.trim();
-      if (q === ":quit" || q === "") {
+      if (q === ":quit") {
         rl.close();
         return;
       }
+      if (q === "") {
+        // Empty enter just re-prompts. Only :quit / Ctrl-D / Ctrl-C exit.
+        rl.prompt();
+        return;
+      }
       messages.push(client.userMessage(q));
+      inFlight = true;
+      rl.pause();
+      process.stdout.write("(thinking...) ");
+      const startedAt = Date.now();
+      const ticker = setInterval(() => {
+        process.stdout.write(".");
+      }, 1000);
       try {
         const response = await client.chat(messages, [ANSWER_TOOL], rebuilt.systemPrompt);
+        clearInterval(ticker);
+        const elapsedSec = Math.round((Date.now() - startedAt) / 1000);
+        // Newline after the dots
+        process.stdout.write("\n");
         const extracted = extractAnswer(response.toolCalls, response.text);
         const tag = extracted.kind === "unstructured" ? " (unstructured)" : "";
         console.log("");
         console.log(extracted.text + tag);
         console.log(
-          `  [tokens: ${response.usage.inputTokens} in / ${response.usage.outputTokens} out` +
+          `  [${elapsedSec}s · tokens: ${response.usage.inputTokens} in / ${response.usage.outputTokens} out` +
             (response.usage.cacheReadInputTokens
               ? `; ${response.usage.cacheReadInputTokens} cached`
               : "") +
@@ -98,10 +121,15 @@ export async function ask(args: AskArgs, config: AppConfig): Promise<number> {
           );
         }
       } catch (err) {
+        clearInterval(ticker);
+        process.stdout.write("\n");
         const msg = err instanceof Error ? err.message : String(err);
         console.error(`API error: ${msg}`);
+      } finally {
+        inFlight = false;
+        rl.resume();
+        rl.prompt();
       }
-      rl.prompt();
     });
     rl.on("close", () => {
       console.log("");
