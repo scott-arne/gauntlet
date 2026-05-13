@@ -1,7 +1,7 @@
 import { describe, test, expect } from "bun:test";
 import { formatCliError, isVerboseRequest } from "../../src/cli/error-output";
 
-describe("formatCliError", () => {
+describe("formatCliError — piped (non-TTY)", () => {
   test("emits a single-line JSON envelope for a plain Error", () => {
     const out = formatCliError(new Error("boom"), { verbose: false });
     expect(out.endsWith("\n")).toBe(true);
@@ -22,7 +22,6 @@ describe("formatCliError", () => {
     const err = new Error("boom");
     const out = formatCliError(err, { verbose: true });
     const lines = out.trimEnd().split("\n");
-    // First line is the JSON envelope; remainder is the stack trace.
     expect(() => JSON.parse(lines[0])).not.toThrow();
     expect(lines.slice(1).join("\n")).toContain("Error: boom");
   });
@@ -46,6 +45,35 @@ describe("formatCliError", () => {
     const firstLine = out.trimEnd().split("\n")[0];
     const parsed = JSON.parse(firstLine);
     expect(parsed.error.message).toBe('contains "quotes" and \nnewlines and \\backslashes');
+  });
+});
+
+describe("formatCliError — TTY (interactive)", () => {
+  test("emits prose only, no JSON envelope", () => {
+    const out = formatCliError(new Error("boom"), { verbose: false, isTty: true });
+    expect(out).toBe("boom\n");
+    expect(out.includes("{")).toBe(false);
+  });
+
+  test("preserves multi-line messages including the usage hint pattern", () => {
+    const out = formatCliError(
+      new Error("Missing runId\n\nUsage: gauntlet ask <runId>"),
+      { verbose: false, isTty: true },
+    );
+    expect(out).toBe("Missing runId\n\nUsage: gauntlet ask <runId>\n");
+  });
+
+  test("does not double-newline when the message already ends with a newline", () => {
+    const out = formatCliError(new Error("boom\n"), { verbose: false, isTty: true });
+    expect(out).toBe("boom\n");
+  });
+
+  test("appends stack trace under verbose, still no JSON envelope", () => {
+    const err = new Error("boom");
+    const out = formatCliError(err, { verbose: true, isTty: true });
+    expect(out.startsWith("boom\n")).toBe(true);
+    expect(out).toContain("Error: boom");
+    expect(out.includes("{\"error\"")).toBe(false);
   });
 });
 

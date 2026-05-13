@@ -4,26 +4,40 @@
  * sanitized LLM errors (`LlmError`), config errors, etc.
  *
  * Output contract:
- *   - First stderr line is a JSON envelope: `{ error: { message, code? } }`
- *   - With `--verbose` or `GAUNTLET_DEBUG=1`, the stack trace follows on
- *     subsequent lines.
+ *   - When `isTty` is true (stderr attached to a terminal), output is
+ *     plain prose — humans don't want to read a JSON envelope. With
+ *     `--verbose` or `GAUNTLET_DEBUG=1`, a stack trace follows.
+ *   - When `isTty` is false (stderr piped to a file or another process),
+ *     output is the JSON envelope `{ error: { message, code? } }` so
+ *     programmatic consumers (CI scripts, the web UI shell-out path)
+ *     parse stderr predictably.
  *   - Exit code is always 1 (set by the caller).
- *
- * Why JSON-by-default: programmatic consumers (CI scripts, the web UI's
- * shell-out path, dashboards) parse stderr predictably without the
- * platform-dependent vagaries of Bun's unhandled-rejection printer. Humans
- * still see one short legible line.
  */
 export interface FormatCliErrorOptions {
   verbose: boolean;
+  /**
+   * True when stderr is a TTY. Production callers pass
+   * `process.stderr.isTTY`. Defaults to false so piped/server paths
+   * keep the parseable JSON envelope.
+   */
+  isTty?: boolean;
 }
 
 export function formatCliError(err: unknown, opts: FormatCliErrorOptions): string {
   const message = err instanceof Error ? err.message : String(err);
   const code = readCode(err);
-  const envelope = code !== undefined ? { error: { message, code } } : { error: { message } };
 
-  let out = JSON.stringify(envelope) + "\n";
+  let out: string;
+  if (opts.isTty) {
+    // Prose for humans. The errno code is already implied by the prose
+    // message in practice (e.g. "ENOENT: no such file") — skip the
+    // structured form.
+    out = message.endsWith("\n") ? message : message + "\n";
+  } else {
+    const envelope = code !== undefined ? { error: { message, code } } : { error: { message } };
+    out = JSON.stringify(envelope) + "\n";
+  }
+
   if (opts.verbose && err instanceof Error && typeof err.stack === "string") {
     out += err.stack + "\n";
   }
