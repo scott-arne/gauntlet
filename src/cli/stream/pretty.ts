@@ -180,8 +180,9 @@ export class PrettyRenderer implements StreamRenderer {
     const p = this.paint;
     const turn = Number(e.turn ?? 0);
     const thinking = (e.thinking ?? []) as Array<{ text: string }>;
+    const reasoning = String(e.reasoning ?? "").trim();
     const text = String(e.text ?? "").trim();
-    const hasContent = thinking.length > 0 || text.length > 0;
+    const hasContent = thinking.length > 0 || reasoning.length > 0 || text.length > 0;
 
     if (!hasContent) {
       // Tool-only turn: the agent didn't speak this turn — its tool
@@ -208,6 +209,18 @@ export class PrettyRenderer implements StreamRenderer {
       firstBlock = false;
       this.write(`  ${p.magenta("~ thinking")}`);
       for (const line of softWrap(th.text, this.opts.columns - 4)) {
+        this.write(`    ${p.dim(line)}`);
+      }
+    }
+
+    if (reasoning.length > 0) {
+      if (!firstBlock) this.write("");
+      firstBlock = false;
+      // OpenAI exposes a model-authored summary, not raw chain-of-thought —
+      // labeling it "reasoning summary" rather than "reasoning" sets the
+      // right expectation vs Anthropic's `~ thinking` (which IS raw).
+      this.write(`  ${p.magenta("~ reasoning summary")}`);
+      for (const line of softWrap(reasoning, this.opts.columns - 4)) {
         this.write(`    ${p.dim(line)}`);
       }
     }

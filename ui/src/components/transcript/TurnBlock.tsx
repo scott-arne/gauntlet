@@ -37,6 +37,7 @@ export function TurnBlock({ runId, turn, isCurrent, promptPairings, activeArtifa
   const duration = turnDuration(turn);
   const usage = formatUsage(turn);
   const thinking = turn.llmResponse?.thinking ?? [];
+  const reasoning = turn.llmResponse?.reasoning?.trim() ?? "";
   const text = turn.llmResponse?.text?.trim() ?? "";
   const softErrorCount = turn.tools.filter((p) => isSoftErrorResult(p.result)).length;
 
@@ -62,6 +63,10 @@ export function TurnBlock({ runId, turn, isCurrent, promptPairings, activeArtifa
       {thinking.map((t, i) => (
         <ThinkingBlock key={`think-${i}`} text={t.text} />
       ))}
+
+      {reasoning && (
+        <ThinkingBlock text={reasoning} label="reasoning summary" />
+      )}
 
       {text && (
         <p className="tr-assistant-text" style={{ whiteSpace: "pre-wrap" }}>{text}</p>

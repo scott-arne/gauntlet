@@ -46,6 +46,13 @@ export interface LlmResponseEvent extends BaseEvent {
   stopReason: string;
   text: string;
   thinking: Array<{ text: string; signature?: string }>;
+  /**
+   * Model's reasoning summary for this turn (provider-neutral). OpenAI
+   * populates from `ResponseReasoningItem.summary[].text`; a model-
+   * authored summary, not raw chain-of-thought. Distinct from
+   * Anthropic's `thinking` blocks above (which ARE raw).
+   */
+  reasoning?: string;
   toolCalls: Array<{ id: string; name: string; arguments: Record<string, unknown> }>;
   usage: {
     inputTokens: number;

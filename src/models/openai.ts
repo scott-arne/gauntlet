@@ -12,23 +12,31 @@ export function createOpenAIClient(model: string): LLMClient {
   const client = new OpenAI();
 
   return {
-    async chat(messages, tools, systemPrompt) {
+    async chat(messages, tools, systemPrompt, requestContext) {
       const response = await withLlmErrorSanitization(() =>
-        client.chat.completions.create({
+        client.responses.create({
           model,
-          messages: [
-            { role: "system", content: systemPrompt },
-            ...(messages as OpenAI.Chat.Completions.ChatCompletionMessageParam[]),
-          ],
+          instructions: systemPrompt,
+          input: messages as OpenAI.Responses.ResponseInputItem[],
           tools: tools.length > 0 ? tools.map(convertTool) : undefined,
+          // gpt-5+ / o-series only — non-reasoning models silently
+          // ignore. Effort matches the medium floor we set on Anthropic
+          // (PRI-1589). Summary "auto" lets the model choose verbosity;
+          // bump to "detailed" if we observe summaries are too thin.
+          reasoning: { effort: "medium", summary: "auto" },
+          // Receive opaque encrypted reasoning we can round-trip back
+          // into input[] on the next turn — preserves chain-of-thought
+          // across tool-call turns and keeps the cached prefix intact.
+          include: ["reasoning.encrypted_content"],
+          store: false,
+          ...(requestContext?.runId && { prompt_cache_key: requestContext.runId }),
         }),
       );
-
       return convertResponse(response);
     },
 
     userMessage(content: string) {
-      return { role: "user", content };
+      return { type: "message", role: "user", content };
     },
 
     toolResultMessages: openaiToolResultMessages,
@@ -40,118 +48,135 @@ export function openaiToolResultMessages(
   results: ToolResult[],
   extraUserText?: string,
 ): unknown[] {
-  const messages: unknown[] = calls.map((call, i) => ({
-    role: "tool",
-    tool_call_id: call.id,
-    content: results[i].text ?? "",
+  const items: unknown[] = calls.map((call, i) => ({
+    type: "function_call_output",
+    call_id: call.id,
+    output: results[i].text ?? "",
   }));
 
-  const imageParts: unknown[] = [];
+  // Image attachments ride along as a separate user-role item with
+  // ResponseInputImage content. `image_url` is a flat data-URL string
+  // here (not nested under image_url.url like Chat Completions).
+  const imageParts: Array<Record<string, unknown>> = [];
   for (const result of results) {
     if (result.image) {
       imageParts.push({
-        type: "image_url",
-        image_url: {
-          url: `data:${result.image.mediaType};base64,${result.image.data}`,
-        },
+        type: "input_image",
+        image_url: `data:${result.image.mediaType};base64,${result.image.data}`,
+        detail: "auto",
       });
     }
   }
 
   if (imageParts.length > 0) {
-    messages.push({
+    items.push({
+      type: "message",
       role: "user",
       content: [
-        { type: "text", text: "Screenshots from the tool calls above:" },
+        { type: "input_text", text: "Screenshots from the tool calls above:" },
         ...imageParts,
       ],
     });
   }
 
   if (extraUserText) {
-    messages.push({ role: "user", content: extraUserText });
+    items.push({
+      type: "message",
+      role: "user",
+      content: [{ type: "input_text", text: extraUserText }],
+    });
   }
 
-  return messages;
+  return items;
 }
 
-function convertTool(
-  tool: ToolDefinition
-): OpenAI.Chat.Completions.ChatCompletionTool {
+function convertTool(tool: ToolDefinition): OpenAI.Responses.FunctionTool {
   return {
     type: "function",
-    function: {
-      name: tool.name,
-      description: tool.description,
-      parameters: tool.parameters,
-    },
+    name: tool.name,
+    description: tool.description,
+    parameters: tool.parameters,
+    strict: false,
   };
 }
 
-function convertResponse(
-  response: OpenAI.Chat.Completions.ChatCompletion
-): AgentResponse {
-  const choice = response.choices[0];
-  const text = choice.message.content || "";
+export function convertResponse(response: OpenAI.Responses.Response): AgentResponse {
+  let text = "";
+  let reasoning = "";
+  let hasRefusal = false;
+  const toolCalls: ToolCall[] = [];
 
-  const toolCalls: AgentResponse["toolCalls"] = [];
-  for (const tc of choice.message.tool_calls || []) {
-    if (tc.type === "function") {
-      toolCalls.push({
-        id: tc.id,
-        name: tc.function.name,
-        arguments: JSON.parse(tc.function.arguments),
-      });
+  for (const item of response.output) {
+    switch (item.type) {
+      case "message": {
+        for (const part of item.content) {
+          if (part.type === "output_text") {
+            text += part.text;
+          } else if (part.type === "refusal") {
+            text += `[refusal] ${part.refusal}`;
+            hasRefusal = true;
+          }
+        }
+        break;
+      }
+      case "function_call":
+        toolCalls.push({
+          id: item.call_id,
+          name: item.name,
+          arguments: JSON.parse(item.arguments),
+        });
+        break;
+      case "reasoning":
+        for (const s of item.summary) reasoning += s.text;
+        break;
+      // Other ResponseOutputItem types (file_search, web_search,
+      // computer_use, code_interpreter, MCP, etc.) are not registered
+      // on this client so won't appear in practice. Leaving them
+      // unhandled is a deliberate scope choice — see the spec.
     }
   }
 
-  const stopReason = mapFinishReason(choice.finish_reason);
+  // OpenAI Responses' `input_tokens` *includes* `cached_tokens`;
+  // subtract so `TokenUsage.inputTokens` stays uncached-only across
+  // both providers (Anthropic's `input_tokens` is naturally disjoint).
+  const cached = response.usage?.input_tokens_details?.cached_tokens ?? 0;
+  const inputTokens = (response.usage?.input_tokens ?? 0) - cached;
 
   return {
     text,
+    reasoning: reasoning || undefined,
     toolCalls,
-    stopReason,
-    rawAssistantMessage: {
-      role: "assistant",
-      content: choice.message.content,
-      tool_calls: choice.message.tool_calls,
-    },
+    stopReason: deriveStopReason(response, toolCalls.length, hasRefusal),
+    // The full output[] array is replayed into the next turn's input[]
+    // via pushAssistantTurn (which spreads arrays). This is how
+    // reasoning items round-trip across turns — the load-bearing
+    // behavior for the cache-utilization gain.
+    rawAssistantMessage: response.output,
     usage: {
-      inputTokens: response.usage?.prompt_tokens ?? 0,
-      outputTokens: response.usage?.completion_tokens ?? 0,
+      inputTokens,
+      outputTokens: response.usage?.output_tokens ?? 0,
+      cacheReadInputTokens: cached || undefined,
     },
   };
 }
 
 /**
- * Map OpenAI's `finish_reason` to our provider-neutral StopReason.
+ * Map a Responses API result to our provider-neutral StopReason.
  *
- * OpenAI values: `'stop' | 'length' | 'tool_calls' | 'content_filter' | 'function_call'`.
- * The mapping is lossy but honest:
- *   - `tool_calls` / `function_call` → `tool_use` (LLM invoked a tool)
- *   - `length`                       → `max_tokens` (hit the token cap)
- *   - `stop`                         → `end_turn` (natural completion)
- *   - `content_filter`               → `stop_sequence` (best approximation;
- *     OpenAI's filter is not a stop sequence but this is the closest
- *     semantic: the provider intervened before model-driven end_turn)
- *
- * Exported for tests.
+ * Responses has no `finish_reason`; we derive from the output-item
+ * mix and `Response.status` + `incomplete_details.reason`.
  */
-export function mapFinishReason(reason: string | null): StopReason {
-  switch (reason) {
-    case "tool_calls":
-    case "function_call":
-      return "tool_use";
-    case "length":
-      return "max_tokens";
-    case "content_filter":
-      return "stop_sequence";
-    case "stop":
-    case null:
-      return "end_turn";
-    default:
-      // Unknown future value — fall through to end_turn so the agent loop
-      // doesn't crash, but log visibly via the string cast.
-      return "end_turn";
+export function deriveStopReason(
+  response: OpenAI.Responses.Response,
+  toolCallCount: number,
+  hasRefusal: boolean,
+): StopReason {
+  if (toolCallCount > 0) return "tool_use";
+  if (hasRefusal) return "refusal";
+  if (response.status === "incomplete") {
+    const reason = response.incomplete_details?.reason;
+    if (reason === "max_output_tokens") return "max_tokens";
+    if (reason === "content_filter") return "stop_sequence";
   }
+  return "end_turn";
 }
