@@ -44,6 +44,10 @@ export function createAnthropicClient(model: string): LLMClient {
           system,
           messages: apiMessages,
           tools: convertedTools,
+          // Sonnet 4.6 defaults to effort:high when unset; medium is Anthropic's
+          // recommended default for most apps and the right floor for an
+          // observe-and-report tester role. Opus 4.6/4.7 honor this too.
+          output_config: { effort: "medium" },
         }),
       );
 
