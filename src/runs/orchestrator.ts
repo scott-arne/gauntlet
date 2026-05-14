@@ -105,6 +105,16 @@ export interface ExecuteRunCoreOptions {
    * unset, `resolveProjectPrompt` falls through to `.gauntlet/project.md`
    * under `runConfig.projectRoot` (or no Project block if that's absent). */
   projectPromptPath?: string;
+  /**
+   * Optional cancellation signal forwarded to `runAgent`. When aborted,
+   * the agent loop returns a synthetic `errored` VetResult; the
+   * orchestrator's success path then writes `result.json` as normal.
+   * The catch block is NOT involved — the load-bearing invariant
+   * (spec §1) is that the agent returns rather than throws. Production
+   * callers wire this from a per-run AbortController in the active-run
+   * registry. PRI-1507.
+   */
+  abortSignal?: AbortSignal;
 }
 
 export interface ExecuteRunCoreResult {
@@ -204,6 +214,7 @@ export async function executeRunCore(
       viewport: runConfig.adapter === "web"
         ? viewportString(snapshotViewport(adapter))
         : undefined,
+      abortSignal: opts.abortSignal,
     });
     result.config = stampedRunConfig;
     if (runSetCtx) result.runSet = runSetCtx;

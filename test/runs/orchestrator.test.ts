@@ -331,3 +331,46 @@ describe("executeRunCore — boundary", () => {
     expect(src).not.toContain("from \"hono\"");
   });
 });
+
+// PRI-1507: orchestrator must forward abortSignal to runAgent, and the
+// success path (not the catch path) is the one that persists the errored
+// result. This exercises the full stack with a real `runAgent` + real
+// `EvidenceLogger` against a temp dir — if the agent's abort handling ever
+// switches from return-based to throw-based, the resulting catch-path
+// rethrow means result.json never gets written, and this test fails on
+// the existsSync assertion.
+describe("executeRunCore — abort signal", () => {
+  test("forwards aborted signal; success path writes errored result.json", async () => {
+    const projectRoot = mkdtempSync(join(tmpdir(), "gauntlet-orch-abort-"));
+    const storyPath = join(projectRoot, "card.md");
+    writeFileSync(storyPath, HAPPY_CARD);
+    const card = parseStoryCard(HAPPY_CARD);
+    const client = makeScriptedClient([report("pass", "ok", "fine")]);
+
+    const ac = new AbortController();
+    ac.abort("test-shutdown");
+
+    const { outDir, result } = await executeRunCore({
+      card,
+      storyPath,
+      client,
+      runConfig: {
+        projectRoot,
+        model: "claude-sonnet-4-6",
+        adapter: "cli",
+        target: "true",
+        budgetMs: 600_000,
+      },
+      abortSignal: ac.signal,
+    });
+
+    expect(result.status).toBe("errored");
+    expect(result.error?.type).toBe("shutdown_interrupted");
+    expect(existsSync(join(outDir, "result.json"))).toBe(true);
+
+    const onDisk = JSON.parse(readFileSync(join(outDir, "result.json"), "utf-8"));
+    expect(onDisk.status).toBe("errored");
+    expect(onDisk.error?.type).toBe("shutdown_interrupted");
+  });
+}, 15000);
+
