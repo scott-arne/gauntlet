@@ -747,6 +747,12 @@ describe("cli", () => {
     expect(r.stdout).toMatch(/Filter: all — 2 items left$/m);
   });
 
+  test("footer uses singular `item` for count of 1", () => {
+    run(["add", "only one"]);
+    const r = run(["list"]);
+    expect(r.stdout).toMatch(/Filter: all — 1 item left$/m);
+  });
+
   test("toggle flips done; the row prints [x]", () => {
     const added = run(["add", "x"]);
     const id = added.stdout.trim().split(/\s+/)[0]!;
@@ -771,7 +777,7 @@ describe("cli", () => {
     const bId = b.stdout.trim().split(/\s+/)[0]!;
     run(["toggle", bId]);
     const r = run(["filter", "active"]);
-    expect(r.stdout).toMatch(/Filter: active — 1 items left \(showing 1 of 2\)/);
+    expect(r.stdout).toMatch(/Filter: active — 1 item left \(showing 1 of 2\)/);
     expect(r.stdout).toContain("[ ] a");
     expect(r.stdout).not.toContain("[x] b");
   });
@@ -792,7 +798,7 @@ describe("cli", () => {
     run(["add", "x"]);
     const r = run([]);
     expect(r.stdout).toContain("[ ] x");
-    expect(r.stdout).toMatch(/Filter: all — 1 items left$/m);
+    expect(r.stdout).toMatch(/Filter: all — 1 item left$/m);
   });
 
   test("unknown command prints usage to stderr and exits non-zero", () => {
@@ -852,7 +858,7 @@ function formatRow(item: TodoItem): string {
 
 function formatFooter(state: TodoState): string {
   const active = activeCount(state);
-  const left = `${active} items left`;
+  const left = `${active} ${active === 1 ? "item" : "items"} left`;
   if (state.filter === "all") {
     return `Filter: all — ${left}`;
   }
@@ -1241,20 +1247,34 @@ Create a small launcher script the target can invoke:
 ```bash
 #!/usr/bin/env bash
 # Launcher for the Gauntlet CLI adapter. Sets up an isolated
-# scratch dir, defines `todo` as a bash function that runs the
-# fixture CLI, then exec's an interactive bash so the agent can
-# issue todo commands. State lives under the scratch dir.
+# scratch dir, drops a `todo` shim into a private bin dir on
+# PATH, then exec's an interactive bash so the agent can issue
+# todo commands. State lives under the scratch dir.
+#
+# Why a PATH shim and not `export -f todo`: bash exported
+# functions only survive bash-to-bash exec, and Gauntlet's CLI
+# adapter invokes targets via `sh -c`, which on Linux is usually
+# dash. A real shim script on PATH survives any shell exec.
 set -e
 SCRATCH="$(mktemp -d -t todo-card-XXXXXX)"
 export TODO_STATE_FILE="$SCRATCH/state.json"
 REPO_ROOT="$(cd "$(dirname "$0")/../.." && pwd)"
-todo() {
-  bun run "$REPO_ROOT/examples/todo/cli.ts" "$@"
+[[ -d "$REPO_ROOT/examples/todo" ]] || {
+  echo "launcher: REPO_ROOT wrong: $REPO_ROOT" >&2; exit 1;
 }
-export -f todo
+mkdir -p "$SCRATCH/bin"
+cat >"$SCRATCH/bin/todo" <<EOF
+#!/usr/bin/env bash
+exec bun run "$REPO_ROOT/examples/todo/cli.ts" "\$@"
+EOF
+chmod +x "$SCRATCH/bin/todo"
+export PATH="$SCRATCH/bin:$PATH"
+export PS1="todo$ "
 cd "$SCRATCH"
 echo "todo fixture ready. state: $TODO_STATE_FILE"
-exec bash --norc --noprofile
+# -i forces interactive mode (prompts emit on stdout, line editing on);
+# --norc --noprofile keeps the env clean for reproducibility.
+exec bash --norc --noprofile -i
 ```
 
 - [ ] **Step 1: Add the launcher and make it executable**
@@ -1370,6 +1390,12 @@ function App({ initial }: Props) {
   const safeCursor = Math.max(0, Math.min(cursor, items.length - 1));
 
   function persist(next: TodoState) {
+    // core.ts ops mutate state in place. Save first, then push a
+    // shallow clone into React so the render cycle picks up the
+    // change. Two-level clone is sufficient because items are
+    // replaced (not mutated) on filter/clear/delete, and `done`
+    // is the only per-item field that flips — Ink re-renders on
+    // setState regardless of identity for primitive fields.
     saveState(next);
     setState({ ...next, items: [...next.items] });
   }
@@ -1545,6 +1571,9 @@ set -e
 SCRATCH="$(mktemp -d -t todo-card-XXXXXX)"
 export TODO_STATE_FILE="$SCRATCH/state.json"
 REPO_ROOT="$(cd "$(dirname "$0")/../.." && pwd)"
+[[ -d "$REPO_ROOT/examples/todo" ]] || {
+  echo "launcher: REPO_ROOT wrong: $REPO_ROOT" >&2; exit 1;
+}
 exec bun run "$REPO_ROOT/examples/todo/tui.tsx"
 ```
 
@@ -1691,8 +1720,13 @@ Bun.serve({
       return handleApi(req, url);
     }
     // Serve index.html for "/" and anything not under /api/.
-    const path = url.pathname === "/" ? "/index.html" : url.pathname;
-    const file = Bun.file(resolve(PUBLIC_DIR, "." + path));
+    const reqPath = url.pathname === "/" ? "/index.html" : url.pathname;
+    const resolved = resolve(PUBLIC_DIR, "." + reqPath);
+    // Guard against path traversal — keep resolved path inside PUBLIC_DIR.
+    if (!resolved.startsWith(PUBLIC_DIR + "/") && resolved !== PUBLIC_DIR) {
+      return new Response("not found", { status: 404 });
+    }
+    const file = Bun.file(resolved);
     if (await file.exists()) {
       return new Response(file);
     }
@@ -1914,7 +1948,7 @@ In the browser, verify:
 7. Click `All` — all three visible.
 8. Click ✕ on "first" — row gone.
 9. Click `Clear completed` — "second" gone, only "third" remains.
-10. Count footer reads "1 items left".
+10. Count footer reads "1 item left".
 
 Then:
 
@@ -1947,6 +1981,9 @@ SCRATCH="$(mktemp -d -t todo-web-XXXXXX)"
 export TODO_STATE_FILE="$SCRATCH/state.json"
 export TODO_WEB_PORT="${TODO_WEB_PORT:-7891}"
 REPO_ROOT="$(cd "$(dirname "$0")/../.." && pwd)"
+[[ -d "$REPO_ROOT/examples/todo" ]] || {
+  echo "launcher: REPO_ROOT wrong: $REPO_ROOT" >&2; exit 1;
+}
 echo "todo-web: $TODO_STATE_FILE on :$TODO_WEB_PORT"
 exec bun run "$REPO_ROOT/examples/todo/web/server.ts"
 ```
@@ -1993,6 +2030,7 @@ for story in examples/todo/.gauntlet/stories/0{2,3,4,5,6,7,8}-*.md; do
     --max-time 5m
   kill "$SERVER_PID" 2>/dev/null || true
   wait "$SERVER_PID" 2>/dev/null || true
+  sleep 1  # let the OS release :7891 before the next bind
 done
 ```
 
@@ -2038,7 +2076,7 @@ Use the Linear MCP tools (`mcp__plugin_linear_linear__save_issue` to change stat
 
 - **Spec coverage:** Every section of the spec maps to at least one task. Data model + state I/O = T2; addItem/toggle/delete/filter/clear-completed/activeCount/visibleItems = T3–T7; CLI surface = T8; TUI keybinds/render = T12; Web layout/API = T15; cards = T10; CLAUDE.md = T1; verdict via auditor = exercised in T11/T14/T17.
 - **Placeholder scan:** No TBDs, no "TODO", no "implement later", no "similar to Task N", no "appropriate error handling". Each step has actual code or actual command output.
-- **Type consistency:** `loadState/saveState/addItem/toggleItem/deleteItem/setFilter/visibleItems/activeCount/clearCompleted` — same names from `core.ts` (T2–T7) through `cli.ts` (T8) and `tui.tsx` (T12) and `web/server.ts` (T15). `Filter = "all" | "active" | "completed"` — consistent everywhere (matches the corrected spec). `TodoItem.id` — 4-char alphabet `[a-km-np-z2-9]` — consistent in test regex (T3) and ID generator (T3).
+- **Type consistency:** `loadState/saveState/addItem/toggleItem/deleteItem/setFilter/visibleItems/activeCount/clearCompleted` — same names from `core.ts` (T2–T7) through `cli.ts` (T8) and `tui.tsx` (T12) and `web/server.ts` (T15). `Filter = "all" | "active" | "completed"` — consistent everywhere. `TodoItem.id` — 4-char alphabet `[a-km-np-z2-9]` — consistent in test regex (T3) and ID generator (T3).
 - **Frequent commits:** Every task except smoke-test-only ones (T9, T13, T16) ends in a commit. Smoke tests are explicitly no-commit because they're verification.
 - **Adapter-specific gotchas honored:**
   - Web filter UI uses `<button>`, never `<select>` (T15) — per the CDP trap memory.
