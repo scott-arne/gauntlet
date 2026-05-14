@@ -2,11 +2,12 @@ import type { Observation } from "./RunEndPanel";
 import {
   computePromptPairings,
   findSoftErrors,
-  type TranscriptEvent,
   type TranscriptModel,
 } from "../../lib/transcript";
+import { buildBlocks } from "../../lib/transcript-blocks";
 import { SystemPromptPanel } from "./SystemPromptPanel";
 import { UserMessagePanel } from "./UserMessagePanel";
+import { SystemReminderPanel } from "./SystemReminderPanel";
 import { TurnBlock } from "./TurnBlock";
 import { EventLine } from "./EventLine";
 import { RunEndPanel } from "./RunEndPanel";
@@ -21,37 +22,48 @@ interface Props {
   observations: Observation[];
 }
 
-// Walk `model.ordered` chronologically. The first time we see an event for a
-// given turn, render the whole TurnBlock for that turn (the model has all of
-// that turn's events attached by now because we reduce left-to-right). Anomaly
-// events render inline where they appear. `run_start`, `system_prompt`,
-// `user_message`, `run_end` are rendered outside this walk.
+// Render order is computed by `buildBlocks` (see ../lib/transcript-blocks.ts)
+// which walks model.ordered chronologically. user_message events render
+// inline where they appear in the stream — so the initial prompt lands at
+// the top (logged before any turn events) and reflection / grace reminders
+// land between the turns that bracket them.
 export function Transcript({ runId, model, currentTurn, activeArtifact, onOpenArtifact, observations }: Props) {
-  const renderedTurns = new Set<number>();
-  const blocks: React.ReactNode[] = [];
   const promptPairings = computePromptPairings(model);
+  const blocks = buildBlocks(model);
+  const anomaliesById = new Map(model.anomalies.map((a) => [a.eventId, a]));
 
-  for (const ev of model.ordered) {
-    if (isTurnEvent(ev)) {
-      if (renderedTurns.has(ev.turn)) continue;
-      renderedTurns.add(ev.turn);
-      const turn = model.turns.get(ev.turn);
-      if (!turn) continue;
-      blocks.push(
+  const rendered = blocks.map((block) => {
+    if (block.kind === "user_message") {
+      if (block.isReminder) {
+        return (
+          <SystemReminderPanel
+            key={`um-${block.eventId}`}
+            turn={block.turn}
+            content={block.content}
+          />
+        );
+      }
+      return <UserMessagePanel key={`um-${block.eventId}`} content={block.content} />;
+    }
+    if (block.kind === "turn") {
+      const turn = model.turns.get(block.turn);
+      if (!turn) return null;
+      return (
         <TurnBlock
-          key={`turn-${ev.turn}`}
+          key={`turn-${block.turn}`}
           runId={runId}
           turn={turn}
-          isCurrent={currentTurn === ev.turn}
+          isCurrent={currentTurn === block.turn}
           promptPairings={promptPairings}
           activeArtifact={activeArtifact}
           onOpenArtifact={onOpenArtifact}
-        />,
+        />
       );
-    } else if (ev.type === "event") {
-      blocks.push(<EventLine key={`evt-${ev.eventId}`} event={ev} />);
     }
-  }
+    const ev = anomaliesById.get(block.eventId);
+    if (!ev) return null;
+    return <EventLine key={`evt-${block.eventId}`} event={ev} />;
+  });
 
   const softErrors = findSoftErrors(model);
 
@@ -59,20 +71,8 @@ export function Transcript({ runId, model, currentTurn, activeArtifact, onOpenAr
     <div className="tr-transcript">
       <ErrorBanner sites={softErrors} />
       {model.systemPrompt && <SystemPromptPanel content={model.systemPrompt.content} />}
-      {model.userMessage && <UserMessagePanel content={model.userMessage.content} />}
-      {blocks}
+      {rendered}
       {model.runEnd && <RunEndPanel runEnd={model.runEnd} observations={observations} />}
     </div>
-  );
-}
-
-function isTurnEvent(
-  ev: TranscriptEvent,
-): ev is Extract<TranscriptEvent, { turn: number }> {
-  return (
-    ev.type === "llm_request" ||
-    ev.type === "llm_response" ||
-    ev.type === "tool_call" ||
-    ev.type === "tool_result"
   );
 }
