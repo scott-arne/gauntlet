@@ -2,8 +2,9 @@ import type { Adapter } from "../adapter";
 import type { ToolDefinition, ToolResult } from "../../models/provider";
 import type { EvidenceLogger } from "../../evidence/logger";
 import { buildReadTool, type ReadTool } from "../../context/read-tool";
+import { buildFetchCredentialTool, type FetchCredentialTool } from "../../context/credential-tool";
 import { validateToolArgs } from "../../agent/validators";
-import type { Viewport } from "../../config";
+import type { CredentialResolverConfig, Viewport } from "../../config";
 import { defaultCaptureParser, type CaptureParser } from "./capture-parser";
 import { spawnSync } from "../../runtime/spawn";
 
@@ -43,6 +44,7 @@ const AVAILABLE_KEYS = Object.keys(KEY_MAP).join(", ");
 
 export interface TUIAdapterOptions {
   contextRoot?: string;
+  credentialResolver?: CredentialResolverConfig;
   /** Override the capture parser (differential testing, future ghostty
    * selection). Defaults to xterm. */
   captureParser?: CaptureParser;
@@ -52,6 +54,7 @@ export class TUIAdapter implements Adapter {
   readonly name = "tui";
   private _sessionName: string | null = null;
   private readTool: ReadTool | null;
+  private credentialTool: FetchCredentialTool | null;
   private captureParser: CaptureParser;
   /** Lazy cache of tool name → parameter schema for O(1) validation. */
   private toolSchemas: Map<string, ToolDefinition["parameters"]> | null = null;
@@ -60,6 +63,10 @@ export class TUIAdapter implements Adapter {
     this.readTool = options?.contextRoot
       ? buildReadTool(options.contextRoot)
       : null;
+    this.credentialTool = buildFetchCredentialTool(
+      options?.contextRoot ?? "",
+      options?.credentialResolver,
+    );
     this.captureParser = options?.captureParser ?? defaultCaptureParser;
   }
 
@@ -206,6 +213,7 @@ export class TUIAdapter implements Adapter {
     if (this.readTool) {
       tools.push(this.readTool.definition);
     }
+    if (this.credentialTool) tools.push(this.credentialTool.definition);
     return tools;
   }
 
@@ -232,6 +240,10 @@ export class TUIAdapter implements Adapter {
 
     if (name === "read" && this.readTool) {
       return this.readTool.execute(args);
+    }
+
+    if (name === "fetch_credential" && this.credentialTool) {
+      return this.credentialTool.execute(args, logger);
     }
 
     switch (name) {

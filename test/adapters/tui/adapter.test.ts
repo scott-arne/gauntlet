@@ -176,4 +176,61 @@ describe("TUIAdapter context tool wiring", () => {
       rmSync(tmp, { recursive: true, force: true });
     }
   });
+
+  test("registers fetch_credential when contextRoot and credentialResolver set", () => {
+    const { mkdtempSync, writeFileSync, chmodSync, rmSync } = require("fs");
+    const { tmpdir } = require("os");
+    const { join } = require("path");
+    const ctxTmp = mkdtempSync(join(tmpdir(), "gauntlet-tui-cred-ctx-"));
+    const resTmp = mkdtempSync(join(tmpdir(), "gauntlet-tui-cred-res-"));
+    try {
+      writeFileSync(join(ctxTmp, "alice.md"), "anything");
+      const resolverPath = join(resTmp, "r.sh");
+      writeFileSync(resolverPath, "#!/bin/sh\necho ok\n");
+      chmodSync(resolverPath, 0o755);
+      const adapter = new TUIAdapter({
+        contextRoot: ctxTmp,
+        credentialResolver: { path: resolverPath, timeoutMs: 1000, includeInTranscripts: false },
+      });
+      expect(adapter.toolDefinitions().map((t) => t.name)).toContain("fetch_credential");
+    } finally {
+      rmSync(ctxTmp, { recursive: true, force: true });
+      rmSync(resTmp, { recursive: true, force: true });
+    }
+  });
+
+  test("omits fetch_credential when credentialResolver is undefined", () => {
+    const { mkdtempSync, writeFileSync, rmSync } = require("fs");
+    const { tmpdir } = require("os");
+    const { join } = require("path");
+    const ctxTmp = mkdtempSync(join(tmpdir(), "gauntlet-tui-cred-ctx-"));
+    try {
+      writeFileSync(join(ctxTmp, "alice.md"), "anything");
+      const adapter = new TUIAdapter({ contextRoot: ctxTmp });
+      expect(adapter.toolDefinitions().map((t) => t.name)).not.toContain("fetch_credential");
+    } finally {
+      rmSync(ctxTmp, { recursive: true, force: true });
+    }
+  });
+
+  test("omits fetch_credential when contextRoot is empty even if resolver is set", () => {
+    const { mkdtempSync, writeFileSync, chmodSync, rmSync } = require("fs");
+    const { tmpdir } = require("os");
+    const { join } = require("path");
+    const ctxTmp = mkdtempSync(join(tmpdir(), "gauntlet-tui-cred-ctx-empty-"));
+    const resTmp = mkdtempSync(join(tmpdir(), "gauntlet-tui-cred-res-"));
+    try {
+      const resolverPath = join(resTmp, "r.sh");
+      writeFileSync(resolverPath, "#!/bin/sh\necho ok\n");
+      chmodSync(resolverPath, 0o755);
+      const adapter = new TUIAdapter({
+        contextRoot: ctxTmp,
+        credentialResolver: { path: resolverPath, timeoutMs: 1000, includeInTranscripts: false },
+      });
+      expect(adapter.toolDefinitions().map((t) => t.name)).not.toContain("fetch_credential");
+    } finally {
+      rmSync(ctxTmp, { recursive: true, force: true });
+      rmSync(resTmp, { recursive: true, force: true });
+    }
+  });
 });
