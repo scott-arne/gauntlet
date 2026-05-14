@@ -11,6 +11,12 @@ export interface Viewport {
   height: number;
 }
 
+export interface CredentialResolverConfig {
+  path: string;
+  timeoutMs: number;
+  includeInTranscripts: boolean;
+}
+
 export interface AppConfig {
   projectRoot: string;
   port: number;
@@ -96,6 +102,13 @@ export interface AppConfig {
     anthropic: boolean;
     openai: boolean;
   };
+  /**
+   * Caller-provided runtime credential resolver. When set, the
+   * `fetch_credential` agent tool is registered and invokes this
+   * executable per call with `<entity> <key>` as argv. Undefined when
+   * GAUNTLET_CREDENTIAL_RESOLVER is unset. PRI-1605.
+   */
+  credentialResolver?: CredentialResolverConfig;
   sources: {
     projectRoot: "default" | "env" | "flag";
     port: "default" | "env" | "flag";
@@ -114,6 +127,7 @@ export interface AppConfig {
     "models.agent": "default" | "env" | "flag";
     "models.fanout": "default" | "env" | "flag" | "unset";
     "models.available": "default" | "env" | "flag";
+    credentialResolver: "default" | "env";
   };
 }
 
@@ -159,6 +173,12 @@ export interface EffectiveRunConfig {
   projectRoot: string;
   budgetMs: number;
   reflectionInterval: number;
+  /**
+   * Caller-provided credential resolver, threaded through from
+   * AppConfig. Adapters use this to register the fetch_credential
+   * tool when set. PRI-1605.
+   */
+  credentialResolver?: CredentialResolverConfig;
 }
 
 const RUN_BODY_ALLOWED = new Set(["target", "model", "chrome", "adapter", "viewport", "saveScreencast", "passes"]);
@@ -272,6 +292,7 @@ export function mergeRunConfig(app: AppConfig, body: RunRequestBody): EffectiveR
     projectRoot: app.projectRoot,
     budgetMs: app.defaultBudgetMs,
     reflectionInterval: app.defaultReflectionInterval,
+    credentialResolver: app.credentialResolver,
   };
 }
 
@@ -284,6 +305,7 @@ const DEFAULT_MAX_CONCURRENT_RUNS = 4;
 const DEFAULT_ACTIVE_RUN_TARGET_MAX_BYTES = 1024;
 const DEFAULT_WS_IDLE_TIMEOUT_SEC = 60;
 const DEFAULT_AGENT_MODEL = "claude-sonnet-4-6";
+const DEFAULT_CREDENTIAL_RESOLVER_TIMEOUT_MS = 10_000;
 
 function parseChromeEndpoint(raw: string, label: string): ChromeEndpoint {
   const idx = raw.lastIndexOf(":");
@@ -333,6 +355,35 @@ function parseBoolEnv(raw: string, label: string): boolean {
   if (v === "1" || v === "true" || v === "yes" || v === "on") return true;
   if (v === "0" || v === "false" || v === "no" || v === "off" || v === "") return false;
   throw new Error(`Invalid ${label} "${raw}": expected a boolean (1/0, true/false, yes/no, on/off)`);
+}
+
+function resolveCredentialResolver(
+  rawPath: string,
+  projectRoot: string,
+): CredentialResolverConfig["path"] {
+  const { resolve, isAbsolute } = require("path");
+  const { statSync } = require("fs");
+  const absolute = isAbsolute(rawPath) ? rawPath : resolve(projectRoot, rawPath);
+  let stat;
+  try {
+    stat = statSync(absolute);
+  } catch (err) {
+    throw new Error(
+      `Invalid GAUNTLET_CREDENTIAL_RESOLVER "${rawPath}": cannot stat "${absolute}" (${(err as Error).message})`,
+    );
+  }
+  if (!stat.isFile()) {
+    throw new Error(
+      `Invalid GAUNTLET_CREDENTIAL_RESOLVER "${rawPath}": "${absolute}" is not a regular file`,
+    );
+  }
+  // Any execute bit set (owner, group, or other).
+  if ((stat.mode & 0o111) === 0) {
+    throw new Error(
+      `Invalid GAUNTLET_CREDENTIAL_RESOLVER "${rawPath}": "${absolute}" is not executable (mode ${(stat.mode & 0o777).toString(8)})`,
+    );
+  }
+  return absolute;
 }
 
 /**
@@ -560,6 +611,26 @@ export function loadConfig(args: CliArgsInput, env: NodeJS.ProcessEnv): AppConfi
     openai: Boolean(env.OPENAI_API_KEY),
   };
 
+  // credentialResolver — caller-provided fetch_credential backend (PRI-1605).
+  let credentialResolver: CredentialResolverConfig | undefined;
+  let credentialResolverSource: "default" | "env" = "default";
+  if (env.GAUNTLET_CREDENTIAL_RESOLVER) {
+    const resolvedPath = resolveCredentialResolver(
+      env.GAUNTLET_CREDENTIAL_RESOLVER,
+      projectRoot,
+    );
+    const timeoutMs = parseNonNegIntEnv(
+      env.GAUNTLET_CREDENTIAL_RESOLVER_TIMEOUT_MS,
+      "GAUNTLET_CREDENTIAL_RESOLVER_TIMEOUT_MS",
+      DEFAULT_CREDENTIAL_RESOLVER_TIMEOUT_MS,
+    );
+    const includeInTranscripts = env.GAUNTLET_CREDENTIAL_INCLUDE_IN_TRANSCRIPTS
+      ? parseBoolEnv(env.GAUNTLET_CREDENTIAL_INCLUDE_IN_TRANSCRIPTS, "GAUNTLET_CREDENTIAL_INCLUDE_IN_TRANSCRIPTS")
+      : false;
+    credentialResolver = { path: resolvedPath, timeoutMs, includeInTranscripts };
+    credentialResolverSource = "env";
+  }
+
   return {
     projectRoot,
     port,
@@ -581,6 +652,7 @@ export function loadConfig(args: CliArgsInput, env: NodeJS.ProcessEnv): AppConfi
       available: availableModels,
     },
     apiKeys,
+    credentialResolver,
     sources: {
       projectRoot: projectRootSource,
       port: portSource,
@@ -599,6 +671,7 @@ export function loadConfig(args: CliArgsInput, env: NodeJS.ProcessEnv): AppConfi
       "models.agent": agentSource,
       "models.fanout": fanoutSource,
       "models.available": availableSource,
+      credentialResolver: credentialResolverSource,
     },
   };
 }
