@@ -6,7 +6,9 @@ import type { Adapter } from "../adapter";
 import type { ToolDefinition, ToolResult } from "../../models/provider";
 import type { EvidenceLogger, BrowserEventCategory } from "../../evidence/logger";
 import { DEFAULT_VIEWPORT, type ChromeEndpoint, type Viewport } from "../../config";
+import type { CredentialResolverConfig } from "../../config";
 import { buildReadTool, type ReadTool } from "../../context/read-tool";
+import { buildFetchCredentialTool, type FetchCredentialTool } from "../../context/credential-tool";
 import {
   buildInstallPasskeyTool,
   type PasskeyTool,
@@ -131,6 +133,11 @@ export interface WebAdapterOptions {
    * session from `options.chrome`.
    */
   chromeSession?: ChromeSession;
+  /**
+   * Caller-provided credential resolver. When set together with
+   * contextRoot, the WebAdapter registers fetch_credential. PRI-1605.
+   */
+  credentialResolver?: CredentialResolverConfig;
 }
 
 export interface ScreenshotResult {
@@ -166,6 +173,7 @@ export class WebAdapter implements Adapter {
   private readTool: ReadTool | null;
   private passkeyTool: PasskeyTool | null;
   private cookiesTool: CookiesTool | null;
+  private credentialTool: FetchCredentialTool | null;
   private logger: EvidenceLogger | null;
   private observerSession: ObserverSession | null = null;
   private chromeProfileName: string | null;
@@ -250,6 +258,10 @@ export class WebAdapter implements Adapter {
           this.logger,
         )
       : null;
+    this.credentialTool = buildFetchCredentialTool(
+      options?.contextRoot ?? "",
+      options?.credentialResolver,
+    );
   }
 
   /**
@@ -871,6 +883,7 @@ export class WebAdapter implements Adapter {
     if (this.cookiesTool) {
       tools.push(this.cookiesTool.definition);
     }
+    if (this.credentialTool) tools.push(this.credentialTool.definition);
     return tools;
   }
 
@@ -928,6 +941,10 @@ export class WebAdapter implements Adapter {
         });
       }
       return this.cookiesTool.execute(args);
+    }
+
+    if (name === "fetch_credential" && this.credentialTool) {
+      return this.credentialTool.execute(args, logger);
     }
 
     const tab = this.activeTab();
