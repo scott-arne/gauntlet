@@ -115,6 +115,17 @@ function summarizeCard(
     }
     if (r.status === "errored") {
       byStatus.errored++;
+      // PRI-1507: v5 errored runs (e.g. interrupted by shutdown drain)
+      // can still carry partial usage data in their result.json — the
+      // agent loop accumulates turns/tokens until the abort check fires.
+      // Include those samples in medians. Catch-path errored entries
+      // (lookup returns null, e.g. executor threw before producing a
+      // result file) preserve today's behavior of skipping medians.
+      const result = lookup(r.runId);
+      if (result) {
+        if (result.usage?.turns != null) turns.push(result.usage.turns);
+        if (result.duration_ms != null) durations.push(result.duration_ms);
+      }
       continue;
     }
 
