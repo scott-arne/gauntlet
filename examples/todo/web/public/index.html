@@ -1,0 +1,166 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <title>TODO</title>
+  <style>
+    body {
+      font-family: system-ui, sans-serif;
+      max-width: 480px;
+      margin: 2rem auto;
+      padding: 0 1rem;
+      color: #222;
+    }
+    h1 { font-weight: 300; font-size: 3rem; text-align: center; margin: 0 0 1rem; color: #c44; }
+    .new-item input {
+      width: 100%;
+      font-size: 1.5rem;
+      padding: 0.5rem 0.75rem;
+      box-sizing: border-box;
+      border: 1px solid #ccc;
+    }
+    ul { list-style: none; padding: 0; margin: 1rem 0; border-top: 1px solid #eee; }
+    li {
+      display: flex;
+      align-items: center;
+      gap: 0.75rem;
+      padding: 0.75rem;
+      border-bottom: 1px solid #eee;
+      font-size: 1.25rem;
+    }
+    li.done .text { text-decoration: line-through; color: #999; }
+    .text { flex: 1; }
+    .delete {
+      background: none;
+      border: none;
+      color: #c44;
+      font-size: 1.25rem;
+      cursor: pointer;
+      padding: 0 0.25rem;
+    }
+    footer {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      gap: 0.5rem;
+      font-size: 0.9rem;
+      color: #555;
+    }
+    .filters { display: flex; gap: 0.25rem; }
+    .filters button {
+      background: white;
+      border: 1px solid transparent;
+      padding: 0.25rem 0.5rem;
+      cursor: pointer;
+    }
+    .filters button.selected {
+      background: #fde;
+      border-color: #c44;
+    }
+    .clear {
+      background: none;
+      border: none;
+      cursor: pointer;
+      color: #555;
+    }
+    .clear:hover { text-decoration: underline; }
+  </style>
+</head>
+<body>
+  <h1>TODO</h1>
+  <form class="new-item" id="add-form">
+    <input id="new-text" placeholder="What needs doing?" autofocus />
+  </form>
+  <ul id="list"></ul>
+  <footer>
+    <span id="count">0 items left</span>
+    <div class="filters">
+      <button data-filter="all">All</button>
+      <button data-filter="active">Active</button>
+      <button data-filter="completed">Completed</button>
+    </div>
+    <button class="clear" id="clear">Clear completed</button>
+  </footer>
+
+  <script>
+    async function api(path, body) {
+      const opts = body
+        ? { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify(body) }
+        : { method: "GET" };
+      const res = await fetch(path, opts);
+      return res.json();
+    }
+
+    let state = { items: [], filter: "all" };
+
+    function visible() {
+      if (state.filter === "all") return state.items;
+      if (state.filter === "active") return state.items.filter((i) => !i.done);
+      return state.items.filter((i) => i.done);
+    }
+
+    function activeCount() {
+      return state.items.filter((i) => !i.done).length;
+    }
+
+    function render() {
+      const list = document.getElementById("list");
+      list.innerHTML = "";
+      for (const item of visible()) {
+        const li = document.createElement("li");
+        if (item.done) li.classList.add("done");
+        const box = document.createElement("input");
+        box.type = "checkbox";
+        box.checked = item.done;
+        box.addEventListener("change", async () => {
+          state = await api("/api/toggle", { id: item.id });
+          render();
+        });
+        const text = document.createElement("span");
+        text.className = "text";
+        text.textContent = item.text;
+        const del = document.createElement("button");
+        del.className = "delete";
+        del.textContent = "✕";
+        del.addEventListener("click", async () => {
+          state = await api("/api/delete", { id: item.id });
+          render();
+        });
+        li.appendChild(box);
+        li.appendChild(text);
+        li.appendChild(del);
+        list.appendChild(li);
+      }
+      const n = activeCount();
+      document.getElementById("count").textContent = `${n} ${n === 1 ? "item" : "items"} left`;
+      for (const btn of document.querySelectorAll(".filters button")) {
+        btn.classList.toggle("selected", btn.dataset.filter === state.filter);
+      }
+    }
+
+    document.getElementById("add-form").addEventListener("submit", async (e) => {
+      e.preventDefault();
+      const input = document.getElementById("new-text");
+      const text = input.value.trim();
+      if (!text) return;
+      state = await api("/api/add", { text });
+      input.value = "";
+      render();
+    });
+
+    for (const btn of document.querySelectorAll(".filters button")) {
+      btn.addEventListener("click", async () => {
+        state = await api("/api/filter", { filter: btn.dataset.filter });
+        render();
+      });
+    }
+
+    document.getElementById("clear").addEventListener("click", async () => {
+      state = await api("/api/clear-completed");
+      render();
+    });
+
+    api("/api/state").then((s) => { state = s; render(); });
+  </script>
+</body>
+</html>
