@@ -164,6 +164,36 @@
 }
 
 /* ============================================================
+   System reminder — mid-run user-role injection (reflection
+   checkpoint or grace-turn deadline). Same italic body as the
+   user-message panel but amber left rule + lowercase mono
+   label so the provenance is unmistakable.
+   ============================================================ */
+
+.tr-system-reminder {
+  border-left: 3px solid var(--tr-amber);
+  padding: 6px 0 6px 20px;
+  margin: 16px 0 8px;
+  font-family: var(--tr-font-display);
+  font-style: italic;
+  font-size: 16px;
+  color: var(--tr-ink-light);
+  max-width: 68ch;
+  line-height: 1.55;
+}
+.tr-system-reminder-label {
+  font-family: var(--tr-font-mono);
+  font-style: normal;
+  font-size: 10px;
+  font-weight: 500;
+  text-transform: lowercase;
+  letter-spacing: 0.04em;
+  color: var(--tr-slate);
+  margin-bottom: 4px;
+  display: block;
+}
+
+/* ============================================================
    Turn — a "chapter" block with a marker on top
    ============================================================ */
 
