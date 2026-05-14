@@ -448,6 +448,44 @@ describe("EvidenceLogger", () => {
     expect(evt.parentEventId).toBe(sysRow.eventId);
   });
 
+  test("logToolResult prefers transcriptText over text when both are set", () => {
+    logger.logToolResult({
+      turn: 1,
+      toolUseId: "tu-1",
+      name: "fetch_credential",
+      durationMs: 5,
+      text: "raw-secret-value",
+      transcriptText: "<credential redacted: entity=alice key=otp len=16>",
+      error: false,
+    });
+
+    const rows = readFileSync(join(outDir, "run.jsonl"), "utf-8")
+      .trim()
+      .split("\n")
+      .map((l) => JSON.parse(l));
+    const row = rows[0];
+    expect(row.type).toBe("tool_result");
+    expect(row.text).toBe("<credential redacted: entity=alice key=otp len=16>");
+    // The recorded row should not leak the raw text anywhere.
+    expect(JSON.stringify(row)).not.toContain("raw-secret-value");
+  });
+
+  test("logToolResult uses text as before when transcriptText is absent", () => {
+    logger.logToolResult({
+      turn: 1,
+      toolUseId: "tu-1",
+      name: "read",
+      durationMs: 5,
+      text: "ordinary tool output",
+      error: false,
+    });
+    const rows = readFileSync(join(outDir, "run.jsonl"), "utf-8")
+      .trim()
+      .split("\n")
+      .map((l) => JSON.parse(l));
+    expect(rows[0].text).toBe("ordinary tool output");
+  });
+
   test("logToolResult records optional mediaType for images", () => {
     logger.logToolResult({
       turn: 1,

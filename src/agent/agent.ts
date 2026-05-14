@@ -393,6 +393,7 @@ export async function runAgent(
           name: tc.name,
           durationMs: Date.now() - started,
           text: result.text ?? "",
+          transcriptText: result.transcriptText,
           image: (result as any).imagePath,       // populated by T6; undefined today
           mediaType: (result as any).image?.mediaType, // pairs with imagePath; needed by revival image rehydration
           artifact: (result as any).artifactPath, // populated by T6/T7

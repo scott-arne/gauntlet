@@ -76,6 +76,14 @@ export interface ToolResultFields {
   name: string;
   durationMs: number;
   text: string;
+  /**
+   * Optional override for the recorded `text` field. When set,
+   * tool_result.text in run.jsonl is this string instead of the raw
+   * `text`. The original `text` is dropped from the row. Used for
+   * transcript redaction (PRI-1605). Never written to disk under its
+   * own key.
+   */
+  transcriptText?: string;
   image?: string;            // relative path
   /** Media type of the image (e.g. "image/png"). Set when `image` is set
    * so post-hoc readers (e.g. session revival) can re-feed the bytes
@@ -223,23 +231,32 @@ export class EvidenceLogger {
   }
 
   logToolResult(fields: ToolResultFields): void {
+    // Transcript redaction (PRI-1605): tools may supply transcriptText to
+    // record a different value in run.jsonl than the agent saw. Strip
+    // transcriptText so it never appears as its own field in the row, and
+    // substitute it for `text` when present. All downstream branches
+    // operate on the normalized fields.
+    const { transcriptText, ...rest } = fields;
+    const normalized: Omit<ToolResultFields, "transcriptText"> =
+      transcriptText !== undefined ? { ...rest, text: transcriptText } : rest;
+
     // TUI captures: the adapter has already written captures/NNN.ansi
     // and populated `capturePath`. Replace the inline text with the path
     // so run.jsonl stays lean. Consumers (UI, replay) fetch the file.
     // The LLM, which receives the in-memory ToolResult.text, is unaffected.
-    if (fields.capturePath) {
+    if (normalized.capturePath) {
       const body: Record<string, unknown> = {
-        ...fields,
-        text: fields.capturePath,
+        ...normalized,
+        text: normalized.capturePath,
       };
       this.writeEvent("tool_result", body);
       return;
     }
 
-    let body: Record<string, unknown> = { ...fields };
-    if (typeof fields.text === "string" && Buffer.byteLength(fields.text, "utf8") > INLINE_TEXT_LIMIT) {
-      const bytes = Buffer.byteLength(fields.text, "utf8");
-      const spilled = this.saveArtifact(fields.text, "txt");
+    let body: Record<string, unknown> = { ...normalized };
+    if (typeof normalized.text === "string" && Buffer.byteLength(normalized.text, "utf8") > INLINE_TEXT_LIMIT) {
+      const bytes = Buffer.byteLength(normalized.text, "utf8");
+      const spilled = this.saveArtifact(normalized.text, "txt");
       // Keep run.jsonl readable by dropping the full text, but don't leave
       // a breadcrumb in the `text` field — a string like "<spilled — see
       // artifacts/N.txt>" is redundant with the `artifact` field and reads
@@ -251,12 +268,12 @@ export class EvidenceLogger {
         text: "",
         textTruncated: true,
         textBytes: bytes,
-        artifact: fields.artifact ?? spilled,
+        artifact: normalized.artifact ?? spilled,
       };
       this.writeEvent("tool_result", body);
       this.logEvent("tool_result_text_oversize", {
-        turn: fields.turn,
-        toolName: fields.name,
+        turn: normalized.turn,
+        toolName: normalized.name,
         bytes,
         artifact: spilled,
       });
