@@ -136,7 +136,7 @@ export interface TranscriptModel {
   runId?: string;
   runStart?: RunStartEvent;
   systemPrompt?: SystemPromptEvent;
-  userMessage?: UserMessageEvent;
+  userMessages: Map<number, UserMessageEvent>;
   turns: Map<number, TurnModel>;
   runEnd?: RunEndEvent;
   anomalies: AnomalyEvent[];
@@ -146,6 +146,7 @@ export interface TranscriptModel {
 
 export function emptyTranscript(): TranscriptModel {
   return {
+    userMessages: new Map(),
     turns: new Map(),
     anomalies: [],
     ordered: [],
@@ -194,8 +195,11 @@ export function applyEvent(model: TranscriptModel, event: TranscriptEvent): Tran
     case "system_prompt":
       return { ...model, ordered, maxEventId, systemPrompt: event };
 
-    case "user_message":
-      return { ...model, ordered, maxEventId, userMessage: event };
+    case "user_message": {
+      const userMessages = new Map(model.userMessages);
+      userMessages.set(event.turn, event);
+      return { ...model, ordered, maxEventId, userMessages };
+    }
 
     case "llm_request": {
       const [turns, turn] = ensureTurn(model, event.turn);

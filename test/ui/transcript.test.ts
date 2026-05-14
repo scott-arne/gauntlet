@@ -54,7 +54,8 @@ describe("reduceTranscript", () => {
     expect(model.runStart?.cardId).toBe("login-matt-001");
     expect(model.runStart?.model).toBe("claude-sonnet-4-6");
     expect(model.systemPrompt?.content.startsWith("You are a thorough QA tester")).toBe(true);
-    expect(model.userMessage?.turn).toBe(0);
+    expect(model.userMessages.size).toBe(1);
+    expect(model.userMessages.get(0)?.turn).toBe(0);
     expect(model.turns.size).toBe(25);
     expect(model.runEnd?.status).toBe("pass");
     expect(model.runEnd?.observationCount).toBe(4);
@@ -74,6 +75,19 @@ describe("reduceTranscript", () => {
     const usage = totalUsage(model);
     expect(usage.inputTokens).toBeGreaterThan(0);
     expect(usage.outputTokens).toBeGreaterThan(0);
+  });
+
+  test("multiple user_messages at different turns are kept by turn key", () => {
+    const evs: TranscriptEvent[] = [
+      { eventId: 1, parentEventId: 0, ts: "t1", type: "user_message", turn: 0, content: "initial prompt" },
+      { eventId: 2, parentEventId: 0, ts: "t2", type: "user_message", turn: 4, content: "<SYSTEM-REMINDER>\nReflection checkpoint." },
+      { eventId: 3, parentEventId: 0, ts: "t3", type: "user_message", turn: 9, content: "<SYSTEM-REMINDER>\nYou have used your time budget" },
+    ];
+    const model = reduceTranscript(evs);
+    expect(model.userMessages.size).toBe(3);
+    expect(model.userMessages.get(0)?.content).toBe("initial prompt");
+    expect(model.userMessages.get(4)?.content.startsWith("<SYSTEM-REMINDER>")).toBe(true);
+    expect(model.userMessages.get(9)?.content.startsWith("<SYSTEM-REMINDER>")).toBe(true);
   });
 
   test("idempotent: applying same events twice yields the same shape", () => {
