@@ -11,7 +11,16 @@
 // v4: Removed maxStuckRetries (the stuck-handling system-prompt block it
 //     templated into has been retired in favor of mid-loop reflection
 //     checkpoints — see docs/reflection-checkpoints-spec.md, PRI-1569).
-export const RESULT_SCHEMA_VERSION = 4;
+// v5: Added "errored" to VetStatus and optional error: {type, message}
+//     field on VetResult. Today's only emitter is shutdown drain
+//     (PRI-1507) — type is "shutdown_interrupted". The error.type field
+//     is open-typed (string) so additive new categories don't require a
+//     schema bump or TypeScript widening; consumers MUST tolerate
+//     unknown types. For shutdown-stub results (the floor-of-quality
+//     fallback when even the post-abort patience window expires),
+//     duration_ms uses -1 as a sentinel meaning "registry entry was
+//     missing startedAt at stub time".
+export const RESULT_SCHEMA_VERSION = 5;
 
 import type { RunSetCtx } from "./runs/run-set-types";
 
@@ -31,7 +40,7 @@ export interface RunConfigSnapshot {
   viewport?: { width: number; height: number };
 }
 
-export type VetStatus = "pass" | "fail" | "investigate";
+export type VetStatus = "pass" | "fail" | "investigate" | "errored";
 
 export type ObservationKind =
   | "bug"
@@ -60,6 +69,15 @@ export interface VetResult {
   summary: string;
   reasoning: string;
   observations: Observation[];
+  /**
+   * Set when `status === "errored"`. Categorizes the cause so consumers
+   * can distinguish shutdown interruption from other future error
+   * surfaces. `type` is open-typed (string) so additive new categories
+   * don't require a schema bump or TypeScript type widening — consumers
+   * MUST tolerate unknown `type` values. Today the only emitted type is
+   * `"shutdown_interrupted"` (PRI-1507).
+   */
+  error?: { type: string; message: string };
   evidence: {
     screenshots: string[];
     log: string;

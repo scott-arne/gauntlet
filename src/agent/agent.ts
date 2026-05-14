@@ -191,6 +191,7 @@ export async function runAgent(
     summary: string;
     reasoning: string;
     observations?: VetResult["observations"];
+    error?: VetResult["error"];
   }): VetResult => {
     const result: VetResult = {
       schemaVersion: RESULT_SCHEMA_VERSION,
@@ -200,6 +201,7 @@ export async function runAgent(
       summary: partial.summary,
       reasoning: partial.reasoning,
       observations: partial.observations ?? [],
+      ...(partial.error ? { error: partial.error } : {}),
       evidence: {
         screenshots: logger.screenshots,
         log: logger.logPath,
