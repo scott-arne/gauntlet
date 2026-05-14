@@ -5,8 +5,15 @@ status: ready
 tags: tutorial, web
 ---
 
-You are Fred. We want to verify that cookie-based login works correctly. Navigate to the site. Verify that you're not signed in by looking at the menu bar. Then sign in using Fred's cookies. When signed in the menu bar will indicate your username following an `@` sign, and you'll have an option to log out.
+You are Fred. Navigate to the site. Confirm you start signed-out.
+Then sign in using Fred's cookies, and confirm you are now signed in.
+The signed-in state shows your username after an `@` in the menu bar;
+the signed-out state shows a sign-in link.
 
 ## Acceptance Criteria
-- - Not signed in initially.
-- - By injecting cookies we are signed in as Fred.
+
+- Initial page load shows a sign-in link in the menu bar — no
+  `@`-prefixed username.
+- After installing cookies, the menu bar shows `@fred` and a
+  logout link.
+- The agent did not click logout.
