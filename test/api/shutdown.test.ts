@@ -1,5 +1,8 @@
 import { describe, test, expect } from "bun:test";
 import { Hono } from "hono";
+import { mkdtempSync, readFileSync } from "fs";
+import { tmpdir } from "os";
+import { join } from "path";
 import { ShutdownState, drainShutdown } from "../../src/api/shutdown";
 import { RunBroadcaster } from "../../src/api/ws";
 import { RunSetBroadcaster } from "../../src/api/run-set-broadcaster";
@@ -99,7 +102,8 @@ describe("drainShutdown", () => {
       state,
       broadcaster,
       setBroadcaster,
-      registry: { list: () => [] },
+      registry: { list: () => [], abortAll: () => 0 },
+      resultsRoot: "/tmp/gauntlet-test-unused",
       graceMs: 5000,
       pollMs: 25,
       log: (m) => log.push(m),
@@ -124,6 +128,7 @@ describe("drainShutdown", () => {
         if (calls >= 3) return [];
         return remaining;
       },
+      abortAll: () => 0,
     };
 
     const result = await drainShutdown({
@@ -132,6 +137,7 @@ describe("drainShutdown", () => {
       broadcaster: new RunBroadcaster(),
       setBroadcaster: new RunSetBroadcaster(),
       registry,
+      resultsRoot: "/tmp/gauntlet-test-unused",
       graceMs: 5000,
       pollMs: 25,
       log: () => {},
@@ -141,9 +147,15 @@ describe("drainShutdown", () => {
     expect(calls).toBeGreaterThanOrEqual(3);
   });
 
-  test("times out after graceMs and returns drainedCleanly=false when runs persist", async () => {
+  test("times out after graceMs, fires abortAll, then writes stub for run with no result.json", async () => {
     const state = new ShutdownState();
-    const registry = { list: () => [{ id: "stuck-run" } as any] };
+    const stuck = [{ id: "stuck-run", cardId: "stuck", startedAt: Date.now() - 1000 }];
+    let abortAllCalled = 0;
+    const registry = {
+      list: () => stuck,
+      abortAll: () => { abortAllCalled++; return 1; },
+    };
+    const resultsRoot = mkdtempSync(join(tmpdir(), "gauntlet-shutdown-stub-"));
 
     const before = Date.now();
     const result = await drainShutdown({
@@ -152,7 +164,9 @@ describe("drainShutdown", () => {
       broadcaster: new RunBroadcaster(),
       setBroadcaster: new RunSetBroadcaster(),
       registry,
+      resultsRoot,
       graceMs: 200,
+      postAbortMs: 100,
       pollMs: 25,
       log: () => {},
     });
@@ -160,8 +174,16 @@ describe("drainShutdown", () => {
 
     expect(result.drainedCleanly).toBe(false);
     expect(result.remaining).toBe(1);
+    expect(result.aborted).toBe(1);
+    expect(result.stubbed).toBe(1);
+    expect(abortAllCalled).toBe(1);
     expect(elapsed).toBeGreaterThanOrEqual(200);
-    expect(elapsed).toBeLessThan(1000);
+    expect(elapsed).toBeLessThan(2000);
+
+    // Stub file actually landed on disk
+    const stub = JSON.parse(readFileSync(join(resultsRoot, "stuck-run", "result.json"), "utf-8"));
+    expect(stub.status).toBe("errored");
+    expect(stub.error.type).toBe("shutdown_interrupted");
   });
 });
 

@@ -193,7 +193,10 @@ async function main() {
             broadcaster,
             setBroadcaster,
             registry,
+            cancelTokens,
+            resultsRoot,
             graceMs: config.shutdownGraceMs,
+            postAbortMs: 1000,
             pollMs: 100,
             log: (msg) => process.stderr.write(`gauntlet: ${msg}\n`),
           });
