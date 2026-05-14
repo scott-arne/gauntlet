@@ -35,10 +35,14 @@ export interface VetResult {
   runId: string;
   /** The cardId this run tested. Retained as `scenario` for back-compat. */
   scenario: string;
-  status: "pass" | "fail" | "investigate";
+  status: "pass" | "fail" | "investigate" | "errored";
   summary: string;
   reasoning: string;
   observations: { kind: string; description: string; evidence?: string[] }[];
+  /** Present when status === "errored". Today's only type is
+   * "shutdown_interrupted" (PRI-1507). Open-typed by design — UI must
+   * tolerate unknown types and render generically. */
+  error?: { type: string; message: string };
   evidence: { screenshots: string[]; log: string; video?: string };
   duration_ms: number;
   usage?: { inputTokens: number; outputTokens: number; turns: number };

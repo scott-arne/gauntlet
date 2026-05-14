@@ -34,8 +34,13 @@ function formatDurationMs(ms: number): string {
 
 export function RunEndPanel({ runEnd, observations }: Props) {
   const { limitations, suggestions, notes } = splitObservations(observations);
-  const isFail = runEnd.status === "fail";
-  const verdictLabel = runEnd.status.charAt(0).toUpperCase() + runEnd.status.slice(1);
+  // PRI-1507: treat errored verdicts visually like fail (red treatment),
+  // but render the label as "Interrupted" rather than the literal status
+  // so operators see the cause at a glance.
+  const isFail = runEnd.status === "fail" || runEnd.status === "errored";
+  const verdictLabel = runEnd.status === "errored"
+    ? "Interrupted"
+    : runEnd.status.charAt(0).toUpperCase() + runEnd.status.slice(1);
 
   return (
     <section className={`tr-run-end${isFail ? " tr-fail" : ""}`}>

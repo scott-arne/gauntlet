@@ -20,17 +20,24 @@ export function StatusBadge({
     pass: "bg-green-100 text-green-800",
     fail: "bg-red-100 text-red-800",
     investigate: "bg-yellow-100 text-yellow-800",
+    // PRI-1507: a run that didn't reach a verdict (today: shutdown
+    // interrupted; future: other terminal errors). Red treatment shared
+    // with `fail`; label is rendered as "interrupted" rather than the
+    // literal "errored" to communicate cause.
+    errored: "bg-red-100 text-red-800",
+    cancelled: "bg-panel text-slate",
     ready: "bg-teal-wash text-teal-dark",
     draft: "bg-panel text-slate",
   };
   const sizeClass = size === "md" ? "px-2 py-1 text-sm" : "px-1.5 py-0.5 text-xs";
+  const label = status === "errored" ? "interrupted" : status;
   return (
     <span
       className={`inline-block rounded ${sizeClass} font-medium ${
         colors[status] || "bg-panel text-slate"
       }`}
     >
-      {status}
+      {label}
     </span>
   );
 }

@@ -193,6 +193,7 @@ export class BatchTableRenderer {
       else if (row.finalStatus === "pass") pass++;
       else if (row.finalStatus === "fail") fail++;
       else if (row.finalStatus === "investigate") investigate++;
+      else if (row.finalStatus === "errored") errored++;
     }
     this.sink.write(
       `\nbatch: ${pass} pass · ${fail} fail · ${investigate} investigate · ${errored} errored\n`,
@@ -320,6 +321,12 @@ export class BatchTableRenderer {
       } else if (r.finalStatus === "investigate") {
         by.investigate++;
         turns.push(r.turn);
+      } else if (r.finalStatus === "errored") {
+        // PRI-1507 v5: agent returned an errored result (e.g. shutdown
+        // interrupted). Include the (partial) turn count in medians for
+        // consistency with run-set-writer.ts behavior.
+        by.errored++;
+        turns.push(r.turn);
       }
     }
     return { cardStatus: deriveBucket(by), medianTurns: median(turns) };
@@ -338,6 +345,7 @@ export class BatchTableRenderer {
       case "pass":        return `${c.green}✓${c.reset}`;
       case "fail":        return `${c.red}✗${c.reset}`;
       case "investigate": return `${c.yellow}!${c.reset}`;
+      case "errored":     return `${c.red}✗${c.reset}`;
       default:            return ` `;
     }
   }
@@ -352,6 +360,11 @@ export class BatchTableRenderer {
       case "pass":        return `${c.green}pass${c.reset}`;
       case "fail":        return `${c.red}fail${c.reset}`;
       case "investigate": return `${c.yellow}investigate${c.reset}`;
+      // PRI-1507: distinguish v5 errored (agent returned errored result —
+      // typically shutdown interrupted) from state=errored (executor
+      // threw). Visually similar (red), but labeled differently so an
+      // operator reading the table can tell them apart.
+      case "errored":     return `${c.red}interrupted${c.reset}`;
       default:            return "";
     }
   }
