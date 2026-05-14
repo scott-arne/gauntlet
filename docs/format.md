@@ -21,8 +21,11 @@ describes what's in it and how to read it.
                      thinking blocks, tool calls, usage, raw assistant
                      message), tool_call, tool_result (text inline or
                      image/artifact relative paths; mediaType when image
-                     is set), event (adapter/agent anomalies), run_end.
-                     Every event carries eventId + parentEventId,
+                     is set), event (adapter/agent anomalies), run_error
+                     (orchestrator-level failures), shutdown_signaled
+                     (agent observed daemon shutdown signal — turn may
+                     be 0 if abort was already set when the loop began),
+                     run_end. Every event carries eventId + parentEventId,
                      forming a linear chain.
   artifacts/         Document-like tool outputs spilled from tool_result
                      rows (DOM dumps, full-page extracts, large JSON, etc.)
@@ -78,7 +81,7 @@ agent's reasoning, the observations, and pointers to the evidence files.
 
 ```json
 {
-  "schemaVersion": 4,
+  "schemaVersion": 5,
   "runId": "login-001_20260416T142301Z_k3xm",
   "scenario": "login-001",
   "status": "pass",
@@ -111,12 +114,20 @@ agent's reasoning, the observations, and pointers to the evidence files.
 
 ### Fields
 
-- `schemaVersion` — format version. `4` today.
+- `schemaVersion` — format version. `5` today.
 - `runId` — composite id for this run. See [`runId`](#runid) above.
 - `scenario` — id of the story card that was tested. Present alongside `runId`
   for convenience (the cardId is also embedded in `runId`, but having it as
   its own field is cheap and avoids string-parsing at read time).
-- `status` — `"pass"`, `"fail"`, or `"investigate"`.
+- `status` — `"pass"`, `"fail"`, `"investigate"`, or `"errored"`. The
+  `"errored"` value means the run did not produce a self-determined
+  verdict — today's only emitter is shutdown drain (PRI-1507), where the
+  daemon interrupts an in-flight agent loop. See `error` below.
+- `error` (optional) — set when `status === "errored"`. Object with
+  `type` (string) and `message` (string). `type` is open-typed so
+  additive new error categories don't require a schema bump; consumers
+  MUST tolerate unknown `type` values and render generically. Today's
+  only emitted type is `"shutdown_interrupted"`.
 - `summary`, `reasoning` — the agent's write-up.
 - `observations` — incidental findings, each with `kind` (`bug`, `ux`, `typo`,
   `suggestion`, `a11y`, `performance`) and `description`. An observation may
@@ -206,6 +217,17 @@ do not require a bump.
 
 ### Changelog
 
+- **v5** — Added `"errored"` to `VetStatus` and optional `error: {type,
+  message}` field on `VetResult`. Today's only emitter is shutdown drain
+  (PRI-1507): when the daemon's shutdown grace window expires with runs
+  in flight, an AbortSignal-driven cancellation fires through the agent
+  loop, which returns a synthetic errored result with `error.type:
+  "shutdown_interrupted"`. If even the post-abort patience window
+  expires, the daemon writes a minimal stub `result.json` (no `usage`
+  field; `duration_ms` derived from the registry's `startedAt`, or `-1`
+  as a sentinel if absent). Also added `shutdown_signaled` named event
+  to `run.jsonl`. `error.type` is open-typed (string) — additive new
+  categories don't require a schema bump.
 - **v4** — Removed `maxStuckRetries` from `config` (the stuck-handling
   system-prompt block it templated into has been retired in favor of
   mid-loop reflection checkpoints). Additive for readers; the field is
