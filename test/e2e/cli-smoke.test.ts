@@ -47,12 +47,22 @@ function makeScriptedClient(steps: AgentResponse[]): LLMClient {
 
 describe("CLI adapter e2e smoke test", () => {
   test("runs agent loop against a real CLI process", async () => {
-    const adapter = new CLIAdapter();
     const logDir = mkdtempSync(join(tmpdir(), "gauntlet-cli-smoke-"));
+    const adapter = new CLIAdapter({ runDir: logDir });
     const logger = new EvidenceLogger(logDir);
 
     const steps: AgentResponse[] = [
-      // Turn 1: read_output — should see welcome message
+      // Turn 1: type to launch the echo app inside the shell
+      {
+        text: "Launch the echo app",
+        toolCalls: [
+          { id: "call_0", name: "type", arguments: { text: `bash ${FIXTURE_PATH}\n` } },
+        ],
+        stopReason: "tool_use",
+        rawAssistantMessage: { role: "assistant", content: "launch echo" },
+        usage: { inputTokens: 0, outputTokens: 0 },
+      },
+      // Turn 2: read_output — should see welcome message
       {
         text: "Let me read the initial output",
         toolCalls: [{ id: "call_1", name: "read_output", arguments: {} }],
@@ -60,7 +70,7 @@ describe("CLI adapter e2e smoke test", () => {
         rawAssistantMessage: { role: "assistant", content: "read initial" },
         usage: { inputTokens: 0, outputTokens: 0 },
       },
-      // Turn 2: type "hello world\n"
+      // Turn 3: type "hello world\n"
       {
         text: "I see the welcome message, let me type something",
         toolCalls: [
