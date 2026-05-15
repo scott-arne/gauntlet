@@ -205,13 +205,31 @@ export class TUIAdapter implements Adapter {
 
   async close(): Promise<void> {
     if (!this._sessionName) return;
+    const sessionName = this._sessionName;
+    const descendants = this.bashPid !== null
+      ? listDescendants(this.bashPid)
+      : [];
 
     try {
-      spawnSync(["tmux", "kill-session", "-t", this._sessionName]);
+      spawnSync(["tmux", "kill-session", "-t", sessionName]);
     } catch {
       // session may already be dead
     }
+
+    let reaped = 0;
+    for (const pid of descendants) {
+      try { process.kill(pid, "SIGKILL"); reaped++; } catch { /* already dead */ }
+    }
+    if (reaped > 0 && this.logger) {
+      this.logger.logEvent("tui_session_descendants_reaped", {
+        sessionName,
+        descendantCount: descendants.length,
+        reapedCount: reaped,
+      });
+    }
+
     this._sessionName = null;
+    this.bashPid = null;
   }
 
   isMutatingTool(name: string): boolean {

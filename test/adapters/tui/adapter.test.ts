@@ -77,6 +77,57 @@ describe.skipIf(!tmuxAvailable)("TUIAdapter", () => {
     adapter = null; // already closed
   });
 
+  test("close reaps backgrounded descendants and emits an event", async () => {
+    const localRunDir = mkdtempSync(join(tmpdir(), "tui-close-"));
+    const localLogDir = mkdtempSync(join(tmpdir(), "tui-close-log-"));
+    const localLogger = new EvidenceLogger(localLogDir);
+    adapter = new TUIAdapter({ runDir: localRunDir, logger: localLogger });
+    try {
+      await adapter.start("informational");
+      await new Promise((r) => setTimeout(r, 300));
+      await adapter.type("sleep 999 & echo PID=$!\n");
+      await new Promise((r) => setTimeout(r, 400));
+      const screen = await adapter.readScreen();
+      const match = screen.match(/PID=(\d+)/);
+      expect(match).not.toBeNull();
+      const sleepPid = Number(match![1]);
+      expect(() => process.kill(sleepPid, 0)).not.toThrow();
+
+      await adapter.close();
+      adapter = null;
+      await new Promise((r) => setTimeout(r, 150));
+
+      expect(() => process.kill(sleepPid, 0)).toThrow();
+
+      const jsonl = readFileSync(join(localLogDir, "run.jsonl"), "utf-8");
+      expect(jsonl).toContain("tui_session_descendants_reaped");
+    } finally {
+      rmSync(localRunDir, { recursive: true, force: true });
+      rmSync(localLogDir, { recursive: true, force: true });
+    }
+  });
+
+  test("close emits no event when there are no descendants to reap", async () => {
+    const localRunDir = mkdtempSync(join(tmpdir(), "tui-close-clean-"));
+    const localLogDir = mkdtempSync(join(tmpdir(), "tui-close-clean-log-"));
+    const localLogger = new EvidenceLogger(localLogDir);
+    adapter = new TUIAdapter({ runDir: localRunDir, logger: localLogger });
+    try {
+      await adapter.start("informational");
+      await new Promise((r) => setTimeout(r, 200));
+      await adapter.close();
+      adapter = null;
+      const jsonl = (() => {
+        try { return readFileSync(join(localLogDir, "run.jsonl"), "utf-8"); }
+        catch { return ""; }
+      })();
+      expect(jsonl).not.toContain("tui_session_descendants_reaped");
+    } finally {
+      rmSync(localRunDir, { recursive: true, force: true });
+      rmSync(localLogDir, { recursive: true, force: true });
+    }
+  });
+
   test("executeTool dispatches correctly and returns expected results", async () => {
     adapter = new TUIAdapter();
     const logDir = mkdtempSync(join(tmpdir(), "gauntlet-tui-exec-"));
