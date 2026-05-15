@@ -23,7 +23,12 @@ Gauntlet's harness sets this per run for isolation.
 
 ## Running cards via Gauntlet
 
+Run from the gauntlet project root (so the path-relative `--target`
+expansions resolve correctly):
+
 ```bash
+cd "$(git rev-parse --show-toplevel)"
+
 # CLI — the adapter spawns a bash shell for the agent; target is the
 # command name the agent invokes inside it.
 gauntlet run examples/todo/.gauntlet/stories/01-add-one.md \
@@ -32,10 +37,11 @@ gauntlet run examples/todo/.gauntlet/stories/01-add-one.md \
   --max-time 3m
 
 # TUI — the adapter spawns the target program directly in a tmux pane.
-./examples/todo/run-tui.sh &  # or launch tui.tsx with TODO_STATE_FILE set
-# then run gauntlet --adapter tui --target "bun run $(pwd)/examples/todo/tui.tsx"
+gauntlet run examples/todo/.gauntlet/stories/01-add-one.md \
+  --adapter tui \
+  --target "bun run $(pwd)/examples/todo/tui.tsx"
 
-# Web — start the server, then point gauntlet at the URL.
+# Web — start the server in another terminal, then point gauntlet at it.
 ./examples/todo/run-web.sh &
 gauntlet run examples/todo/.gauntlet/stories/01-add-one.md \
   --adapter web \
