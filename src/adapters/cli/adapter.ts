@@ -7,7 +7,40 @@ import { buildReadTool, type ReadTool } from "../../context/read-tool";
 import { buildFetchCredentialTool, type FetchCredentialTool } from "../../context/credential-tool";
 import type { CredentialResolverConfig } from "../../config";
 import { validateToolArgs } from "../../agent/validators";
-import { spawn, type SpawnedProcess } from "../../runtime/spawn";
+import { spawn, spawnSync, type SpawnedProcess } from "../../runtime/spawn";
+
+/**
+ * Enumerate every descendant of `root` (children, grandchildren, ...).
+ * Uses `ps -ax -o pid,ppid` and walks the parent → child relation.
+ * POSIX-portable; works on both macOS and Linux. Returns descendant
+ * pids only — `root` itself is excluded.
+ */
+function listDescendants(root: number): number[] {
+  const ps = spawnSync(["ps", "-ax", "-o", "pid=,ppid="]);
+  if (ps.exitCode !== 0) return [];
+  const text = new TextDecoder().decode(ps.stdout);
+  const children = new Map<number, number[]>();
+  for (const line of text.split("\n")) {
+    const parts = line.trim().split(/\s+/);
+    if (parts.length < 2) continue;
+    const pid = Number(parts[0]);
+    const ppid = Number(parts[1]);
+    if (!Number.isFinite(pid) || !Number.isFinite(ppid)) continue;
+    const arr = children.get(ppid) ?? [];
+    arr.push(pid);
+    children.set(ppid, arr);
+  }
+  const out: number[] = [];
+  const queue = [root];
+  while (queue.length > 0) {
+    const cur = queue.shift()!;
+    for (const child of children.get(cur) ?? []) {
+      out.push(child);
+      queue.push(child);
+    }
+  }
+  return out;
+}
 
 const KEY_MAP: Record<string, string> = {
   Enter: "\n",
@@ -136,7 +169,15 @@ export class CLIAdapter implements Adapter {
   async close(): Promise<void> {
     if (!this.proc || this.pgid === null) return;
     const pgid = this.pgid;
+    const bashPid = this.proc.pid;
     const startedAt = Date.now();
+
+    // Snapshot bash's descendants BEFORE we kill bash. Once bash exits,
+    // children are re-parented to init (pid 1) and we can't enumerate
+    // them through bash anymore. Interactive bash puts each backgrounded
+    // `&` job in its own pgrp, so a pgrp-targeted signal misses them —
+    // we have to track each pid explicitly.
+    const descendantsBefore = listDescendants(bashPid);
 
     // Graceful: leading newline flushes any half-typed line before `exit`.
     try {
@@ -146,6 +187,12 @@ export class CLIAdapter implements Adapter {
       // shell may already be dead — that's fine, we move on
     }
     if (await this.awaitExitWithin(GRACE_MS)) {
+      // Bash exited gracefully. Reap any of its (now-orphaned) descendants
+      // that survived: SIGKILL them by pid plus a pgrp sweep for anything
+      // that happened to still be in bash's pgrp. No force-killed event:
+      // bash's exit was graceful.
+      this.reapDescendants(descendantsBefore);
+      try { process.kill(-pgid, "SIGKILL"); } catch { /* nothing left */ }
       this.cleanupRefs();
       return;
     }
@@ -157,6 +204,7 @@ export class CLIAdapter implements Adapter {
       // already dead
     }
     if (await this.awaitExitWithin(GRACE_MS)) {
+      this.reapDescendants(descendantsBefore);
       this.logForceKilled(pgid, "sighup", Date.now() - startedAt);
       this.cleanupRefs();
       return;
@@ -170,8 +218,15 @@ export class CLIAdapter implements Adapter {
     }
     // SIGKILL always reaps; if exited didn't already resolve, await it briefly.
     await this.awaitExitWithin(GRACE_MS);
+    this.reapDescendants(descendantsBefore);
     this.logForceKilled(pgid, "sigkill", Date.now() - startedAt);
     this.cleanupRefs();
+  }
+
+  private reapDescendants(pids: number[]): void {
+    for (const pid of pids) {
+      try { process.kill(pid, "SIGKILL"); } catch { /* already dead */ }
+    }
   }
 
   private async awaitExitWithin(ms: number): Promise<boolean> {
