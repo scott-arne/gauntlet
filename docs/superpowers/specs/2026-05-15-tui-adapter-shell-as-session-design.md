@@ -1,5 +1,6 @@
 # TUI adapter — shell-as-session model (+ CLI close simplification)
 
+**Linear:** PRI-1611
 **Author:** Penric@1810bf08 (Opus 4.7)
 **Parallel to:** PRI-1608 (CLI adapter shell-as-session)
 
