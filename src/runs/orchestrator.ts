@@ -148,13 +148,14 @@ async function buildDefaultAdapter(
   contextRoot: string,
   logger: EvidenceLogger,
   runId: string,
+  runDir: string,
   chrome: ChromeEndpoint | undefined,
   viewport: Viewport | undefined,
   credentialResolver: CredentialResolverConfig | undefined,
 ): Promise<Adapter> {
   switch (type) {
     case "cli":
-      return new CLIAdapter({ contextRoot, credentialResolver });
+      return new CLIAdapter({ contextRoot, runDir, logger, credentialResolver });
     case "tui": {
       const { TUIAdapter } = await import("../adapters/tui/adapter");
       return new TUIAdapter({ contextRoot, credentialResolver });
@@ -202,6 +203,7 @@ export async function executeRunCore(
         contextRoot,
         logger,
         runId,
+        outDir,
         runConfig.chrome,
         runConfig.viewport,
         runConfig.credentialResolver,

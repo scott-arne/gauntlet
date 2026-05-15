@@ -1,4 +1,4 @@
-import { describe, test, expect, afterEach } from "bun:test";
+import { describe, test, expect, beforeEach, afterEach } from "bun:test";
 import { mkdtempSync, mkdirSync, writeFileSync, rmSync } from "fs";
 import { tmpdir } from "os";
 import { join } from "path";
@@ -9,26 +9,37 @@ const mockLogger = { logAction: () => {} } as unknown as EvidenceLogger;
 
 describe("CLIAdapter", () => {
   let adapter: CLIAdapter | null = null;
+  let runDir: string;
+
+  beforeEach(() => {
+    runDir = mkdtempSync(join(tmpdir(), "cli-adapter-legacy-"));
+  });
 
   afterEach(async () => {
     if (adapter) await adapter.close();
     adapter = null;
+    rmSync(runDir, { recursive: true, force: true });
   });
 
   test("starts a shell and reads output", async () => {
-    adapter = new CLIAdapter();
-    await adapter.start("echo 'hello gauntlet'");
-    // Give it time to produce output
-    await new Promise((r) => setTimeout(r, 500));
+    adapter = new CLIAdapter({ runDir });
+    await adapter.start("echo");
+    await new Promise((r) => setTimeout(r, 300));
+    // Type a command into the shell.
+    await adapter.type("echo 'hello gauntlet'\n");
+    await new Promise((r) => setTimeout(r, 300));
     const output = adapter.readOutput();
     expect(output).toContain("hello gauntlet");
   });
 
   test("sends input and reads response", async () => {
-    adapter = new CLIAdapter();
+    adapter = new CLIAdapter({ runDir });
     await adapter.start("cat");
+    // Start cat via the shell, then type into it.
+    await adapter.type("cat\n");
+    await new Promise((r) => setTimeout(r, 200));
     await adapter.type("ping\n");
-    await new Promise((r) => setTimeout(r, 500));
+    await new Promise((r) => setTimeout(r, 300));
     const output = adapter.readOutput();
     expect(output).toContain("ping");
   });
@@ -85,12 +96,12 @@ describe("CLIAdapter", () => {
     expect(adapter.defaultViewport()).toBeNull();
   });
 
-  test("describeTarget frames the program as already running", () => {
+  test("describeTarget frames the agent as inside a bash shell", () => {
     const adapter = new CLIAdapter();
     const msg = adapter.describeTarget("bc -q");
+    expect(msg).toContain("bash");
     expect(msg).toContain("bc -q");
-    expect(msg.toLowerCase()).toContain("already running");
-    expect(msg.toLowerCase()).toContain("do not retype");
+    expect(msg.toLowerCase()).toContain("exit");
   });
 
   test("registers fetch_credential when contextRoot and credentialResolver set", () => {

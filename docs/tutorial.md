@@ -104,19 +104,20 @@ the prompts.
 ```bash
 gauntlet run .gauntlet/stories/01-npm-init.md \
   --adapter cli \
-  --target "mkdir -p scratch-npm && cd scratch-npm && npm init" \
+  --target "npm init" \
   --max-time 3m
 ```
 
-`--target` here is **a shell command**, not a URL. The CLI
-adapter spawns `sh -c "<target>"` and connects the agent to its
-stdin/stdout.
+`--target` here names the command the agent is exercising. The CLI
+adapter spawns an interactive bash shell for the agent and surfaces
+the target name via the system prompt; the agent decides when and
+how to invoke it.
 
-The scratch dir matters: `npm init` writes `package.json` into
-the current directory, and we don't want it landing on top of
-the tutorial fixtures. Each setup-creating story uses its own
-`scratch-<tool>/` subdirectory (gitignored). Delete those dirs
-to reset.
+The CLI adapter creates a per-run scratch directory under
+`.gauntlet/results/<runId>/scratch/` and uses it as the shell's
+working directory. Anything the agent writes (e.g. `package.json`
+from `npm init`) lands there and is cleaned up with the rest of the
+run's evidence. You no longer need to wrap the target in `mkdir`/`cd`.
 
 ### What to notice
 
@@ -161,7 +162,7 @@ agent picks the wrong profile, you will see it.)
 ```bash
 gauntlet run .gauntlet/stories/02-bun-init.md \
   --adapter tui \
-  --target "mkdir -p scratch-bun && cd scratch-bun && bun init" \
+  --target "bun init" \
   --max-time 3m
 ```
 

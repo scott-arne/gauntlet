@@ -1,3 +1,5 @@
+import { mkdirSync } from "fs";
+import { join } from "path";
 import type { Adapter } from "../adapter";
 import type { ToolDefinition, ToolResult } from "../../models/provider";
 import type { EvidenceLogger } from "../../evidence/logger";
@@ -5,8 +7,40 @@ import { buildReadTool, type ReadTool } from "../../context/read-tool";
 import { buildFetchCredentialTool, type FetchCredentialTool } from "../../context/credential-tool";
 import type { CredentialResolverConfig } from "../../config";
 import { validateToolArgs } from "../../agent/validators";
-import { spawn, type SpawnedProcess } from "../../runtime/spawn";
+import { spawn, spawnSync, type SpawnedProcess } from "../../runtime/spawn";
 
+/**
+ * Enumerate every descendant of `root` (children, grandchildren, ...).
+ * Uses `ps -ax -o pid,ppid` and walks the parent → child relation.
+ * POSIX-portable; works on both macOS and Linux. Returns descendant
+ * pids only — `root` itself is excluded.
+ */
+function listDescendants(root: number): number[] {
+  const ps = spawnSync(["ps", "-ax", "-o", "pid=,ppid="]);
+  if (ps.exitCode !== 0) return [];
+  const text = new TextDecoder().decode(ps.stdout);
+  const children = new Map<number, number[]>();
+  for (const line of text.split("\n")) {
+    const parts = line.trim().split(/\s+/);
+    if (parts.length < 2) continue;
+    const pid = Number(parts[0]);
+    const ppid = Number(parts[1]);
+    if (!Number.isFinite(pid) || !Number.isFinite(ppid)) continue;
+    const arr = children.get(ppid) ?? [];
+    arr.push(pid);
+    children.set(ppid, arr);
+  }
+  const out: number[] = [];
+  const queue = [root];
+  while (queue.length > 0) {
+    const cur = queue.shift()!;
+    for (const child of children.get(cur) ?? []) {
+      out.push(child);
+      queue.push(child);
+    }
+  }
+  return out;
+}
 
 const KEY_MAP: Record<string, string> = {
   Enter: "\n",
@@ -17,19 +51,41 @@ const KEY_MAP: Record<string, string> = {
   "Ctrl+Z": "\x1a",
 };
 
+const GRACE_MS = 500;
+
 export interface CLIAdapterOptions {
   contextRoot?: string;
+  /**
+   * Per-run directory under which the adapter creates a `scratch/`
+   * subdirectory that becomes the shell's cwd. The orchestrator passes
+   * the run's `outDir` here. Optional only so the registry's
+   * tool-introspection construction (which never starts a shell) still
+   * works; in production it is always set.
+   */
+  runDir?: string;
+  /**
+   * Logger used by the adapter to emit cleanup-fallback events
+   * (`cli_shell_force_killed`). Optional for the same registry reason.
+   */
+  logger?: EvidenceLogger;
+  /**
+   * Forwarded to the fetch_credential tool — unchanged from the
+   * pre-PRI-1608 adapter. Orthogonal to shell-as-session.
+   */
   credentialResolver?: CredentialResolverConfig;
 }
 
 export class CLIAdapter implements Adapter {
   readonly name = "cli";
   private proc: SpawnedProcess | null = null;
+  private pgid: number | null = null;
   private buffer = "";
   private readTool: ReadTool | null;
   private credentialTool: FetchCredentialTool | null;
   /** Lazy cache of tool name → parameter schema for O(1) validation. */
   private toolSchemas: Map<string, ToolDefinition["parameters"]> | null = null;
+  private runDir: string | undefined;
+  private logger: EvidenceLogger | undefined;
 
   constructor(options?: CLIAdapterOptions) {
     this.readTool = options?.contextRoot
@@ -39,11 +95,25 @@ export class CLIAdapter implements Adapter {
       options?.contextRoot ?? "",
       options?.credentialResolver,
     );
+    this.runDir = options?.runDir;
+    this.logger = options?.logger;
   }
 
-  async start(command: string): Promise<void> {
+  async start(_target: string): Promise<void> {
+    // Target is informational only — see describeTarget. We spawn bash,
+    // not the target.
     this.buffer = "";
-    this.proc = spawn(["sh", "-c", command]);
+    if (!this.runDir) {
+      throw new Error("CLIAdapter: runDir is required to start a session");
+    }
+    const scratch = join(this.runDir, "scratch");
+    mkdirSync(scratch, { recursive: true });
+
+    this.proc = spawn(
+      ["bash", "--norc", "--noprofile", "-i"],
+      { cwd: scratch, detached: true },
+    );
+    this.pgid = this.proc.pid;
 
     this.readStream(this.proc.stdout);
     this.readStream(this.proc.stderr);
@@ -69,18 +139,17 @@ export class CLIAdapter implements Adapter {
   }
 
   describeTarget(target: string): string {
+    const base =
+      `You are at an interactive bash shell. Use \`type\` and \`press\` to ` +
+      `issue shell commands and answer any prompts. The shell is your ` +
+      `durable session — many commands can run through it during the ` +
+      `run. When you are finished, type \`exit\` to close the shell cleanly.`;
+    if (!target) return base;
     return (
-      `A CLI program is already running. Its command line was: ${target}. ` +
-      `Keystrokes you send with \`type\` and \`press\` go to the program's stdin — ` +
-      `do not retype the command.`
+      `${base} The command you are exercising is \`${target}\`.`
     );
   }
 
-  /**
-   * A CLI program has no rendering surface — there is no grid of cells
-   * or pixels it draws into. Return null so the snapshot omits viewport
-   * entirely rather than claiming a dimension.
-   */
   defaultViewport(): null {
     return null;
   }
@@ -98,13 +167,90 @@ export class CLIAdapter implements Adapter {
   }
 
   async close(): Promise<void> {
-    if (!this.proc) return;
+    if (!this.proc || this.pgid === null) return;
+    const pgid = this.pgid;
+    const bashPid = this.proc.pid;
+    const startedAt = Date.now();
+
+    // Snapshot bash's descendants BEFORE we kill bash. Once bash exits,
+    // children are re-parented to init (pid 1) and we can't enumerate
+    // them through bash anymore. Interactive bash puts each backgrounded
+    // `&` job in its own pgrp, so a pgrp-targeted signal misses them —
+    // we have to track each pid explicitly.
+    const descendantsBefore = listDescendants(bashPid);
+
+    // Graceful: leading newline flushes any half-typed line before `exit`.
     try {
-      this.proc.kill();
+      this.proc.stdin.write("\nexit\n");
+      this.proc.stdin.flush();
     } catch {
-      // already exited
+      // shell may already be dead — that's fine, we move on
     }
+    if (await this.awaitExitWithin(GRACE_MS)) {
+      // Bash exited gracefully. Reap any of its (now-orphaned) descendants
+      // that survived: SIGKILL them by pid plus a pgrp sweep for anything
+      // that happened to still be in bash's pgrp. No force-killed event:
+      // bash's exit was graceful.
+      this.reapDescendants(descendantsBefore);
+      try { process.kill(-pgid, "SIGKILL"); } catch { /* nothing left */ }
+      this.cleanupRefs();
+      return;
+    }
+
+    // Fallback 1: SIGHUP the pgrp. Interactive bash exits on SIGHUP.
+    try {
+      process.kill(-pgid, "SIGHUP");
+    } catch {
+      // already dead
+    }
+    if (await this.awaitExitWithin(GRACE_MS)) {
+      this.reapDescendants(descendantsBefore);
+      this.logForceKilled(pgid, "sighup", Date.now() - startedAt);
+      this.cleanupRefs();
+      return;
+    }
+
+    // Fallback 2: SIGKILL the pgrp. Can't be ignored.
+    try {
+      process.kill(-pgid, "SIGKILL");
+    } catch {
+      // already dead
+    }
+    // SIGKILL always reaps; if exited didn't already resolve, await it briefly.
+    await this.awaitExitWithin(GRACE_MS);
+    this.reapDescendants(descendantsBefore);
+    this.logForceKilled(pgid, "sigkill", Date.now() - startedAt);
+    this.cleanupRefs();
+  }
+
+  private reapDescendants(pids: number[]): void {
+    for (const pid of pids) {
+      try { process.kill(pid, "SIGKILL"); } catch { /* already dead */ }
+    }
+  }
+
+  private async awaitExitWithin(ms: number): Promise<boolean> {
+    if (!this.proc) return true;
+    const exited = this.proc.exited;
+    const result = await Promise.race([
+      exited.then(() => true),
+      new Promise<false>((r) => setTimeout(() => r(false), ms)),
+    ]);
+    return result;
+  }
+
+  private logForceKilled(pgid: number, step: "sighup" | "sigkill", durationMs: number): void {
+    if (!this.logger) return;
+    this.logger.logEvent("cli_shell_force_killed", {
+      pgid,
+      escalationStep: step,
+      durationMs,
+    });
+  }
+
+  private cleanupRefs(): void {
     this.proc = null;
+    this.pgid = null;
   }
 
   isMutatingTool(name: string): boolean {
@@ -115,7 +261,7 @@ export class CLIAdapter implements Adapter {
     const tools: ToolDefinition[] = [
       {
         name: "type",
-        description: "Type text into the terminal stdin",
+        description: "Type text into the shell stdin (commands and prompt answers)",
         parameters: {
           type: "object",
           properties: {
@@ -149,18 +295,19 @@ export class CLIAdapter implements Adapter {
     if (this.readTool) {
       tools.push(this.readTool.definition);
     }
-    if (this.credentialTool) tools.push(this.credentialTool.definition);
+    if (this.credentialTool) {
+      tools.push(this.credentialTool.definition);
+    }
     return tools;
   }
 
   async executeTool(
     name: string,
     args: Record<string, unknown>,
-    logger: EvidenceLogger
+    logger: EvidenceLogger,
   ): Promise<ToolResult> {
-    // See WebAdapter.executeTool for the rationale: validate the LLM's
-    // argument shape once, upfront, before dispatching to a handler that
-    // would otherwise `as` the types and crash on bad input.
+    // Validate the LLM's argument shape once, upfront. Same pattern as
+    // WebAdapter — see its executeTool for rationale.
     if (!this.toolSchemas) {
       this.toolSchemas = new Map(
         this.toolDefinitions().map((t) => [t.name, t.parameters] as const),
@@ -177,7 +324,6 @@ export class CLIAdapter implements Adapter {
     if (name === "read" && this.readTool) {
       return this.readTool.execute(args);
     }
-
     if (name === "fetch_credential" && this.credentialTool) {
       return this.credentialTool.execute(args, logger);
     }

@@ -12,11 +12,14 @@ import { loadStory, step, report, makeScriptedClient } from "./helpers";
 describe("CLI adapter e2e — bc calculator", () => {
   test("pass: bc performs arithmetic", async () => {
     const card = loadStory("bc-arithmetic-pass.md");
-    const adapter = new CLIAdapter();
     const logDir = mkdtempSync(join(tmpdir(), "gauntlet-bc-arith-"));
+    const adapter = new CLIAdapter({ runDir: logDir });
     const logger = new EvidenceLogger(logDir);
 
+    // Under shell-as-session, the adapter spawns bash; the agent
+    // launches bc by typing it into the shell.
     const steps: AgentResponse[] = [
+      step("call_0", "type", { text: "bc -q\n" }),
       step("call_1", "type", { text: "2+3\n" }),
       step("call_2", "read_output", {}),
       step("call_3", "type", { text: "6*7\n" }),
@@ -39,11 +42,12 @@ describe("CLI adapter e2e — bc calculator", () => {
 
   test("fail: bc has no help command", async () => {
     const card = loadStory("bc-help-fail.md");
-    const adapter = new CLIAdapter();
     const logDir = mkdtempSync(join(tmpdir(), "gauntlet-bc-help-"));
+    const adapter = new CLIAdapter({ runDir: logDir });
     const logger = new EvidenceLogger(logDir);
 
     const steps: AgentResponse[] = [
+      step("call_0", "type", { text: "bc -q\n" }),
       step("call_1", "type", { text: "help\n" }),
       step("call_2", "read_output", {}),
       report(

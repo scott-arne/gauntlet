@@ -1,5 +1,8 @@
 import { describe, test, expect } from "bun:test";
 import { spawn, spawnSync } from "../../src/runtime/spawn";
+import { mkdtempSync, rmSync } from "fs";
+import { tmpdir } from "os";
+import { join } from "path";
 
 async function readAll(stream: ReadableStream<Uint8Array>): Promise<string> {
   const reader = stream.getReader();
@@ -58,5 +61,44 @@ describe("runtime/spawn", () => {
     // If kill works, stdout closes promptly.
     const out = await readAll(proc.stdout);
     expect(out).toBe("");
+  });
+});
+
+describe("spawn options + new fields", () => {
+  test("cwd option puts the child in the named directory", async () => {
+    const dir = mkdtempSync(join(tmpdir(), "spawn-cwd-"));
+    try {
+      const proc = spawn(["sh", "-c", "pwd"], { cwd: dir });
+      const out = await readAll(proc.stdout);
+      // macOS canonicalizes /var → /private/var; accept either.
+      expect(out.trim().endsWith(dir) || out.trim() === dir).toBe(true);
+      await proc.exited;
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
+  });
+
+  test("pid is the child's pid; exited resolves to the exit code", async () => {
+    const proc = spawn(["sh", "-c", "exit 7"]);
+    expect(typeof proc.pid).toBe("number");
+    expect(proc.pid).toBeGreaterThan(0);
+    const code = await proc.exited;
+    expect(code).toBe(7);
+  });
+
+  test("exited resolves even if process already exited before await", async () => {
+    const proc = spawn(["sh", "-c", "exit 0"]);
+    // Sleep long enough that the process has exited by the time we await.
+    await new Promise((r) => setTimeout(r, 200));
+    const code = await proc.exited;
+    expect(code).toBe(0);
+  });
+
+  test("detached makes the child a session leader (pid is its own pgid)", async () => {
+    const proc = spawn(["sh", "-c", "ps -o pgid= -p $$"], { detached: true });
+    const out = (await readAll(proc.stdout)).trim();
+    const childPgid = Number(out);
+    expect(childPgid).toBe(proc.pid);
+    await proc.exited;
   });
 });

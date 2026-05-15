@@ -42,5 +42,5 @@ Then run a story:
 ```bash
 gauntlet run .gauntlet/stories/01-npm-init.md \
   --adapter cli \
-  --target "mkdir -p scratch-npm && cd scratch-npm && npm init"
+  --target "npm init"
 ```
