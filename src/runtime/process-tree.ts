@@ -32,3 +32,34 @@ export function listDescendants(root: number): number[] {
   }
   return out;
 }
+
+export interface KillProcessTreeResult {
+  /** Number of descendants successfully signaled. */
+  reaped: number;
+}
+
+/**
+ * Hard-kill a process group plus a snapshotted descendant list.
+ * SIGKILLs the pgid leader, then SIGKILLs each pid in `descendants`
+ * (children of an exiting shell get re-parented to init and miss
+ * pgid-targeted signals — they have to be reaped by pid).
+ *
+ * **Pgid invariant:** `pgid == pid` only holds for processes spawned
+ * with `detached: true` (the spawn abstraction calls `setsid()` then).
+ * If a caller forgets, this silently signals the wrong group.
+ *
+ * **Caller responsibility:** snapshot descendants while the leader is
+ * still alive; once it exits, the parent→child relation through it
+ * disappears and `listDescendants` returns nothing useful.
+ */
+export function killProcessTree(
+  pgid: number,
+  descendants: number[],
+): KillProcessTreeResult {
+  try { process.kill(-pgid, "SIGKILL"); } catch { /* already dead */ }
+  let reaped = 0;
+  for (const pid of descendants) {
+    try { process.kill(pid, "SIGKILL"); reaped++; } catch { /* already dead */ }
+  }
+  return { reaped };
+}

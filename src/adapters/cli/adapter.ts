@@ -8,7 +8,7 @@ import { buildFetchCredentialTool, type FetchCredentialTool } from "../../contex
 import type { CredentialResolverConfig } from "../../config";
 import { validateToolArgs } from "../../agent/validators";
 import { spawn, spawnSync, type SpawnedProcess } from "../../runtime/spawn";
-import { listDescendants } from "../../runtime/process-tree";
+import { listDescendants, killProcessTree } from "../../runtime/process-tree";
 
 const KEY_MAP: Record<string, string> = {
   Enter: "\n",
@@ -139,12 +139,8 @@ export class CLIAdapter implements Adapter {
     const bashPid = this.proc.pid;
     const descendants = listDescendants(bashPid);
 
-    try { process.kill(-pgid, "SIGKILL"); } catch { /* already dead */ }
+    const { reaped } = killProcessTree(pgid, descendants);
 
-    let reaped = 0;
-    for (const pid of descendants) {
-      try { process.kill(pid, "SIGKILL"); reaped++; } catch { /* already dead */ }
-    }
     if (reaped > 0 && this.logger) {
       this.logger.logEvent("cli_shell_descendants_reaped", {
         pgid,
