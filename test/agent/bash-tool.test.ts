@@ -49,4 +49,24 @@ describe("buildBashTool", () => {
     // macOS may resolve /var → /private/var; basename comparison is the safe hedge.
     expect(result.text).toContain(cwd.split("/").pop()!);
   });
+
+  test("stdout cap truncates large output and sets truncated flag", async () => {
+    const tool = buildBashTool({ cwd: freshCwd() });
+    // Deterministic 100KB of 'a' — exceeds the 64KB cap.
+    const result = await tool.execute(
+      { command: "head -c 102400 /dev/zero | tr '\\0' 'a'" },
+      noopLogger(),
+    );
+    expect(result.text).toContain("stdout truncated at cap");
+  });
+
+  test("stderr cap truncates large output and sets truncated flag", async () => {
+    const tool = buildBashTool({ cwd: freshCwd() });
+    // Deterministic 32KB of 'a' on stderr — exceeds the 16KB stderr cap.
+    const result = await tool.execute(
+      { command: "head -c 32768 /dev/zero | tr '\\0' 'a' >&2" },
+      noopLogger(),
+    );
+    expect(result.text).toContain("stderr truncated at cap");
+  });
 });

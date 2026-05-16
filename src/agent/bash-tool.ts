@@ -52,19 +52,19 @@ export function buildBashTool(opts: BashToolOptions): BashTool {
 
     const proc = spawn(["bash", "-c", command], { cwd: opts.cwd });
 
-    const [stdout, stderr] = await Promise.all([
-      drainStream(proc.stdout),
-      drainStream(proc.stderr),
+    const [stdoutResult, stderrResult] = await Promise.all([
+      drainStreamCapped(proc.stdout, STDOUT_CAP_BYTES),
+      drainStreamCapped(proc.stderr, STDERR_CAP_BYTES),
     ]);
     const code = await proc.exited;
     const elapsedMs = Date.now() - start;
 
     return {
       text: formatResult({
-        stdout,
-        stderr,
+        stdout: stdoutResult.text,
+        stderr: stderrResult.text,
         exit_code: code < 0 ? null : code,
-        truncated: { stdout: false, stderr: false },
+        truncated: { stdout: stdoutResult.truncated, stderr: stderrResult.truncated },
         timed_out: false,
         elapsed_ms: elapsedMs,
       }),
@@ -74,17 +74,36 @@ export function buildBashTool(opts: BashToolOptions): BashTool {
   return { definition, execute };
 }
 
-async function drainStream(stream: ReadableStream<Uint8Array>): Promise<string> {
+const STDOUT_CAP_BYTES = 64 * 1024;
+const STDERR_CAP_BYTES = 16 * 1024;
+
+async function drainStreamCapped(
+  stream: ReadableStream<Uint8Array>,
+  capBytes: number,
+): Promise<{ text: string; truncated: boolean }> {
   const reader = stream.getReader();
   const decoder = new TextDecoder();
-  let out = "";
+  let bytes = 0;
+  const chunks: string[] = [];
+  let truncated = false;
   while (true) {
     const { done, value } = await reader.read();
     if (done) break;
-    out += decoder.decode(value, { stream: true });
+    if (truncated) continue; // keep draining to let the child finish; discard
+    if (bytes + value.byteLength > capBytes) {
+      const remaining = capBytes - bytes;
+      if (remaining > 0) {
+        chunks.push(decoder.decode(value.slice(0, remaining), { stream: true }));
+        bytes = capBytes;
+      }
+      truncated = true;
+    } else {
+      chunks.push(decoder.decode(value, { stream: true }));
+      bytes += value.byteLength;
+    }
   }
-  out += decoder.decode();
-  return out;
+  chunks.push(decoder.decode());
+  return { text: chunks.join(""), truncated };
 }
 
 interface BashRunResult {
