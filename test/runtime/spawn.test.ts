@@ -138,4 +138,20 @@ describe("spawn options + new fields", () => {
       delete process.env.GAUNTLET_TEST_LEAK;
     }
   });
+
+  test("spawn kills child after timeout_ms elapses", async () => {
+    const start = Date.now();
+    const proc = spawn(["bash", "-c", "sleep 30"], { timeout_ms: 200 });
+    const code = await proc.exited;
+    const elapsed = Date.now() - start;
+    expect(elapsed).toBeLessThan(2000);
+    // exited contract: -1 when killed by signal
+    expect(code).toBeLessThan(0);
+  });
+
+  test("spawn does not kill child that exits within timeout_ms", async () => {
+    const proc = spawn(["bash", "-c", "echo done"], { timeout_ms: 5000 });
+    const code = await proc.exited;
+    expect(code).toBe(0);
+  });
 });

@@ -27,6 +27,12 @@ export interface SpawnOptions {
    * parent). Callers that want inheritance should pass `process.env`.
    */
   env?: Record<string, string>;
+  /**
+   * When provided, the child is SIGKILLed if it hasn't exited within the
+   * window. Implemented uniformly via setTimeout + proc.kill so the
+   * caller's `exited` Promise resolves consistently across Bun and Node.
+   */
+  timeout_ms?: number;
 }
 
 export interface SpawnedProcess {
@@ -70,7 +76,7 @@ function spawnViaBun(argv: string[], options?: SpawnOptions): SpawnedProcess {
     ...(options?.detached ? { detached: true } : {}),
     ...(options?.env ? { env: options.env } : {}),
   }) as Bun.Subprocess<"pipe", "pipe", "pipe">;
-  return {
+  return withTimeout({
     pid: proc.pid,
     stdin: {
       write: (d) => { proc.stdin.write(d as string); },
@@ -79,8 +85,8 @@ function spawnViaBun(argv: string[], options?: SpawnOptions): SpawnedProcess {
     stdout: proc.stdout,
     stderr: proc.stderr,
     kill: () => { proc.kill(); },
-    exited: proc.exited.then((code) => code ?? -1),
-  };
+    exited: proc.exited.then((code) => proc.signalCode ? -1 : (code ?? -1)),
+  }, options?.timeout_ms);
 }
 
 function spawnViaNode(argv: string[], options?: SpawnOptions): SpawnedProcess {
@@ -103,7 +109,7 @@ function spawnViaNode(argv: string[], options?: SpawnOptions): SpawnedProcess {
     }
     proc.once("exit", (code, _signal) => resolve(code ?? -1));
   });
-  return {
+  return withTimeout({
     pid: proc.pid,
     stdin: {
       write: (d) => { proc.stdin!.write(d); },
@@ -115,7 +121,18 @@ function spawnViaNode(argv: string[], options?: SpawnOptions): SpawnedProcess {
     stderr: Readable.toWeb(proc.stderr) as unknown as ReadableStream<Uint8Array>,
     kill: () => { proc.kill(); },
     exited,
-  };
+  }, options?.timeout_ms);
+}
+
+function withTimeout(proc: SpawnedProcess, timeoutMs: number | undefined): SpawnedProcess {
+  if (!timeoutMs) return proc;
+  const handle = setTimeout(() => {
+    try { proc.kill(); } catch { /* already dead */ }
+  }, timeoutMs);
+  proc.exited.finally(() => {
+    clearTimeout(handle);
+  });
+  return proc;
 }
 
 function spawnSyncViaBun(argv: string[]): SpawnSyncResult {
