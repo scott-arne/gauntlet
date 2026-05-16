@@ -5,7 +5,7 @@ status: ready
 tags: tutorial, tui
 ---
 
-You are Fred. Vim opens with `notes.md`. Verify that markdown
+You are Fred. Open `notes.md`.  Verify that markdown
 syntax highlighting is active — heading lines and list items
 should appear in distinct colors against the background, not
 plain white-on-black.

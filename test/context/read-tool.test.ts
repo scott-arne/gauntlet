@@ -8,13 +8,13 @@ import { buildReadTool, READ_TOOL_DESCRIPTION } from "../../src/context/read-too
 // DO NOT edit without going through the amendment protocol (spec §13).
 // If this string and the spec ever disagree, the spec is right.
 const SPEC_READ_TOOL_DESCRIPTION =
-  "Read a file from the project's context directory. The path is relative to " +
-  ".gauntlet/context/ and must not escape it. The system prompt shows a tree " +
-  "listing of everything available under .gauntlet/context/ at turn 0 — use " +
-  "that tree to pick paths. Returns the file's contents verbatim as text. " +
-  "Binary files are not supported; attempts to read binary content return an " +
-  "error. This is the tool to use when a story names a user and you need " +
-  "their credentials, character notes, or any other file the story references.";
+  "Read a file from the Context list. The `path` argument is a name from " +
+  "the tree shown in the Context section of the system prompt — that tree " +
+  "is the full map of what's available. Returns the file's contents " +
+  "verbatim as text. Binary files are not supported; attempts to read " +
+  "binary content return an error. This is the tool to use when a story " +
+  "names a user and you need their credentials, character notes, or any " +
+  "other file the story references.";
 
 describe("buildReadTool", () => {
   test("tool description matches spec §3.1 verbatim", () => {

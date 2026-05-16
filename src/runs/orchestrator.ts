@@ -158,7 +158,7 @@ async function buildDefaultAdapter(
       return new CLIAdapter({ contextRoot, runDir, logger, credentialResolver });
     case "tui": {
       const { TUIAdapter } = await import("../adapters/tui/adapter");
-      return new TUIAdapter({ contextRoot, credentialResolver });
+      return new TUIAdapter({ contextRoot, runDir, logger, credentialResolver });
     }
     case "web": {
       const { WebAdapter } = await import("../adapters/web/adapter");

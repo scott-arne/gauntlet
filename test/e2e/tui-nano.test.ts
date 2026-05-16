@@ -50,14 +50,15 @@ describe.skipIf(!hasTmux || !hasNano)("TUI adapter e2e — nano editor", () => {
 
   test("pass: user can open, type, and save in nano", async () => {
     const card = loadStory("nano-open-save-pass.md");
-    adapter = new TUIAdapter();
     const logDir = mkdtempSync(join(tmpdir(), "gauntlet-nano-save-"));
+    adapter = new TUIAdapter({ runDir: logDir });
     const logger = new EvidenceLogger(logDir);
 
     tempFile = join(tmpdir(), `gauntlet-nano-${Date.now()}.txt`);
     writeFileSync(tempFile, "initial content\n");
 
     const steps: AgentResponse[] = [
+      step("call_0", "type", { text: `nano ${tempFile}\n` }),
       step("call_1", "read_screen", {}),
       step("call_2", "type", { text: "Hello from gauntlet!" }),
       step("call_3", "read_screen", {}),
@@ -79,18 +80,19 @@ describe.skipIf(!hasTmux || !hasNano)("TUI adapter e2e — nano editor", () => {
 
     expect(result.status).toBe("pass");
     expect(result.scenario).toBe("nano-open-save-pass");
-  }, 15_000);
+  }, 30_000);
 
   test("fail: nano has no tabs", async () => {
     const card = loadStory("nano-tabs-fail.md");
-    adapter = new TUIAdapter();
     const logDir = mkdtempSync(join(tmpdir(), "gauntlet-nano-tabs-"));
+    adapter = new TUIAdapter({ runDir: logDir });
     const logger = new EvidenceLogger(logDir);
 
     tempFile = join(tmpdir(), `gauntlet-nano-${Date.now()}.txt`);
     writeFileSync(tempFile, "some content\n");
 
     const steps: AgentResponse[] = [
+      step("call_0", "type", { text: `nano ${tempFile}\n` }),
       step("call_1", "read_screen", {}),
       report(
         "fail",
@@ -106,5 +108,5 @@ describe.skipIf(!hasTmux || !hasNano)("TUI adapter e2e — nano editor", () => {
 
     expect(result.status).toBe("fail");
     expect(result.scenario).toBe("nano-tabs-fail");
-  }, 15_000);
+  }, 30_000);
 });

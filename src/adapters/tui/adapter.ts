@@ -7,6 +7,9 @@ import { validateToolArgs } from "../../agent/validators";
 import type { CredentialResolverConfig, Viewport } from "../../config";
 import { defaultCaptureParser, type CaptureParser } from "./capture-parser";
 import { spawnSync } from "../../runtime/spawn";
+import { mkdirSync } from "fs";
+import { join } from "path";
+import { listDescendants } from "../../runtime/process-tree";
 
 /**
  * tmux pane dimensions in character cells. Hardcoded for now — resize
@@ -44,9 +47,22 @@ const AVAILABLE_KEYS = Object.keys(KEY_MAP).join(", ");
 
 export interface TUIAdapterOptions {
   contextRoot?: string;
+  /**
+   * Per-run directory; adapter creates `<runDir>/scratch` as bash cwd.
+   * Required at start(); optional only so the registry's
+   * tool-introspection construction (which never starts a session) still
+   * works. In production, always set.
+   */
+  runDir?: string;
+  /**
+   * Logger used by the adapter to emit cleanup events
+   * (`tui_session_descendants_reaped`). Optional for the same registry
+   * reason.
+   */
+  logger?: EvidenceLogger;
   credentialResolver?: CredentialResolverConfig;
   /** Override the capture parser (differential testing, future ghostty
-   * selection). Defaults to xterm. */
+   *  selection). Defaults to xterm. */
   captureParser?: CaptureParser;
 }
 
@@ -58,6 +74,9 @@ export class TUIAdapter implements Adapter {
   private captureParser: CaptureParser;
   /** Lazy cache of tool name → parameter schema for O(1) validation. */
   private toolSchemas: Map<string, ToolDefinition["parameters"]> | null = null;
+  private runDir: string | undefined;
+  private logger: EvidenceLogger | undefined;
+  private bashPid: number | null = null;
 
   constructor(options?: TUIAdapterOptions) {
     this.readTool = options?.contextRoot
@@ -68,6 +87,8 @@ export class TUIAdapter implements Adapter {
       options?.credentialResolver,
     );
     this.captureParser = options?.captureParser ?? defaultCaptureParser;
+    this.runDir = options?.runDir;
+    this.logger = options?.logger;
   }
 
   get sessionName(): string {
@@ -75,27 +96,44 @@ export class TUIAdapter implements Adapter {
     return this._sessionName;
   }
 
-  async start(command: string): Promise<void> {
+  async start(_target: string): Promise<void> {
+    if (!this.runDir) {
+      throw new Error("TUIAdapter: runDir is required to start a session");
+    }
     const id = `gauntlet-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
     this._sessionName = id;
+    const scratch = join(this.runDir, "scratch");
+    mkdirSync(scratch, { recursive: true });
 
-    const result = spawnSync([
-      "tmux",
-      "new-session",
-      "-d",
-      "-s",
-      id,
-      "-x",
-      String(TUI_GRID.width),
-      "-y",
-      String(TUI_GRID.height),
-      command,
+    const create = spawnSync([
+      "tmux", "new-session", "-d", "-s", id,
+      "-x", String(TUI_GRID.width),
+      "-y", String(TUI_GRID.height),
+      "-c", scratch,
+      "bash", "--norc", "--noprofile", "-i",
     ]);
-
-    if (result.exitCode !== 0) {
-      const stderr = new TextDecoder().decode(result.stderr);
-      throw new Error(`Failed to start tmux session: ${stderr}`);
+    if (create.exitCode !== 0) {
+      throw new Error(
+        `Failed to start tmux session: ${new TextDecoder().decode(create.stderr)}`,
+      );
     }
+
+    this.bashPid = await this.readPanePid(id);
+  }
+
+  private async readPanePid(sessionId: string): Promise<number> {
+    // tmux new-session -d should make pane_pid available immediately, but on
+    // loaded CI machines we've seen the first read race the pane setup.
+    // One short retry covers the gap cheaply.
+    for (let attempt = 0; attempt < 2; attempt++) {
+      const pane = spawnSync(["tmux", "list-panes", "-t", sessionId, "-F", "#{pane_pid}"]);
+      if (pane.exitCode === 0) {
+        const pid = Number(new TextDecoder().decode(pane.stdout).trim());
+        if (Number.isFinite(pid) && pid > 0) return pid;
+      }
+      if (attempt === 0) await new Promise((r) => setTimeout(r, 50));
+    }
+    throw new Error(`Failed to read pane pid for session ${sessionId} after retry`);
   }
 
   async readScreen(): Promise<string> {
@@ -151,11 +189,14 @@ export class TUIAdapter implements Adapter {
   }
 
   describeTarget(target: string): string {
-    return (
-      `A terminal application is already running in a tmux session. Its command ` +
-      `line was: ${target}. Keystrokes you send go to the running program — ` +
-      `do not retype the command.`
-    );
+    const base =
+      `You are at an interactive bash shell rendered inside a tmux pane ` +
+      `(${TUI_GRID.width}×${TUI_GRID.height}). Use \`type\` and \`press\` to ` +
+      `issue shell commands and answer any prompts. The shell is your ` +
+      `durable session — many commands can run through it during the run. ` +
+      `When you are finished, type \`exit\` to close the shell cleanly.`;
+    if (!target) return base;
+    return `${base} The command you are exercising is \`${target}\`.`;
   }
 
   defaultViewport(): Viewport {
@@ -164,13 +205,31 @@ export class TUIAdapter implements Adapter {
 
   async close(): Promise<void> {
     if (!this._sessionName) return;
+    const sessionName = this._sessionName;
+    const descendants = this.bashPid !== null
+      ? listDescendants(this.bashPid)
+      : [];
 
     try {
-      spawnSync(["tmux", "kill-session", "-t", this._sessionName]);
+      spawnSync(["tmux", "kill-session", "-t", sessionName]);
     } catch {
       // session may already be dead
     }
+
+    let reaped = 0;
+    for (const pid of descendants) {
+      try { process.kill(pid, "SIGKILL"); reaped++; } catch { /* already dead */ }
+    }
+    if (reaped > 0 && this.logger) {
+      this.logger.logEvent("tui_session_descendants_reaped", {
+        sessionName,
+        descendantCount: descendants.length,
+        reapedCount: reaped,
+      });
+    }
+
     this._sessionName = null;
+    this.bashPid = null;
   }
 
   isMutatingTool(name: string): boolean {

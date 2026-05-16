@@ -1,4 +1,4 @@
-import { describe, test, expect, afterEach } from "bun:test";
+import { describe, test, expect, afterEach, beforeEach } from "bun:test";
 import { TUIAdapter } from "../../../src/adapters/tui/adapter";
 import { EvidenceLogger } from "../../../src/evidence/logger";
 import { mkdtempSync, mkdirSync, writeFileSync, rmSync, readFileSync } from "fs";
@@ -16,6 +16,11 @@ const tmuxAvailable = (() => {
 
 describe.skipIf(!tmuxAvailable)("TUIAdapter", () => {
   let adapter: TUIAdapter | null = null;
+  let runDir: string;
+
+  beforeEach(() => {
+    runDir = mkdtempSync(join(tmpdir(), "tui-unit-"));
+  });
 
   afterEach(async () => {
     if (adapter) {
@@ -26,59 +31,134 @@ describe.skipIf(!tmuxAvailable)("TUIAdapter", () => {
       }
     }
     adapter = null;
+    rmSync(runDir, { recursive: true, force: true });
   });
 
-  test("starts process in tmux and reads output", async () => {
+  test("start() requires runDir", async () => {
     adapter = new TUIAdapter();
-    await adapter.start("sh -c \"echo 'hello from tmux'; sleep 10\"");
-    await new Promise((r) => setTimeout(r, 500));
+    await expect(adapter.start("anything")).rejects.toThrow(/runDir/);
+  });
+
+  test("start() creates <runDir>/scratch and runs bash in it", async () => {
+    const localRunDir = mkdtempSync(join(tmpdir(), "tui-start-"));
+    try {
+      adapter = new TUIAdapter({ runDir: localRunDir });
+      await adapter.start("informational");
+      await new Promise((r) => setTimeout(r, 300));
+      await adapter.type("pwd\n");
+      await new Promise((r) => setTimeout(r, 300));
+      const screen = await adapter.readScreen();
+      expect(screen).toContain(join(localRunDir, "scratch"));
+    } finally {
+      rmSync(localRunDir, { recursive: true, force: true });
+    }
+  });
+
+  test("starts a bash session in tmux and runs a typed command", async () => {
+    adapter = new TUIAdapter({ runDir });
+    await adapter.start("");
+    await new Promise((r) => setTimeout(r, 300));
+    await adapter.type("echo hello from tmux\n");
+    await new Promise((r) => setTimeout(r, 300));
     const screen = await adapter.readScreen();
     expect(screen).toContain("hello from tmux");
   });
 
-  test("sends keystrokes via tmux", async () => {
-    adapter = new TUIAdapter();
-    await adapter.start("bc -q");
-    await new Promise((r) => setTimeout(r, 500));
+  test("sends keystrokes via tmux: launches bc and computes", async () => {
+    adapter = new TUIAdapter({ runDir });
+    await adapter.start("bc");
+    await new Promise((r) => setTimeout(r, 300));
+    await adapter.type("bc -q\n");
+    await new Promise((r) => setTimeout(r, 300));
     await adapter.type("2+3");
     await adapter.press("Enter");
-    await new Promise((r) => setTimeout(r, 500));
+    await new Promise((r) => setTimeout(r, 300));
     const screen = await adapter.readScreen();
     expect(screen).toContain("5");
   });
 
   test("close kills the tmux session", async () => {
-    adapter = new TUIAdapter();
-    await adapter.start("cat");
+    adapter = new TUIAdapter({ runDir });
+    await adapter.start("");
     const sessionName = adapter.sessionName;
     await adapter.close();
     const result = Bun.spawnSync(["tmux", "has-session", "-t", sessionName]);
     expect(result.exitCode).not.toBe(0);
-    adapter = null; // already closed
+    adapter = null;
+  });
+
+  test("close reaps backgrounded descendants and emits an event", async () => {
+    const localRunDir = mkdtempSync(join(tmpdir(), "tui-close-"));
+    const localLogDir = mkdtempSync(join(tmpdir(), "tui-close-log-"));
+    const localLogger = new EvidenceLogger(localLogDir);
+    adapter = new TUIAdapter({ runDir: localRunDir, logger: localLogger });
+    try {
+      await adapter.start("informational");
+      await new Promise((r) => setTimeout(r, 300));
+      await adapter.type("sleep 999 & echo PID=$!\n");
+      await new Promise((r) => setTimeout(r, 400));
+      const screen = await adapter.readScreen();
+      const match = screen.match(/PID=(\d+)/);
+      expect(match).not.toBeNull();
+      const sleepPid = Number(match![1]);
+      expect(() => process.kill(sleepPid, 0)).not.toThrow();
+
+      await adapter.close();
+      adapter = null;
+      await new Promise((r) => setTimeout(r, 150));
+
+      expect(() => process.kill(sleepPid, 0)).toThrow();
+
+      const jsonl = readFileSync(join(localLogDir, "run.jsonl"), "utf-8");
+      expect(jsonl).toContain("tui_session_descendants_reaped");
+    } finally {
+      rmSync(localRunDir, { recursive: true, force: true });
+      rmSync(localLogDir, { recursive: true, force: true });
+    }
+  });
+
+  test("close emits no event when there are no descendants to reap", async () => {
+    const localRunDir = mkdtempSync(join(tmpdir(), "tui-close-clean-"));
+    const localLogDir = mkdtempSync(join(tmpdir(), "tui-close-clean-log-"));
+    const localLogger = new EvidenceLogger(localLogDir);
+    adapter = new TUIAdapter({ runDir: localRunDir, logger: localLogger });
+    try {
+      await adapter.start("informational");
+      await new Promise((r) => setTimeout(r, 200));
+      await adapter.close();
+      adapter = null;
+      const jsonl = (() => {
+        try { return readFileSync(join(localLogDir, "run.jsonl"), "utf-8"); }
+        catch { return ""; }
+      })();
+      expect(jsonl).not.toContain("tui_session_descendants_reaped");
+    } finally {
+      rmSync(localRunDir, { recursive: true, force: true });
+      rmSync(localLogDir, { recursive: true, force: true });
+    }
   });
 
   test("executeTool dispatches correctly and returns expected results", async () => {
-    adapter = new TUIAdapter();
+    adapter = new TUIAdapter({ runDir });
     const logDir = mkdtempSync(join(tmpdir(), "gauntlet-tui-exec-"));
-    const logger = new EvidenceLogger(logDir);
+    const innerLogger = new EvidenceLogger(logDir);
 
-    await adapter.start("bc -q");
+    await adapter.start("bc");
+    await new Promise((r) => setTimeout(r, 300));
+    await adapter.executeTool("type", { text: "bc -q\n" }, innerLogger);
     await new Promise((r) => setTimeout(r, 300));
 
-    const typeResult = await adapter.executeTool("type", { text: "4*5" }, logger);
+    const typeResult = await adapter.executeTool("type", { text: "4*5" }, innerLogger);
     expect(typeResult.text).toBe("typed");
 
-    const pressResult = await adapter.executeTool("press", { key: "Enter" }, logger);
+    const pressResult = await adapter.executeTool("press", { key: "Enter" }, innerLogger);
     expect(pressResult.text).toBe("pressed");
 
     await new Promise((r) => setTimeout(r, 300));
 
-    const result = await adapter.executeTool("read_screen", {}, logger);
+    const result = await adapter.executeTool("read_screen", {}, innerLogger);
     expect(result.text).toContain("20");
 
-    // The adapter no longer writes tool-dispatch rows — the agent loop owns
-    // tool_call/tool_result rows. run.jsonl written by the adapter alone
-    // (without the agent) should contain zero tool_call rows.
     const logPath = join(logDir, "run.jsonl");
     const logExists = (() => { try { readFileSync(logPath); return true; } catch { return false; } })();
     if (logExists) {
@@ -88,50 +168,44 @@ describe.skipIf(!tmuxAvailable)("TUIAdapter", () => {
   });
 
   test("read_screen writes capture files and returns capturePath", async () => {
-    adapter = new TUIAdapter();
+    adapter = new TUIAdapter({ runDir });
     const logDir = mkdtempSync(join(tmpdir(), "gauntlet-tui-cap-"));
-    const logger = new EvidenceLogger(logDir);
+    const innerLogger = new EvidenceLogger(logDir);
 
-    await adapter.start("sh -c \"printf 'hello'; sleep 10\"");
+    await adapter.start("");
+    await new Promise((r) => setTimeout(r, 300));
+    await adapter.type("printf hello\n");
     await new Promise((r) => setTimeout(r, 300));
 
-    const result = await adapter.executeTool("read_screen", {}, logger);
+    const result = await adapter.executeTool("read_screen", {}, innerLogger);
     expect((result as { capturePath?: string }).capturePath).toBe("captures/000.ansi");
-    // Raw ANSI text still flows to the LLM via result.text.
     expect(result.text).toContain("hello");
 
-    // Both files on disk.
     expect(readFileSync(join(logDir, "captures/000.ansi"), "utf-8")).toContain("hello");
     const parsed = JSON.parse(readFileSync(join(logDir, "captures/000.json"), "utf-8"));
     expect(parsed.cols).toBe(120);
     expect(parsed.rows).toBe(40);
     expect(Array.isArray(parsed.cells)).toBe(true);
 
-    // Second call increments the index.
-    const result2 = await adapter.executeTool("read_screen", {}, logger);
+    const result2 = await adapter.executeTool("read_screen", {}, innerLogger);
     expect((result2 as { capturePath?: string }).capturePath).toBe("captures/001.ansi");
-    expect(logger.captures).toEqual(["captures/000.ansi", "captures/001.ansi"]);
+    expect(innerLogger.captures).toEqual(["captures/000.ansi", "captures/001.ansi"]);
 
-    // A tui_capture event row was appended for the broadcaster to pick up.
     const logContent = readFileSync(join(logDir, "run.jsonl"), "utf-8");
     expect(logContent).toContain('"name":"tui_capture"');
   });
 
   test("readScreen preserves ANSI escape sequences", async () => {
-    adapter = new TUIAdapter();
-    // Print a red "X" and a green "Y", then sleep so the session stays alive.
-    // \x1b[31m = red fg, \x1b[32m = green fg, \x1b[0m = reset.
-    await adapter.start(
-      "sh -c \"printf '\\033[31mX\\033[0m\\033[32mY\\033[0m\\n'; sleep 10\""
-    );
+    adapter = new TUIAdapter({ runDir });
+    await adapter.start("");
+    await new Promise((r) => setTimeout(r, 300));
+    await adapter.type(`printf '\\033[31mX\\033[0m\\033[32mY\\033[0m\\n'\n`);
     await new Promise((r) => setTimeout(r, 300));
     const screen = await adapter.readScreen();
-    // The characters come through.
     expect(screen).toContain("X");
     expect(screen).toContain("Y");
-    // The color escapes survive (-e flag on capture-pane).
-    expect(screen).toMatch(/\x1b\[[0-9;]*31/); // red fg somewhere
-    expect(screen).toMatch(/\x1b\[[0-9;]*32/); // green fg somewhere
+    expect(screen).toMatch(/\x1b\[[0-9;]*31/);
+    expect(screen).toMatch(/\x1b\[[0-9;]*32/);
   });
 
   test("exposes tool definitions for the agent", () => {
@@ -145,12 +219,19 @@ describe.skipIf(!tmuxAvailable)("TUIAdapter", () => {
 });
 
 describe("TUIAdapter describeTarget", () => {
-  test("frames the target as an already-running program and warns against retyping", () => {
+  test("frames the agent as inside a bash shell in a tmux pane", () => {
     const adapter = new TUIAdapter();
     const msg = adapter.describeTarget("nano /tmp/foo.txt");
+    expect(msg).toContain("bash");
     expect(msg).toContain("nano /tmp/foo.txt");
-    expect(msg.toLowerCase()).toContain("already running");
-    expect(msg.toLowerCase()).toContain("do not retype");
+    expect(msg.toLowerCase()).toContain("exit");
+  });
+
+  test("omits the target sentence when target is empty", () => {
+    const adapter = new TUIAdapter();
+    const msg = adapter.describeTarget("");
+    expect(msg).toContain("bash");
+    expect(msg).not.toMatch(/command you are exercising/i);
   });
 });
 

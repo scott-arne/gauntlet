@@ -94,6 +94,76 @@ describe("snapshotRunInputs", () => {
     }
   });
 
+  test("seeds scratch/ from context (cp -r), structure preserved", () => {
+    const tmp = mkdtempSync(join(tmpdir(), "gauntlet-snap-"));
+    try {
+      const runDir = join(tmp, "run");
+      mkdirSync(runDir);
+      const storyPath = join(tmp, "story.md");
+      writeFileSync(storyPath, "story");
+      const contextRoot = join(tmp, "ctx");
+      mkdirSync(join(contextRoot, "profiles"), { recursive: true });
+      writeFileSync(join(contextRoot, "notes.md"), "blood type: O-negative\n");
+      writeFileSync(join(contextRoot, "setup.ts"), "export const x = 1;\n");
+      writeFileSync(join(contextRoot, "profiles", "fred.md"), "name: fred\n");
+
+      snapshotRunInputs({ runDir, storyPath, contextRoot });
+
+      const scratch = join(runDir, "scratch");
+      expect(existsSync(scratch)).toBe(true);
+      expect(readFileSync(join(scratch, "notes.md"), "utf-8")).toBe("blood type: O-negative\n");
+      expect(readFileSync(join(scratch, "setup.ts"), "utf-8")).toBe("export const x = 1;\n");
+      expect(readFileSync(join(scratch, "profiles", "fred.md"), "utf-8")).toBe("name: fred\n");
+
+      // Snapshot and scratch are independent copies — mutating scratch must
+      // not affect the snapshot.
+      writeFileSync(join(scratch, "notes.md"), "tampered");
+      expect(readFileSync(join(runDir, "inputs", "context", "notes.md"), "utf-8"))
+        .toBe("blood type: O-negative\n");
+    } finally {
+      rmSync(tmp, { recursive: true, force: true });
+    }
+  });
+
+  test("empty context still creates an empty scratch/", () => {
+    const tmp = mkdtempSync(join(tmpdir(), "gauntlet-snap-"));
+    try {
+      const runDir = join(tmp, "run");
+      mkdirSync(runDir);
+      const storyPath = join(tmp, "story.md");
+      writeFileSync(storyPath, "story");
+      const contextRoot = join(tmp, "ctx");
+      mkdirSync(contextRoot);
+
+      snapshotRunInputs({ runDir, storyPath, contextRoot });
+
+      const scratch = join(runDir, "scratch");
+      expect(existsSync(scratch)).toBe(true);
+      expect(readdirSync(scratch)).toEqual([]);
+    } finally {
+      rmSync(tmp, { recursive: true, force: true });
+    }
+  });
+
+  test("missing context still creates an empty scratch/", () => {
+    const tmp = mkdtempSync(join(tmpdir(), "gauntlet-snap-"));
+    try {
+      const runDir = join(tmp, "run");
+      mkdirSync(runDir);
+      const storyPath = join(tmp, "story.md");
+      writeFileSync(storyPath, "story");
+      const contextRoot = join(tmp, "does-not-exist");
+
+      snapshotRunInputs({ runDir, storyPath, contextRoot });
+
+      const scratch = join(runDir, "scratch");
+      expect(existsSync(scratch)).toBe(true);
+      expect(readdirSync(scratch)).toEqual([]);
+    } finally {
+      rmSync(tmp, { recursive: true, force: true });
+    }
+  });
+
   test("creates inputs/ even when runDir does not exist yet", () => {
     const tmp = mkdtempSync(join(tmpdir(), "gauntlet-snap-"));
     try {
@@ -107,6 +177,7 @@ describe("snapshotRunInputs", () => {
 
       expect(existsSync(join(runDir, "inputs", "story.md"))).toBe(true);
       expect(existsSync(join(runDir, "inputs", "context"))).toBe(true);
+      expect(existsSync(join(runDir, "scratch"))).toBe(true);
     } finally {
       rmSync(tmp, { recursive: true, force: true });
     }

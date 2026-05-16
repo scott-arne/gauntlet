@@ -5,9 +5,10 @@ describe("loadPromptFile", () => {
   test("loads each bundled prompt file by name", () => {
     for (const name of BUNDLED_PROMPT_NAMES) {
       const text = loadPromptFile(name);
-      // Two valid outcomes: a non-empty string with no trailing whitespace,
-      // or "" for the placeholder adapter files (cli, tui).
+      // All bundled prompts now have content; assert non-empty + no trailing
+      // whitespace.
       expect(typeof text).toBe("string");
+      expect(text.length).toBeGreaterThan(0);
       expect(text).toBe(text.replace(/\s+$/, ""));
     }
   });
@@ -28,8 +29,8 @@ describe("loadPromptFile", () => {
     expect(loadPromptFile("adapter-web")).toMatch(/Side trips for sign-in flows/);
   });
 
-  test("adapter-cli is still an empty placeholder", () => {
-    expect(loadPromptFile("adapter-cli")).toBe("");
+  test("adapter-cli file has the CLI environment overlay", () => {
+    expect(loadPromptFile("adapter-cli")).toMatch(/## CLI environment/);
   });
 
   test("adapter-tui file has the TUI environment overlay", () => {

@@ -8,39 +8,7 @@ import { buildFetchCredentialTool, type FetchCredentialTool } from "../../contex
 import type { CredentialResolverConfig } from "../../config";
 import { validateToolArgs } from "../../agent/validators";
 import { spawn, spawnSync, type SpawnedProcess } from "../../runtime/spawn";
-
-/**
- * Enumerate every descendant of `root` (children, grandchildren, ...).
- * Uses `ps -ax -o pid,ppid` and walks the parent → child relation.
- * POSIX-portable; works on both macOS and Linux. Returns descendant
- * pids only — `root` itself is excluded.
- */
-function listDescendants(root: number): number[] {
-  const ps = spawnSync(["ps", "-ax", "-o", "pid=,ppid="]);
-  if (ps.exitCode !== 0) return [];
-  const text = new TextDecoder().decode(ps.stdout);
-  const children = new Map<number, number[]>();
-  for (const line of text.split("\n")) {
-    const parts = line.trim().split(/\s+/);
-    if (parts.length < 2) continue;
-    const pid = Number(parts[0]);
-    const ppid = Number(parts[1]);
-    if (!Number.isFinite(pid) || !Number.isFinite(ppid)) continue;
-    const arr = children.get(ppid) ?? [];
-    arr.push(pid);
-    children.set(ppid, arr);
-  }
-  const out: number[] = [];
-  const queue = [root];
-  while (queue.length > 0) {
-    const cur = queue.shift()!;
-    for (const child of children.get(cur) ?? []) {
-      out.push(child);
-      queue.push(child);
-    }
-  }
-  return out;
-}
+import { listDescendants } from "../../runtime/process-tree";
 
 const KEY_MAP: Record<string, string> = {
   Enter: "\n",
@@ -51,7 +19,6 @@ const KEY_MAP: Record<string, string> = {
   "Ctrl+Z": "\x1a",
 };
 
-const GRACE_MS = 500;
 
 export interface CLIAdapterOptions {
   contextRoot?: string;
@@ -64,8 +31,8 @@ export interface CLIAdapterOptions {
    */
   runDir?: string;
   /**
-   * Logger used by the adapter to emit cleanup-fallback events
-   * (`cli_shell_force_killed`). Optional for the same registry reason.
+   * Logger used by the adapter to emit cleanup events
+   * (`cli_shell_descendants_reaped`). Optional for the same registry reason.
    */
   logger?: EvidenceLogger;
   /**
@@ -170,85 +137,22 @@ export class CLIAdapter implements Adapter {
     if (!this.proc || this.pgid === null) return;
     const pgid = this.pgid;
     const bashPid = this.proc.pid;
-    const startedAt = Date.now();
+    const descendants = listDescendants(bashPid);
 
-    // Snapshot bash's descendants BEFORE we kill bash. Once bash exits,
-    // children are re-parented to init (pid 1) and we can't enumerate
-    // them through bash anymore. Interactive bash puts each backgrounded
-    // `&` job in its own pgrp, so a pgrp-targeted signal misses them —
-    // we have to track each pid explicitly.
-    const descendantsBefore = listDescendants(bashPid);
+    try { process.kill(-pgid, "SIGKILL"); } catch { /* already dead */ }
 
-    // Graceful: leading newline flushes any half-typed line before `exit`.
-    try {
-      this.proc.stdin.write("\nexit\n");
-      this.proc.stdin.flush();
-    } catch {
-      // shell may already be dead — that's fine, we move on
+    let reaped = 0;
+    for (const pid of descendants) {
+      try { process.kill(pid, "SIGKILL"); reaped++; } catch { /* already dead */ }
     }
-    if (await this.awaitExitWithin(GRACE_MS)) {
-      // Bash exited gracefully. Reap any of its (now-orphaned) descendants
-      // that survived: SIGKILL them by pid plus a pgrp sweep for anything
-      // that happened to still be in bash's pgrp. No force-killed event:
-      // bash's exit was graceful.
-      this.reapDescendants(descendantsBefore);
-      try { process.kill(-pgid, "SIGKILL"); } catch { /* nothing left */ }
-      this.cleanupRefs();
-      return;
+    if (reaped > 0 && this.logger) {
+      this.logger.logEvent("cli_shell_descendants_reaped", {
+        pgid,
+        descendantCount: descendants.length,
+        reapedCount: reaped,
+      });
     }
 
-    // Fallback 1: SIGHUP the pgrp. Interactive bash exits on SIGHUP.
-    try {
-      process.kill(-pgid, "SIGHUP");
-    } catch {
-      // already dead
-    }
-    if (await this.awaitExitWithin(GRACE_MS)) {
-      this.reapDescendants(descendantsBefore);
-      this.logForceKilled(pgid, "sighup", Date.now() - startedAt);
-      this.cleanupRefs();
-      return;
-    }
-
-    // Fallback 2: SIGKILL the pgrp. Can't be ignored.
-    try {
-      process.kill(-pgid, "SIGKILL");
-    } catch {
-      // already dead
-    }
-    // SIGKILL always reaps; if exited didn't already resolve, await it briefly.
-    await this.awaitExitWithin(GRACE_MS);
-    this.reapDescendants(descendantsBefore);
-    this.logForceKilled(pgid, "sigkill", Date.now() - startedAt);
-    this.cleanupRefs();
-  }
-
-  private reapDescendants(pids: number[]): void {
-    for (const pid of pids) {
-      try { process.kill(pid, "SIGKILL"); } catch { /* already dead */ }
-    }
-  }
-
-  private async awaitExitWithin(ms: number): Promise<boolean> {
-    if (!this.proc) return true;
-    const exited = this.proc.exited;
-    const result = await Promise.race([
-      exited.then(() => true),
-      new Promise<false>((r) => setTimeout(() => r(false), ms)),
-    ]);
-    return result;
-  }
-
-  private logForceKilled(pgid: number, step: "sighup" | "sigkill", durationMs: number): void {
-    if (!this.logger) return;
-    this.logger.logEvent("cli_shell_force_killed", {
-      pgid,
-      escalationStep: step,
-      durationMs,
-    });
-  }
-
-  private cleanupRefs(): void {
     this.proc = null;
     this.pgid = null;
   }

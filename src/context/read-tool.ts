@@ -19,13 +19,13 @@ export interface ReadTool {
 // Tests assert this exact string; if a typo sneaks in, the prompts test
 // will fail at CI time.
 const TOOL_DESCRIPTION =
-  "Read a file from the project's context directory. The path is relative to " +
-  ".gauntlet/context/ and must not escape it. The system prompt shows a tree " +
-  "listing of everything available under .gauntlet/context/ at turn 0 — use " +
-  "that tree to pick paths. Returns the file's contents verbatim as text. " +
-  "Binary files are not supported; attempts to read binary content return an " +
-  "error. This is the tool to use when a story names a user and you need " +
-  "their credentials, character notes, or any other file the story references.";
+  "Read a file from the Context list. The `path` argument is a name from " +
+  "the tree shown in the Context section of the system prompt — that tree " +
+  "is the full map of what's available. Returns the file's contents " +
+  "verbatim as text. Binary files are not supported; attempts to read " +
+  "binary content return an error. This is the tool to use when a story " +
+  "names a user and you need their credentials, character notes, or any " +
+  "other file the story references.";
 
 const errorMessage = (err: unknown) =>
   err instanceof Error ? err.message : String(err);
@@ -55,7 +55,7 @@ export function buildReadTool(contextRoot: string): ReadTool | null {
         path: {
           type: "string",
           description:
-            "Path relative to .gauntlet/context/. Must not contain '..' segments or start with '/'. Example: 'alice/credentials.md'.",
+            "A name from the Context tree (e.g. 'alice/credentials.md'). Must not contain '..' segments or start with '/'.",
         },
       },
       required: ["path"],
@@ -67,7 +67,7 @@ export function buildReadTool(contextRoot: string): ReadTool | null {
 
     if (!path) {
       return {
-        text: `Error: read requires a "path" argument (relative to .gauntlet/context/).`,
+        text: `Error: read requires a "path" argument (a name from the Context tree).`,
       };
     }
 

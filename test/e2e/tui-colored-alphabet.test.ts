@@ -41,11 +41,14 @@ describe.skipIf(!hasTmux)("TUI adapter e2e — colored-alphabet capture evidence
 
   test("read_screen writes capture files and references them from run.jsonl", async () => {
     const card = loadStory("colored-alphabet-pass.md");
-    adapter = new TUIAdapter();
     const logDir = mkdtempSync(join(tmpdir(), "gauntlet-cap-alpha-"));
+    adapter = new TUIAdapter({ runDir: logDir });
     const logger = new EvidenceLogger(logDir);
 
+    const fixturePath = join(import.meta.dir, "..", "fixtures", "tui", "colored-alphabet.sh");
+
     const steps: AgentResponse[] = [
+      step("call_0", "type", { text: `sh ${fixturePath}\n` }),
       step("call_1", "read_screen", {}),
       report(
         "pass",
@@ -55,7 +58,6 @@ describe.skipIf(!hasTmux)("TUI adapter e2e — colored-alphabet capture evidence
     ];
     const client = makeScriptedClient(steps, 500);
 
-    const fixturePath = join(import.meta.dir, "..", "fixtures", "tui", "colored-alphabet.sh");
     await adapter.start(`sh ${fixturePath}`);
     const result = await runAgent(card, adapter, client, logger, undefined, {
       runId: makeRunId(card.id),
@@ -82,9 +84,11 @@ describe.skipIf(!hasTmux)("TUI adapter e2e — colored-alphabet capture evidence
     expect(parsed.rows).toBe(40);
     expect(parsed.cells).toHaveLength(40);
     expect(parsed.cells[0]).toHaveLength(120);
-    // The first letters are colored — parser should surface fg on them.
-    const firstRow = parsed.cells[0];
-    const colored = firstRow.filter((c: { fg?: string }) => c.fg);
+    // The colored letters are colored — parser should surface fg on them.
+    // With shell-as-session, the script output lands in a later row (bash
+    // prompt + command appear first), so scan all rows.
+    const allCells = (parsed.cells as { fg?: string }[][]).flat();
+    const colored = allCells.filter((c) => c.fg);
     expect(colored.length).toBeGreaterThan(0);
 
     // run.jsonl's tool_result for read_screen uses the path, not the ANSI.
@@ -109,5 +113,5 @@ describe.skipIf(!hasTmux)("TUI adapter e2e — colored-alphabet capture evidence
     expect(captureEvent.path).toBe("captures/000.ansi");
     expect(captureEvent.cols).toBe(120);
     expect(captureEvent.rows).toBe(40);
-  }, 15_000);
+  }, 30_000);
 });

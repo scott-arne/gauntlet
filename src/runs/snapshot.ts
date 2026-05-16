@@ -19,6 +19,11 @@ export interface SnapshotInputs {
  * Snapshot a run's inputs into `<runDir>/inputs/` so history views and future
  * resumed-chat sessions see the world as the agent saw it at run start.
  *
+ * Also creates and seeds `<runDir>/scratch/` — the shell adapter's cwd — from
+ * the same source context. Stories that ask the agent to `vim notes.md` find
+ * `notes.md` in their cwd; the snapshot at `inputs/context/` stays untouched
+ * and immutable for the read tool.
+ *
  * Synchronous. Callers run this exactly once, before adapter construction.
  */
 export function snapshotRunInputs(opts: SnapshotInputs): void {
@@ -29,8 +34,17 @@ export function snapshotRunInputs(opts: SnapshotInputs): void {
 
   const destContext = join(inputsDir, "context");
   mkdirSync(destContext, { recursive: true });
-  if (sourceIsPopulated(opts.contextRoot)) {
+  const populated = sourceIsPopulated(opts.contextRoot);
+  if (populated) {
     cpSync(opts.contextRoot, destContext, { recursive: true });
+  }
+
+  // scratch is the shell adapter's cwd. Agent mutations land here; the run
+  // dies with the directory. Structure mirrors source context exactly.
+  const scratchDir = join(opts.runDir, "scratch");
+  mkdirSync(scratchDir, { recursive: true });
+  if (populated) {
+    cpSync(opts.contextRoot, scratchDir, { recursive: true });
   }
 }
 

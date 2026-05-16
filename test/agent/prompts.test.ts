@@ -73,9 +73,8 @@ describe("buildSystemPrompt", () => {
     const SAMPLE_TREE = "  alice.md  (5 bytes)";
     const EXPECTED_CONTEXT_SECTION =
       "## Context\n\n" +
-      "The project has a context directory at `.gauntlet/context/`. This is a\n" +
-      "freeform data store the story author set up for this project. Read files\n" +
-      "with `read` and pull out whatever you need to carry out the story.\n\n" +
+      "Below is the complete list of files available for this run. Use the\n" +
+      "`read` tool with a name from this tree to fetch any file's contents.\n\n" +
       "Stories will often refer to users by name (\"Alice\", \"as bob\") without\n" +
       "spelling out credentials. When that happens, look for a matching path in\n" +
       "the tree below, `read` the relevant files, and use what you find to log\n" +
@@ -83,13 +82,10 @@ describe("buildSystemPrompt", () => {
       "an identity file (prose describing the person) and a credentials file;\n" +
       "some also contain `passkey.yaml` for WebAuthn sign-in via\n" +
       "`install_passkey`.\n\n" +
-      "Below is the complete tree of everything available under\n" +
-      "`.gauntlet/context/` for this run. File sizes in bytes are shown after\n" +
-      "each entry. This listing is the full map: it is built once at the start\n" +
-      "of the run and does not change while the run is in flight, so you do not\n" +
-      "need to — and cannot — re-list the directory. Every file you might need\n" +
-      "is in this tree; if a path is not shown here, it does not exist.\n\n" +
-      "### .gauntlet/context/\n" +
+      "This listing is the full map: it is built once at the start of the run\n" +
+      "and does not change while the run is in flight, so you do not need to —\n" +
+      "and cannot — re-list it. Every file you might need is in this tree; if a\n" +
+      "path is not shown here, it does not exist.\n\n" +
       SAMPLE_TREE;
 
     test("section is appended verbatim when a tree is provided", () => {
@@ -118,9 +114,14 @@ describe("buildSystemPrompt", () => {
       const prompt = buildSystemPrompt(baseCard, SAMPLE_TREE, undefined, undefined, 5);
       // This is the prose face of spec §4.2 — it must not drift.
       expect(prompt).toContain(
-        "built once at the start\nof the run and does not change while the run is in flight",
+        "built once at the start of the run\nand does not change while the run is in flight",
       );
-      expect(prompt).toContain("you do not\nneed to — and cannot — re-list the directory");
+      expect(prompt).toContain("so you do not need to —\nand cannot — re-list it");
+    });
+
+    test("never leaks the .gauntlet/context/ path to the agent (PRI-1614)", () => {
+      const prompt = buildSystemPrompt(baseCard, SAMPLE_TREE, undefined, undefined, 5);
+      expect(prompt).not.toContain(".gauntlet/context/");
     });
   });
 

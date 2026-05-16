@@ -1,0 +1,5 @@
+set regexpengine=2
+syntax enable
+
+set number
+filetype plugin indent on
