@@ -4,7 +4,7 @@ import type { EvidenceLogger } from "../evidence/logger";
 import { spawn } from "../runtime/spawn";
 import { killProcessTree, listDescendants } from "../runtime/process-tree";
 
-export const BASH_TOOL_DESCRIPTION =
+const BASH_TOOL_DESCRIPTION =
   "The best interface for inspecting logs and files on the host via " +
   "standard Unix tools (rg, tail, grep, cat, wc, find, head, jq, etc.). " +
   "Use this to verify what the system under test actually did or what " +
