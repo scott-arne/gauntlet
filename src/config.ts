@@ -588,12 +588,14 @@ export function loadConfig(args: CliArgsInput, env: NodeJS.ProcessEnv): AppConfi
   // models.available — operator-controlled allow-list. Empty means "no
   // restriction": per-request body model overrides flow through unchecked.
   // When the operator sets GAUNTLET_MODELS, the route layer enforces it.
-  let availableModels: string[] = [];
-  let availableSource: "default" | "env" | "flag" = "default";
-  if (env.GAUNTLET_MODELS) {
-    availableModels = env.GAUNTLET_MODELS.split(",").map((s) => s.trim()).filter(Boolean);
-    availableSource = "env";
-  }
+  // (sources tracker typed `default | env | flag` for back-compat; flag
+  // is unreachable since there is no --models flag.)
+  const availableR = resolveEnvOnlySetting<string[]>({
+    default: [],
+    env: { name: "GAUNTLET_MODELS", parse: (s) => s.split(",").map((x) => x.trim()).filter(Boolean) },
+  }, env);
+  const availableModels = availableR.value;
+  const availableSource: "default" | "env" | "flag" = availableR.source;
 
   // apiKeys (presence only)
   const apiKeys = {
