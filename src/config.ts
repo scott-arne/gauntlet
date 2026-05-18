@@ -537,13 +537,12 @@ export function loadConfig(args: CliArgsInput, env: NodeJS.ProcessEnv): AppConfi
   const maxRequestBodySize = maxRequestBodySizeR.value;
   const maxRequestBodySizeSource = maxRequestBodySizeR.source;
 
-  const maxConcurrentRuns = parseNonNegIntEnv(
-    env.GAUNTLET_MAX_CONCURRENT_RUNS,
-    "GAUNTLET_MAX_CONCURRENT_RUNS",
-    DEFAULT_MAX_CONCURRENT_RUNS,
-  );
-  const maxConcurrentRunsSource: "default" | "env" =
-    env.GAUNTLET_MAX_CONCURRENT_RUNS ? "env" : "default";
+  const maxConcurrentRunsR = resolveEnvOnlySetting({
+    default: DEFAULT_MAX_CONCURRENT_RUNS,
+    env: { name: "GAUNTLET_MAX_CONCURRENT_RUNS", parse: (s) => parseNonNegInt(s, "GAUNTLET_MAX_CONCURRENT_RUNS") },
+  }, env);
+  const maxConcurrentRuns = maxConcurrentRunsR.value;
+  const maxConcurrentRunsSource = maxConcurrentRunsR.source;
 
   const activeRunTargetMaxBytes = parseNonNegIntEnv(
     env.GAUNTLET_ACTIVE_RUN_TARGET_MAX_BYTES,
