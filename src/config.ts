@@ -336,19 +336,6 @@ function parsePortNumber(raw: string, label: string): number {
 }
 
 /**
- * Parse a non-negative integer env var with a default fallback. Used by
- * the operator-level numeric knobs (PRI-1477, PRI-1478).
- */
-function parseNonNegIntEnv(raw: string | undefined, label: string, fallback: number): number {
-  if (!raw) return fallback;
-  const parsed = parseInt(raw, 10);
-  if (Number.isNaN(parsed) || parsed < 0) {
-    throw new Error(`Invalid ${label} "${raw}": expected a non-negative integer`);
-  }
-  return parsed;
-}
-
-/**
  * Parse a boolean-ish env var. Accepts the usual affirmatives (1, true,
  * yes, on) and negatives (0, false, no, off); rejects anything else to
  * avoid "well I set it to 'maybe'..." surprises.
@@ -611,11 +598,10 @@ export function loadConfig(args: CliArgsInput, env: NodeJS.ProcessEnv): AppConfi
       env.GAUNTLET_CREDENTIAL_RESOLVER,
       projectRoot,
     );
-    const timeoutMs = parseNonNegIntEnv(
-      env.GAUNTLET_CREDENTIAL_RESOLVER_TIMEOUT_MS,
-      "GAUNTLET_CREDENTIAL_RESOLVER_TIMEOUT_MS",
-      DEFAULT_CREDENTIAL_RESOLVER_TIMEOUT_MS,
-    );
+    const rawTimeout = env.GAUNTLET_CREDENTIAL_RESOLVER_TIMEOUT_MS;
+    const timeoutMs = rawTimeout
+      ? parseNonNegInt(rawTimeout, "GAUNTLET_CREDENTIAL_RESOLVER_TIMEOUT_MS")
+      : DEFAULT_CREDENTIAL_RESOLVER_TIMEOUT_MS;
     const includeInTranscripts = env.GAUNTLET_CREDENTIAL_INCLUDE_IN_TRANSCRIPTS
       ? parseBoolEnv(env.GAUNTLET_CREDENTIAL_INCLUDE_IN_TRANSCRIPTS, "GAUNTLET_CREDENTIAL_INCLUDE_IN_TRANSCRIPTS")
       : false;
