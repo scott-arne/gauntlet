@@ -2,7 +2,7 @@ import { describe, test, expect } from "bun:test";
 import { mkdtempSync, mkdirSync, writeFileSync, rmSync, symlinkSync } from "fs";
 import { tmpdir } from "os";
 import { join, resolve as resolvePath } from "path";
-import { GAUNTLET_DIRNAME, gauntletPath, isSafePath, resolveInside } from "../src/paths";
+import { gauntletPath, isSafePath, resolveInside } from "../src/paths";
 
 describe("gauntletPath", () => {
   test("composes <root>/.gauntlet/<sub> for a single segment", () => {
@@ -32,10 +32,6 @@ describe("gauntletPath", () => {
   test("returns just the .gauntlet dir when no subdirs are given", () => {
     expect(gauntletPath("/project")).toBe("/project/.gauntlet");
     expect(gauntletPath(".")).toBe(".gauntlet");
-  });
-
-  test("GAUNTLET_DIRNAME is the literal .gauntlet convention", () => {
-    expect(GAUNTLET_DIRNAME).toBe(".gauntlet");
   });
 });
 
