@@ -559,11 +559,12 @@ export function loadConfig(args: CliArgsInput, env: NodeJS.ProcessEnv): AppConfi
   const wsIdleTimeoutSec = wsIdleTimeoutSecR.value;
   const wsIdleTimeoutSecSource = wsIdleTimeoutSecR.source;
 
-  const wsOriginAllowlist = env.GAUNTLET_WS_ORIGIN_ALLOWLIST
-    ? env.GAUNTLET_WS_ORIGIN_ALLOWLIST.split(",").map((s) => s.trim()).filter(Boolean)
-    : [];
-  const wsOriginAllowlistSource: "default" | "env" =
-    env.GAUNTLET_WS_ORIGIN_ALLOWLIST ? "env" : "default";
+  const wsOriginAllowlistR = resolveEnvOnlySetting<string[]>({
+    default: [],
+    env: { name: "GAUNTLET_WS_ORIGIN_ALLOWLIST", parse: (s) => s.split(",").map((x) => x.trim()).filter(Boolean) },
+  }, env);
+  const wsOriginAllowlist = wsOriginAllowlistR.value;
+  const wsOriginAllowlistSource = wsOriginAllowlistR.source;
 
   // models.agent
   let agentModel = DEFAULT_AGENT_MODEL;
