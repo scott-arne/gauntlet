@@ -1125,3 +1125,83 @@ Per house convention (`feedback_no_prs.md` + `feedback_linear_never_close_ticket
 - **No CI-time changes.**
 - **No source changes** except via PRI-1628's plan (sibling work).
 - **No documentation overhaul** for the test suite. If Phase 5's rename changes a doc reference, fix that reference; do not rewrite the docs.
+
+---
+
+## CLI-adapter test overlap survey (Phase 2, PRI-1630)
+
+**Surveyor:** Surgeon@daef2708 · **Date:** 2026-05-18 · **Source state:** at `pri-1630-phase-1` tag.
+
+### Public surface of `CLIAdapter` (`src/adapters/cli/adapter.ts`)
+
+| Method | Role | Notes |
+|---|---|---|
+| `start(target)` | Spawns detached `bash -i` in `<runDir>/scratch`; attaches stdout/stderr readers. | Throws if `runDir` is not set. |
+| `readOutput()` | Drains + clears the internal buffer. Called directly and via `executeTool("read_output")`. | |
+| `describeTarget(target)` | Returns the system-prompt fragment describing the shell and (optionally) the target command. | Pure. |
+| `defaultViewport()` | Returns `null` — CLI has no rendering surface. | Pure. |
+| `type(text)` | Writes text to the shell's stdin. **Both** a public method and the dispatch target of `executeTool("type")`. | |
+| `press(key)` | Maps a key name through `KEY_MAP`, calls `type()`. | |
+| `close()` | `killProcessTree(pgid, descendants)`; emits `cli_shell_descendants_reaped` when descendants were reaped. | Logs only when `logger` was injected. |
+| `isMutatingTool(name)` | Host's mutation gate (`"type"` and `"press"` only). | Pure. |
+| `toolDefinitions()` | Lists `type`/`press`/`read_output` plus the shared tools (`read`, `fetch_credential`, `bash`) conditional on options. | |
+| `executeTool(name, args, logger)` | Validates `args` against the tool schema; dispatches shared tools first, then `type`/`press`/`read_output`. | |
+
+The audit's "incompatible APIs" framing was wrong: both `type()` and `executeTool("type", ...)` route to the same code, and both are intentionally public.
+
+### `test/adapters/cli-adapter.test.ts` — integration angle
+
+| Test | Entry point | Dependency style | Behavior pinned |
+|---|---|---|---|
+| `start() creates <runDir>/scratch and runs bash there` | `start`, `executeTool("type"/"read_output")` | real `EvidenceLogger`, real bash via real `runDir` | scratch dir exists; shell's `pwd` is the scratch dir |
+| `describeTarget mentions the shell and the target command` | `describeTarget` | pure | with-target string content |
+| `describeTarget omits the target sentence when target is empty` | `describeTarget` | pure | without-target string content |
+| `orphan reap: backgrounded sleep is gone after close and event fires` | `start`, `executeTool("type"/"read_output")`, `close` | real logger, real bash, real PID check via `process.kill(pid, 0)`, real `run.jsonl` read | real backgrounded sleep PID dies on close; `cli_shell_descendants_reaped` lands in `run.jsonl` |
+| `no event emitted when there are no descendants to reap` | `start`, `close` | real logger, `run.jsonl` read | clean close emits no reap event |
+| `half-typed line: close still exits cleanly` | `start`, `executeTool("type")`, `close` | real logger, real bash | close doesn't throw with a half-typed line in the buffer |
+| `agent can drive an interactive prompt-and-answer script` | `start`, `executeTool("type"/"read_output")` | real logger, real bash, real on-disk shell script with `chmod 0755` | multi-step prompt-response over the same shell session |
+
+**Classification:** every test in this file starts a bash shell and asserts a real side-effect (filesystem, PIDs, `run.jsonl`). All dispatch through `executeTool`. This file is an integration suite.
+
+### `test/adapters/cli/adapter.test.ts` — API-contract angle
+
+| Test | Entry point | Dependency style | Behavior pinned |
+|---|---|---|---|
+| `starts a shell and reads output` | `start`, `adapter.type` (direct), `readOutput` (direct) | mock logger, real bash (`echo`) | shell starts, `echo` output appears in buffer |
+| `sends input and reads response` | `start`, `adapter.type` (direct), `readOutput` (direct) | mock logger, real bash (`cat`) | input echo-back via `cat` |
+| `exposes tool definitions for the agent` | `toolDefinitions` | mock logger | `type`/`press`/`read_output` registered |
+| `includes read tool when context root is non-empty` | `toolDefinitions` | mock logger, real tmp dir | conditional `read` registration |
+| `executeTool(read) returns file contents via the read tool` | `executeTool("read")` | mock logger, real tmp dir | shared `read` tool wired through `executeTool` |
+| `defaultViewport returns null` | `defaultViewport` | pure | null return |
+| `describeTarget frames the agent as inside a bash shell` | `describeTarget` | pure | with-target string content (same shape as cli-adapter.test.ts) |
+| `registers fetch_credential when contextRoot and credentialResolver set` | `toolDefinitions` | mock logger, `withCredentialFixture` | conditional `fetch_credential` registration (positive) |
+| `omits fetch_credential when credentialResolver is undefined` | `toolDefinitions` | mock logger, `withCredentialFixture` | negative case 1 |
+| `omits fetch_credential when contextRoot is empty even if resolver is set` | `toolDefinitions` | mock logger, `withCredentialFixture` | negative case 2 |
+| `toolDefinitions includes bash` | `toolDefinitions` | mock logger | `bash` shared tool registered |
+
+**Classification:** mostly tool-definition introspection (no shell spawned). The first two tests (`starts a shell`, `sends input`) are the outliers — they spawn a real bash and exercise `adapter.type()` directly, bypassing `executeTool`. They overlap with the cli-adapter.test.ts coverage of the same start-and-read code path.
+
+### Overlap analysis
+
+Three concrete overlaps, all between `cli/adapter.test.ts` and the stronger coverage in `cli-adapter.test.ts`:
+
+1. **Shell start + read** — `cli/adapter.test.ts:24-33` (`starts a shell and reads output`) is a weaker version of `cli-adapter.test.ts:35-50` (`start() creates <runDir>/scratch and runs bash there`). The cli-adapter.test.ts version asserts the scratch dir exists and `pwd` matches; the cli/adapter.test.ts version only asserts the buffer contains a substring.
+2. **Stdin -> buffer round-trip via direct `type()`** — `cli/adapter.test.ts:35-45` (`sends input and reads response`) overlaps the `executeTool("type", ...)` paths exercised throughout cli-adapter.test.ts (the prompt-response and reap tests both round-trip stdin through to `readOutput`). The substring-only assertion adds nothing.
+3. **describeTarget with target** — `cli/adapter.test.ts:99-105` overlaps `cli-adapter.test.ts:52-58` exactly. cli-adapter.test.ts also covers the without-target case (line 60-65) that cli/adapter.test.ts doesn't.
+
+No test is dead-coding a removed path. `adapter.type()` is still publicly part of the `Adapter` contract (matches `WebAdapter.type()` and the host's mutation-replay code path), so even after these deletions the method stays in `src/`.
+
+### Recommended action
+
+**Option (a) — Keep both files; tighten by deleting 3 overlapping tests from `cli/adapter.test.ts`.**
+
+Specifically:
+- Delete `starts a shell and reads output` (lines 24-33)
+- Delete `sends input and reads response` (lines 35-45)
+- Delete `describeTarget frames the agent as inside a bash shell` (lines 99-105)
+
+Net: `cli/adapter.test.ts` becomes a pure API-contract suite (tool-set composition, conditional registration, viewport, `executeTool("read")` wiring). `cli-adapter.test.ts` remains the integration suite (real bash, real `run.jsonl`, real PIDs). The two angles stay; the boundary becomes clean.
+
+**Test count delta if approved:** −3.
+
+This is the survey's recommended action. The executor will not apply it without Susan's sign-off.
