@@ -20,6 +20,8 @@ import {
 } from "./cookies";
 import { validateToolArgs } from "../../agent/validators";
 import { webToolDefinitions } from "./tool-defs";
+import { executeScreenshot, executeExtract, executeWaitFor } from "./tools/visual";
+import type { WebToolCtx } from "./tools/types";
 
 // The forked CDP library is CommonJS JS — use require for bun compatibility.
 // PRI-1436: chrome-ws-lib's only top-level export is now `createSession()`.
@@ -599,31 +601,16 @@ export class WebAdapter implements Adapter {
       }
     };
 
+    const ctx: WebToolCtx = {
+      chrome: this.chrome,
+      tab,
+      logger,
+      takeReturnScreenshot,
+    };
+
     switch (name) {
-      case "screenshot": {
-        const tmpFile = join(
-          tmpdir(),
-          `gauntlet-screenshot-${Date.now()}.png`
-        );
-        await this.chrome.screenshot(
-          tab,
-          tmpFile,
-          (args.selector as string) ?? null,
-          (args.fullPage as boolean) ?? false
-        );
-        const data = readFileSync(tmpFile);
-        const saved = logger.saveScreenshot(Buffer.from(data));
-        try {
-          unlinkSync(tmpFile);
-        } catch {
-          // temp file cleanup is best-effort
-        }
-        return {
-          text: `Screenshot saved to ${saved}`,
-          image: { data: Buffer.from(data).toString("base64"), mediaType: "image/png" },
-          imagePath: saved,
-        };
-      }
+      case "screenshot":
+        return executeScreenshot(ctx, args);
       case "click": {
         try {
           const result = await this.chrome.click(tab, args.selector as string);
@@ -753,37 +740,15 @@ export class WebAdapter implements Adapter {
         await this.chrome.navigate(tab, args.url as string);
         return composeResult("navigated", await takeReturnScreenshot());
       }
-      case "extract": {
-        const selector = args.selector as string | undefined;
-        if (selector) {
-          const text = await this.chrome.extractText(tab, selector);
-          return { text };
-        }
-        // Return the full markdown inline so the model can read it. The
-        // logger will spill to artifacts/N.txt for run.jsonl readability
-        // when the text exceeds its inline limit, but that's a
-        // reviewer-facing concern — the model has already consumed the
-        // content by the time logging happens.
-        const markdown = await this.chrome.generateMarkdown(tab);
-        return { text: markdown };
-      }
+      case "extract":
+        return executeExtract(ctx, args);
       case "eval": {
         const result = await this.chrome.evaluate(tab, args.expression as string);
         const text = result === undefined ? "undefined" : (typeof result === "string" ? result : JSON.stringify(result));
         return composeResult(text, await takeReturnScreenshot());
       }
-      case "wait_for": {
-        const timeout = (args.timeout as number) ?? 5000;
-        if (args.selector) {
-          await this.chrome.waitForElement(tab, args.selector as string, timeout);
-          return composeResult("element found", await takeReturnScreenshot());
-        }
-        if (args.text) {
-          await this.chrome.waitForText(tab, args.text as string, timeout);
-          return composeResult("text found", await takeReturnScreenshot());
-        }
-        return { text: "nothing to wait for — provide selector or text" };
-      }
+      case "wait_for":
+        return executeWaitFor(ctx, args);
       case "new_tab": {
         // The cap is on total stack depth (1 original + N side trips).
         // Frame the user-facing error in side-trip terms so the agent
