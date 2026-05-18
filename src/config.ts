@@ -425,17 +425,16 @@ export function loadConfig(args: CliArgsInput, env: NodeJS.ProcessEnv): AppConfi
   const port = portR.value;
   const portSource = portR.source;
 
-  // defaultChrome
-  let defaultChrome: ChromeEndpoint = DEFAULT_CHROME;
-  let chromeSource: "default" | "env" | "flag" = "default";
-  if (env.GAUNTLET_CHROME) {
-    defaultChrome = parseChromeEndpoint(env.GAUNTLET_CHROME, "GAUNTLET_CHROME");
-    chromeSource = "env";
-  }
-  if (args.chrome !== undefined) {
-    defaultChrome = parseChromeEndpoint(args.chrome, "--chrome");
-    chromeSource = "flag";
-  }
+  // defaultChrome — parser is non-trivial (parseChromeEndpoint).
+  // sources.defaultChrome === "default" is load-bearing: mergeRunConfig
+  // reads it to decide whether to auto-launch Chrome.
+  const chromeR = resolveSetting({
+    default: DEFAULT_CHROME,
+    env: { name: "GAUNTLET_CHROME", parse: (s) => parseChromeEndpoint(s, "GAUNTLET_CHROME") },
+    arg: { value: args.chrome !== undefined ? parseChromeEndpoint(args.chrome, "--chrome") : undefined },
+  }, env);
+  const defaultChrome = chromeR.value;
+  const chromeSource = chromeR.source;
 
   // defaultTarget
   let defaultTarget: string | undefined;
