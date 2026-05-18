@@ -5,6 +5,7 @@ import type { EvidenceLogger } from "../evidence/logger";
 import type { StoryCard } from "../format/story-card";
 import type { VetResult, VetStatus } from "../types";
 import { RESULT_SCHEMA_VERSION } from "../types";
+import type { RunId } from "../util/brands";
 import { buildSystemPrompt } from "./prompts";
 import { buildInitialUserMessage } from "./initial-message";
 import { parseReportResult } from "./validators";
@@ -54,7 +55,7 @@ export interface AgentOptions {
    * so a forgetful caller can't silently produce an empty-string runId
    * in `result.json`.
    */
-  runId: string;
+  runId: RunId;
   /** LLM provider name (e.g. "anthropic", "openai"). Surfaced on the run_start log row. */
   provider?: string;
   /** LLM model name (e.g. "claude-opus-4-7"). Surfaced on the run_start log row. */

@@ -3,15 +3,16 @@ import { RunSetWriter } from "../evidence/run-set-writer";
 import { makeRunSetId, makeRunId } from "../util/id";
 import type { RunSetCtx, RunSetKind } from "./run-set-types";
 import type { VetResult } from "../types";
+import type { CardId, RunId, RunSetId } from "../util/brands";
 
 export interface ExecutorArgs {
-  cardId: string;
+  cardId: CardId;
   runSetCtx: RunSetCtx;
-  runId: string;
+  runId: RunId;
 }
 
 export interface ExecutorReturn {
-  runId: string;
+  runId: RunId;
   outDir: string;
   result: VetResult;
 }
@@ -24,30 +25,30 @@ export interface CancelToken {
 
 export interface RunSetConfig {
   resultsRoot: string;
-  cards: string[];
+  cards: CardId[];
   passes: number;
   kind: RunSetKind;
   executor: Executor;
-  generateRunId?: (cardId: string, attemptNumber: number) => string;
+  generateRunId?: (cardId: CardId, attemptNumber: number) => RunId;
   cancelToken?: CancelToken;
-  onAllRunsKnown?: (runs: Array<{ runId: string; cardId: string; attemptNumber: number }>) => void;
+  onAllRunsKnown?: (runs: Array<{ runId: RunId; cardId: CardId; attemptNumber: number }>) => void;
 }
 
 export interface RunSetResult {
-  runSetId: string;
-  runs: Array<{ runId: string; cardId: string; attemptNumber: number; status: string }>;
+  runSetId: RunSetId;
+  runs: Array<{ runId: RunId; cardId: CardId; attemptNumber: number; status: string }>;
   summary: {
-    perCard: Array<{ cardId: string; cardStatus: string; byStatus: Record<string, number> }>;
+    perCard: Array<{ cardId: CardId; cardStatus: string; byStatus: Record<string, number> }>;
     overall: { overallStatus: string; byStatus: Record<string, number>; totalRuns: number };
   } | null;
 }
 
 export interface RunSetHandle {
-  runSetId: string;
+  runSetId: RunSetId;
   kind: RunSetKind;
   passes: number;
-  cards: string[];
-  runs: Array<{ runId: string; cardId: string; attemptNumber: number }>;
+  cards: CardId[];
+  runs: Array<{ runId: RunId; cardId: CardId; attemptNumber: number }>;
   completion: Promise<RunSetResult>;
 }
 
@@ -57,7 +58,7 @@ export async function runRunSet(cfg: RunSetConfig): Promise<RunSetHandle> {
   const gen = cfg.generateRunId ?? ((cardId, _i) => makeRunId(cardId));
 
   // Eagerly generate all runIds so set.json is fully populated up front.
-  const allRuns: Array<{ runId: string; cardId: string; attemptNumber: number }> = [];
+  const allRuns: Array<{ runId: RunId; cardId: CardId; attemptNumber: number }> = [];
   for (let cardIndex = 0; cardIndex < cfg.cards.length; cardIndex++) {
     for (let attemptNumber = 1; attemptNumber <= cfg.passes; attemptNumber++) {
       allRuns.push({
@@ -90,8 +91,8 @@ async function runLoop(args: {
   cfg: RunSetConfig;
   writer: RunSetWriter;
   ctx0: RunSetCtx;
-  allRuns: Array<{ runId: string; cardId: string; attemptNumber: number }>;
-  runSetId: string;
+  allRuns: Array<{ runId: RunId; cardId: CardId; attemptNumber: number }>;
+  runSetId: RunSetId;
 }): Promise<RunSetResult> {
   const { cfg, writer, ctx0, allRuns, runSetId } = args;
 

@@ -26,9 +26,10 @@ import type { ErrorLog } from "../../util/error-log";
 import type { StoryCard } from "../../format/story-card";
 import type { LLMClient } from "../../models/provider";
 import type { RunSetCtx } from "../../runs/run-set-types";
+import type { RunId } from "../../util/brands";
 
 export interface ExecuteHttpRunOpts {
-  runId: string;
+  runId: RunId;
   card: StoryCard;
   storyPath: string;
   client: LLMClient;

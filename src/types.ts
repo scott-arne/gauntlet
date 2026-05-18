@@ -24,6 +24,7 @@ export const RESULT_SCHEMA_VERSION = 5;
 
 import type { RunSetCtx } from "./runs/run-set-types";
 import type { ResolvedRunConfig, Viewport } from "./config";
+import type { CardId, RunId } from "./util/brands";
 
 export interface RunConfigSnapshot {
   target: string;
@@ -73,8 +74,8 @@ interface VetResultBase {
    * CLI) before writing. Shape: `<cardId>_<YYYYMMDDTHHMMSSZ>_<nonce>`.
    * `scenario` (the cardId) is retained for back-compat readers.
    */
-  runId: string;
-  scenario: string;
+  runId: RunId;
+  scenario: CardId;
   summary: string;
   reasoning: string;
   observations: Observation[];

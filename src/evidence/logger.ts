@@ -1,5 +1,6 @@
 import { mkdirSync, appendFileSync, writeFileSync } from "fs";
 import { join } from "path";
+import type { CardId, RunId } from "../util/brands";
 
 export type BrowserEventCategory =
   | "console"
@@ -15,8 +16,8 @@ export type ProgressObserver = (
 export type EventObserver = (event: Record<string, unknown>) => void;
 
 export interface RunStartFields {
-  runId: string;
-  cardId: string;
+  runId: RunId;
+  cardId: CardId;
   target: string | undefined;
   provider: string;
   model: string;

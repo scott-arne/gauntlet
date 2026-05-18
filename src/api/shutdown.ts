@@ -16,6 +16,7 @@
  */
 
 import { writeShutdownStubs } from "./shutdown-stub-writer";
+import type { CardId, RunId } from "../util/brands";
 
 export type ShutdownSignal = "SIGTERM" | "SIGINT" | "SIGHUP";
 
@@ -52,7 +53,7 @@ interface BroadcasterLike {
 /** Minimal interface so tests can substitute a stub. The real
  * ActiveRunRegistry satisfies this. */
 interface RegistryLike {
-  list(): Array<{ id: string; cardId: string; startedAt: number }>;
+  list(): Array<{ id: RunId; cardId: CardId; startedAt: number }>;
   abortAll(reason: string): number;
 }
 

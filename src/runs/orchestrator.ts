@@ -3,6 +3,7 @@ import { join } from "path";
 import { CLIAdapter } from "../adapters/cli/adapter";
 import { snapshotViewport, type Adapter } from "../adapters/adapter";
 import type { ChromeEndpoint, CredentialResolverConfig, ResolvedRunConfig, Viewport } from "../config";
+import type { RunId } from "../util/brands";
 import { renderContextTree } from "../context/tree";
 import { EvidenceLogger } from "../evidence/logger";
 import { writeResultFiles } from "../evidence/writer";
@@ -41,7 +42,7 @@ export function resolveProjectPrompt(
 }
 
 export interface RunCorePrepared {
-  runId: string;
+  runId: RunId;
   outDir: string;
   card: StoryCard;
 }
@@ -66,14 +67,14 @@ export interface RunCoreHooks {
 
 export interface AdapterFactoryCtx {
   contextRoot: string;
-  runId: string;
+  runId: RunId;
   logger: EvidenceLogger;
 }
 
 export interface ExecuteRunCoreOptions {
   card: StoryCard;
   storyPath: string;
-  runId?: string;
+  runId?: RunId;
   outDir?: string;
   runConfig: ResolvedRunConfig;
   /** Already-built client — surfaces resolve provider/allow-list before
@@ -114,7 +115,7 @@ export interface ExecuteRunCoreOptions {
 }
 
 export interface ExecuteRunCoreResult {
-  runId: string;
+  runId: RunId;
   outDir: string;
   result: VetResult;
 }
@@ -127,7 +128,7 @@ async function buildDefaultAdapter(
   type: RunAdapterType,
   contextRoot: string,
   logger: EvidenceLogger,
-  runId: string,
+  runId: RunId,
   runDir: string,
   chrome: ChromeEndpoint | undefined,
   viewport: Viewport | undefined,

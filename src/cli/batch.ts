@@ -9,6 +9,7 @@ import { installSigintHandler } from "./signals";
 import type { RunSetCtx } from "../runs/run-set-types";
 import { BatchTableRenderer } from "./stream/batch-table";
 import type { WriteSink } from "./stream/jsonl";
+import { asCardId, type CardId } from "../util/brands";
 
 export interface BatchOptions {
   scenarioPaths: string[];
@@ -28,10 +29,10 @@ export interface BatchOptions {
 
 type RunOneFn = (opts: RunOneOptions) => Promise<RunOneSummary>;
 
-function cardIdForPath(p: string): string {
+function cardIdForPath(p: string): CardId {
   // v1: filename stem is the row identifier. Stable for queued rows
   // (no parse needed) and for parse-failure rows.
-  return basename(p, extname(p));
+  return asCardId(basename(p, extname(p)));
 }
 
 function makeBatchObserver(

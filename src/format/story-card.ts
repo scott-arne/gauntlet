@@ -1,5 +1,7 @@
+import { asCardId, type CardId } from "../util/brands";
+
 export interface StoryCard {
-  id: string;
+  id: CardId;
   title: string;
   status: string;
   tags: string[];
@@ -11,7 +13,7 @@ export interface StoryCard {
    * v1.5). If a card needs setup state, it must perform that
    * setup itself.
    */
-  parent?: string;
+  parent?: CardId;
   stakeholder?: string;
   description: string;
   acceptanceCriteria: string[];
@@ -29,7 +31,7 @@ export function parseStoryCard(content: string): StoryCard {
   const { description, acceptanceCriteria } = parseBody(body);
 
   return {
-    id,
+    id: asCardId(id),
     title,
     status: frontmatter.status || "draft",
     tags: frontmatter.tags
@@ -38,7 +40,7 @@ export function parseStoryCard(content: string): StoryCard {
           .map((t: string) => t.trim())
           .filter(Boolean)
       : [],
-    parent: frontmatter.parent || undefined,
+    parent: frontmatter.parent ? asCardId(frontmatter.parent) : undefined,
     stakeholder: frontmatter.stakeholder || undefined,
     description,
     acceptanceCriteria,
