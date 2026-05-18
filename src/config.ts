@@ -2,6 +2,7 @@ import { isAbsolute, resolve as resolvePath } from "node:path";
 import { statSync } from "node:fs";
 import { ADAPTER_TYPES, isAdapterType, type AdapterType } from "./adapters/adapter";
 import { parseDuration } from "./util/parse-duration";
+import { resolveSetting, resolveEnvOnlySetting } from "./config-helpers";
 
 export interface ChromeEndpoint {
   host: string;
@@ -155,7 +156,7 @@ export interface RunRequestBody {
   passes?: number;
 }
 
-export interface EffectiveRunConfig {
+export interface ResolvedRunConfig {
   target: string;
   model: string;
   /**
@@ -273,7 +274,7 @@ export function validateRunBody(body: unknown, opts: Record<string, never> = {})
   };
 }
 
-export function mergeRunConfig(app: AppConfig, body: RunRequestBody): EffectiveRunConfig {
+export function mergeRunConfig(app: AppConfig, body: RunRequestBody): ResolvedRunConfig {
   // Precedence: explicit body > explicit server config (env/flag) > undefined (auto-launch).
   // Source attribution is the tiebreaker — if the user never specified a
   // chrome endpoint anywhere, leave it undefined so WebAdapter falls back
@@ -332,19 +333,6 @@ function parsePortNumber(raw: string, label: string): number {
     throw new Error(`Invalid ${label} "${raw}": not a number`);
   }
   return port;
-}
-
-/**
- * Parse a non-negative integer env var with a default fallback. Used by
- * the operator-level numeric knobs (PRI-1477, PRI-1478).
- */
-function parseNonNegIntEnv(raw: string | undefined, label: string, fallback: number): number {
-  if (!raw) return fallback;
-  const parsed = parseInt(raw, 10);
-  if (Number.isNaN(parsed) || parsed < 0) {
-    throw new Error(`Invalid ${label} "${raw}": expected a non-negative integer`);
-  }
-  return parsed;
 }
 
 /**
@@ -407,203 +395,194 @@ export function requireLlmCapable(config: AppConfig): void {
 
 export function loadConfig(args: CliArgsInput, env: NodeJS.ProcessEnv): AppConfig {
   // projectRoot
-  let projectRoot = DEFAULT_PROJECT_ROOT;
-  let projectRootSource: "default" | "env" | "flag" = "default";
-  if (env.GAUNTLET_PROJECT_ROOT) {
-    projectRoot = env.GAUNTLET_PROJECT_ROOT;
-    projectRootSource = "env";
-  }
-  if (args.projectRoot !== undefined) {
-    projectRoot = args.projectRoot;
-    projectRootSource = "flag";
-  }
+  const projectRootR = resolveSetting({
+    default: DEFAULT_PROJECT_ROOT,
+    env: { name: "GAUNTLET_PROJECT_ROOT", parse: (s) => s },
+    arg: { value: args.projectRoot },
+  }, env);
+  const projectRoot = projectRootR.value;
+  const projectRootSource = projectRootR.source;
 
   // port
-  let port = DEFAULT_PORT;
-  let portSource: "default" | "env" | "flag" = "default";
-  if (env.GAUNTLET_PORT) {
-    port = parsePortNumber(env.GAUNTLET_PORT, "GAUNTLET_PORT");
-    portSource = "env";
-  }
-  if (args.port !== undefined) {
-    port = args.port;
-    portSource = "flag";
-  }
+  const portR = resolveSetting({
+    default: DEFAULT_PORT,
+    env: { name: "GAUNTLET_PORT", parse: (s) => parsePortNumber(s, "GAUNTLET_PORT") },
+    arg: { value: args.port },
+  }, env);
+  const port = portR.value;
+  const portSource = portR.source;
 
-  // defaultChrome
-  let defaultChrome: ChromeEndpoint = DEFAULT_CHROME;
-  let chromeSource: "default" | "env" | "flag" = "default";
-  if (env.GAUNTLET_CHROME) {
-    defaultChrome = parseChromeEndpoint(env.GAUNTLET_CHROME, "GAUNTLET_CHROME");
-    chromeSource = "env";
-  }
-  if (args.chrome !== undefined) {
-    defaultChrome = parseChromeEndpoint(args.chrome, "--chrome");
-    chromeSource = "flag";
-  }
+  // defaultChrome — parser is non-trivial (parseChromeEndpoint).
+  // sources.defaultChrome === "default" is load-bearing: mergeRunConfig
+  // reads it to decide whether to auto-launch Chrome.
+  const chromeR = resolveSetting({
+    default: DEFAULT_CHROME,
+    env: { name: "GAUNTLET_CHROME", parse: (s) => parseChromeEndpoint(s, "GAUNTLET_CHROME") },
+    arg: { value: args.chrome !== undefined ? parseChromeEndpoint(args.chrome, "--chrome") : undefined },
+  }, env);
+  const defaultChrome = chromeR.value;
+  const chromeSource = chromeR.source;
 
-  // defaultTarget
-  let defaultTarget: string | undefined;
-  let targetSource: "default" | "env" | "flag" | "unset" = "unset";
-  if (env.GAUNTLET_TARGET) {
-    defaultTarget = env.GAUNTLET_TARGET;
-    targetSource = "env";
-  }
-  if (args.target !== undefined) {
-    defaultTarget = args.target;
-    targetSource = "flag";
-  }
+  // defaultTarget — source widens to include "unset" because there is no
+  // in-code default value (sources.defaultTarget cascades unset→env→flag).
+  const targetR = resolveSetting<string | undefined, "unset">({
+    default: undefined,
+    noValueSource: "unset",
+    env: { name: "GAUNTLET_TARGET", parse: (s) => s },
+    arg: { value: args.target },
+  }, env);
+  const defaultTarget = targetR.value;
+  const targetSource = targetR.source;
 
   // defaultViewport
-  let defaultViewport: Viewport = DEFAULT_VIEWPORT;
-  let viewportSource: "default" | "env" | "flag" = "default";
-  if (env.GAUNTLET_VIEWPORT) {
-    defaultViewport = parseViewportString(env.GAUNTLET_VIEWPORT, "GAUNTLET_VIEWPORT");
-    viewportSource = "env";
-  }
-  if (args.viewport !== undefined) {
-    defaultViewport = parseViewportString(args.viewport, "--viewport");
-    viewportSource = "flag";
-  }
+  const viewportR = resolveSetting({
+    default: DEFAULT_VIEWPORT,
+    env: { name: "GAUNTLET_VIEWPORT", parse: (s) => parseViewportString(s, "GAUNTLET_VIEWPORT") },
+    arg: { value: args.viewport !== undefined ? parseViewportString(args.viewport, "--viewport") : undefined },
+  }, env);
+  const defaultViewport = viewportR.value;
+  const viewportSource = viewportR.source;
 
   // defaultSaveScreencast — opt-in persistence of screencast frames.
   // Defaults off because per-run screencast files are 100MB–1GB and
   // rarely consulted post-run; the live WS stream to UI clients is
   // unaffected either way.
-  let defaultSaveScreencast = false;
-  let saveScreencastSource: "default" | "env" | "flag" = "default";
-  if (env.GAUNTLET_SAVE_SCREENCAST !== undefined) {
-    defaultSaveScreencast = parseBoolEnv(env.GAUNTLET_SAVE_SCREENCAST, "GAUNTLET_SAVE_SCREENCAST");
-    saveScreencastSource = "env";
-  }
-  if (args.saveScreencast !== undefined) {
-    defaultSaveScreencast = args.saveScreencast;
-    saveScreencastSource = "flag";
-  }
+  const saveScreencastR = resolveSetting({
+    default: false,
+    env: { name: "GAUNTLET_SAVE_SCREENCAST", parse: (s) => parseBoolEnv(s, "GAUNTLET_SAVE_SCREENCAST") },
+    arg: { value: args.saveScreencast },
+  }, env);
+  const defaultSaveScreencast = saveScreencastR.value;
+  const saveScreencastSource = saveScreencastR.source;
 
-  // defaultBudgetMs — wall-clock budget for the agent loop.
-  let defaultBudgetMs = DEFAULT_BUDGET_MS;
-  let budgetSource: "default" | "env" | "flag" = "default";
-  if (env.GAUNTLET_MAX_TIME) {
+  // defaultBudgetMs — wall-clock budget for the agent loop. Both env and
+  // flag wrap parseDuration's error to label the source.
+  const parseBudget = (raw: string, label: string): number => {
     try {
-      defaultBudgetMs = parseDuration(env.GAUNTLET_MAX_TIME);
+      return parseDuration(raw);
     } catch (err) {
-      throw new Error(`Invalid GAUNTLET_MAX_TIME "${env.GAUNTLET_MAX_TIME}": ${(err as Error).message}`);
+      throw new Error(`Invalid ${label} "${raw}": ${(err as Error).message}`);
     }
-    budgetSource = "env";
-  }
-  if (args.maxTime !== undefined) {
-    try {
-      defaultBudgetMs = parseDuration(args.maxTime);
-    } catch (err) {
-      throw new Error(`Invalid --max-time "${args.maxTime}": ${(err as Error).message}`);
-    }
-    budgetSource = "flag";
-  }
+  };
+  const budgetR = resolveSetting({
+    default: DEFAULT_BUDGET_MS,
+    env: { name: "GAUNTLET_MAX_TIME", parse: (s) => parseBudget(s, "GAUNTLET_MAX_TIME") },
+    arg: { value: args.maxTime !== undefined ? parseBudget(args.maxTime, "--max-time") : undefined },
+  }, env);
+  const defaultBudgetMs = budgetR.value;
+  const budgetSource = budgetR.source;
 
   // defaultReflectionInterval — turns between reflection checkpoints.
   // 0 disables. Prompt-only nudge, not enforced.
-  let defaultReflectionInterval = DEFAULT_REFLECTION_INTERVAL;
-  let reflectionSource: "default" | "env" | "flag" = "default";
-  if (env.GAUNTLET_REFLECTION_INTERVAL) {
-    const raw = env.GAUNTLET_REFLECTION_INTERVAL;
-    if (!/^\d+$/.test(raw)) {
-      throw new Error(`Invalid GAUNTLET_REFLECTION_INTERVAL "${raw}": expected non-negative integer (0 disables)`);
+  const validateReflection = (n: number): number => {
+    if (!Number.isInteger(n) || n < 0) {
+      throw new Error(`Invalid --reflection-interval ${n}: expected non-negative integer (0 disables)`);
     }
-    defaultReflectionInterval = parseInt(raw, 10);
-    reflectionSource = "env";
-  }
-  if (args.reflectionInterval !== undefined) {
-    if (!Number.isInteger(args.reflectionInterval) || args.reflectionInterval < 0) {
-      throw new Error(`Invalid --reflection-interval ${args.reflectionInterval}: expected non-negative integer (0 disables)`);
+    return n;
+  };
+  const reflectionR = resolveSetting({
+    default: DEFAULT_REFLECTION_INTERVAL,
+    env: {
+      name: "GAUNTLET_REFLECTION_INTERVAL",
+      parse: (raw) => {
+        if (!/^\d+$/.test(raw)) {
+          throw new Error(`Invalid GAUNTLET_REFLECTION_INTERVAL "${raw}": expected non-negative integer (0 disables)`);
+        }
+        return parseInt(raw, 10);
+      },
+    },
+    arg: { value: args.reflectionInterval !== undefined ? validateReflection(args.reflectionInterval) : undefined },
+  }, env);
+  const defaultReflectionInterval = reflectionR.value;
+  const reflectionSource = reflectionR.source;
+
+  // Shared parser for env-only non-negative integer knobs (PRI-1477, PRI-1478).
+  // The helper already filters empty/undefined; this parses a guaranteed
+  // non-empty raw string.
+  const parseNonNegInt = (raw: string, label: string): number => {
+    const parsed = parseInt(raw, 10);
+    if (Number.isNaN(parsed) || parsed < 0) {
+      throw new Error(`Invalid ${label} "${raw}": expected a non-negative integer`);
     }
-    defaultReflectionInterval = args.reflectionInterval;
-    reflectionSource = "flag";
-  }
+    return parsed;
+  };
 
   // shutdownGraceMs — drain window for graceful shutdown (PRI-1477).
   // No flag override; this is an operator-level knob (env only).
-  const shutdownGraceMs = parseNonNegIntEnv(
-    env.GAUNTLET_SHUTDOWN_GRACE_MS,
-    "GAUNTLET_SHUTDOWN_GRACE_MS",
-    DEFAULT_SHUTDOWN_GRACE_MS,
-  );
-  const shutdownGraceMsSource: "default" | "env" = env.GAUNTLET_SHUTDOWN_GRACE_MS ? "env" : "default";
+  const shutdownGraceR = resolveEnvOnlySetting({
+    default: DEFAULT_SHUTDOWN_GRACE_MS,
+    env: { name: "GAUNTLET_SHUTDOWN_GRACE_MS", parse: (s) => parseNonNegInt(s, "GAUNTLET_SHUTDOWN_GRACE_MS") },
+  }, env);
+  const shutdownGraceMs = shutdownGraceR.value;
+  const shutdownGraceMsSource = shutdownGraceR.source;
 
-  // PRI-1478 caps — operator-level knobs (env only). Each parses a
-  // non-negative integer or throws with a uniform shape.
-  const maxRequestBodySize = parseNonNegIntEnv(
-    env.GAUNTLET_MAX_REQUEST_BODY_SIZE,
-    "GAUNTLET_MAX_REQUEST_BODY_SIZE",
-    DEFAULT_MAX_REQUEST_BODY_SIZE,
-  );
-  const maxRequestBodySizeSource: "default" | "env" =
-    env.GAUNTLET_MAX_REQUEST_BODY_SIZE ? "env" : "default";
+  // PRI-1478 caps — operator-level knobs (env only).
+  const maxRequestBodySizeR = resolveEnvOnlySetting({
+    default: DEFAULT_MAX_REQUEST_BODY_SIZE,
+    env: { name: "GAUNTLET_MAX_REQUEST_BODY_SIZE", parse: (s) => parseNonNegInt(s, "GAUNTLET_MAX_REQUEST_BODY_SIZE") },
+  }, env);
+  const maxRequestBodySize = maxRequestBodySizeR.value;
+  const maxRequestBodySizeSource = maxRequestBodySizeR.source;
 
-  const maxConcurrentRuns = parseNonNegIntEnv(
-    env.GAUNTLET_MAX_CONCURRENT_RUNS,
-    "GAUNTLET_MAX_CONCURRENT_RUNS",
-    DEFAULT_MAX_CONCURRENT_RUNS,
-  );
-  const maxConcurrentRunsSource: "default" | "env" =
-    env.GAUNTLET_MAX_CONCURRENT_RUNS ? "env" : "default";
+  const maxConcurrentRunsR = resolveEnvOnlySetting({
+    default: DEFAULT_MAX_CONCURRENT_RUNS,
+    env: { name: "GAUNTLET_MAX_CONCURRENT_RUNS", parse: (s) => parseNonNegInt(s, "GAUNTLET_MAX_CONCURRENT_RUNS") },
+  }, env);
+  const maxConcurrentRuns = maxConcurrentRunsR.value;
+  const maxConcurrentRunsSource = maxConcurrentRunsR.source;
 
-  const activeRunTargetMaxBytes = parseNonNegIntEnv(
-    env.GAUNTLET_ACTIVE_RUN_TARGET_MAX_BYTES,
-    "GAUNTLET_ACTIVE_RUN_TARGET_MAX_BYTES",
-    DEFAULT_ACTIVE_RUN_TARGET_MAX_BYTES,
-  );
-  const activeRunTargetMaxBytesSource: "default" | "env" =
-    env.GAUNTLET_ACTIVE_RUN_TARGET_MAX_BYTES ? "env" : "default";
+  const activeRunTargetMaxBytesR = resolveEnvOnlySetting({
+    default: DEFAULT_ACTIVE_RUN_TARGET_MAX_BYTES,
+    env: { name: "GAUNTLET_ACTIVE_RUN_TARGET_MAX_BYTES", parse: (s) => parseNonNegInt(s, "GAUNTLET_ACTIVE_RUN_TARGET_MAX_BYTES") },
+  }, env);
+  const activeRunTargetMaxBytes = activeRunTargetMaxBytesR.value;
+  const activeRunTargetMaxBytesSource = activeRunTargetMaxBytesR.source;
 
   // PRI-1483 WebSocket hygiene knobs.
-  const wsIdleTimeoutSec = parseNonNegIntEnv(
-    env.GAUNTLET_WS_IDLE_TIMEOUT_SEC,
-    "GAUNTLET_WS_IDLE_TIMEOUT_SEC",
-    DEFAULT_WS_IDLE_TIMEOUT_SEC,
-  );
-  const wsIdleTimeoutSecSource: "default" | "env" =
-    env.GAUNTLET_WS_IDLE_TIMEOUT_SEC ? "env" : "default";
+  const wsIdleTimeoutSecR = resolveEnvOnlySetting({
+    default: DEFAULT_WS_IDLE_TIMEOUT_SEC,
+    env: { name: "GAUNTLET_WS_IDLE_TIMEOUT_SEC", parse: (s) => parseNonNegInt(s, "GAUNTLET_WS_IDLE_TIMEOUT_SEC") },
+  }, env);
+  const wsIdleTimeoutSec = wsIdleTimeoutSecR.value;
+  const wsIdleTimeoutSecSource = wsIdleTimeoutSecR.source;
 
-  const wsOriginAllowlist = env.GAUNTLET_WS_ORIGIN_ALLOWLIST
-    ? env.GAUNTLET_WS_ORIGIN_ALLOWLIST.split(",").map((s) => s.trim()).filter(Boolean)
-    : [];
-  const wsOriginAllowlistSource: "default" | "env" =
-    env.GAUNTLET_WS_ORIGIN_ALLOWLIST ? "env" : "default";
+  const wsOriginAllowlistR = resolveEnvOnlySetting<string[]>({
+    default: [],
+    env: { name: "GAUNTLET_WS_ORIGIN_ALLOWLIST", parse: (s) => s.split(",").map((x) => x.trim()).filter(Boolean) },
+  }, env);
+  const wsOriginAllowlist = wsOriginAllowlistR.value;
+  const wsOriginAllowlistSource = wsOriginAllowlistR.source;
 
   // models.agent
-  let agentModel = DEFAULT_AGENT_MODEL;
-  let agentSource: "default" | "env" | "flag" = "default";
-  if (env.GAUNTLET_AGENT_MODEL) {
-    agentModel = env.GAUNTLET_AGENT_MODEL;
-    agentSource = "env";
-  }
-  if (args.models?.agent) {
-    agentModel = args.models.agent;
-    agentSource = "flag";
-  }
+  const agentR = resolveSetting({
+    default: DEFAULT_AGENT_MODEL,
+    env: { name: "GAUNTLET_AGENT_MODEL", parse: (s) => s },
+    arg: { value: args.models?.agent },
+  }, env);
+  const agentModel = agentR.value;
+  const agentSource = agentR.source;
 
-  // models.fanout
-  let fanoutModel: string | undefined;
-  let fanoutSource: "default" | "env" | "flag" | "unset" = "unset";
-  if (env.GAUNTLET_FANOUT_MODEL) {
-    fanoutModel = env.GAUNTLET_FANOUT_MODEL;
-    fanoutSource = "env";
-  }
-  if (args.models?.fanout) {
-    fanoutModel = args.models.fanout;
-    fanoutSource = "flag";
-  }
+  // models.fanout — no in-code default, so source starts as "unset".
+  const fanoutR = resolveSetting<string | undefined, "unset">({
+    default: undefined,
+    noValueSource: "unset",
+    env: { name: "GAUNTLET_FANOUT_MODEL", parse: (s) => s },
+    arg: { value: args.models?.fanout },
+  }, env);
+  const fanoutModel = fanoutR.value;
+  const fanoutSource = fanoutR.source;
 
   // models.available — operator-controlled allow-list. Empty means "no
   // restriction": per-request body model overrides flow through unchecked.
   // When the operator sets GAUNTLET_MODELS, the route layer enforces it.
-  let availableModels: string[] = [];
-  let availableSource: "default" | "env" | "flag" = "default";
-  if (env.GAUNTLET_MODELS) {
-    availableModels = env.GAUNTLET_MODELS.split(",").map((s) => s.trim()).filter(Boolean);
-    availableSource = "env";
-  }
+  // (sources tracker typed `default | env | flag` for back-compat; flag
+  // is unreachable since there is no --models flag.)
+  const availableR = resolveEnvOnlySetting<string[]>({
+    default: [],
+    env: { name: "GAUNTLET_MODELS", parse: (s) => s.split(",").map((x) => x.trim()).filter(Boolean) },
+  }, env);
+  const availableModels = availableR.value;
+  const availableSource: "default" | "env" | "flag" = availableR.source;
 
   // apiKeys (presence only)
   const apiKeys = {
@@ -612,6 +591,11 @@ export function loadConfig(args: CliArgsInput, env: NodeJS.ProcessEnv): AppConfi
   };
 
   // credentialResolver — caller-provided fetch_credential backend (PRI-1605).
+  // Not migrated to resolveEnvOnlySetting because the resolved value is a
+  // composed record built from THREE env vars (resolver path + timeout + the
+  // transcripts toggle), gated by the primary env var. The helper shape
+  // assumes one env var → one parsed value; emulating the composition
+  // through it would be noisier than the explicit block.
   let credentialResolver: CredentialResolverConfig | undefined;
   let credentialResolverSource: "default" | "env" = "default";
   if (env.GAUNTLET_CREDENTIAL_RESOLVER) {
@@ -619,11 +603,10 @@ export function loadConfig(args: CliArgsInput, env: NodeJS.ProcessEnv): AppConfi
       env.GAUNTLET_CREDENTIAL_RESOLVER,
       projectRoot,
     );
-    const timeoutMs = parseNonNegIntEnv(
-      env.GAUNTLET_CREDENTIAL_RESOLVER_TIMEOUT_MS,
-      "GAUNTLET_CREDENTIAL_RESOLVER_TIMEOUT_MS",
-      DEFAULT_CREDENTIAL_RESOLVER_TIMEOUT_MS,
-    );
+    const rawTimeout = env.GAUNTLET_CREDENTIAL_RESOLVER_TIMEOUT_MS;
+    const timeoutMs = rawTimeout
+      ? parseNonNegInt(rawTimeout, "GAUNTLET_CREDENTIAL_RESOLVER_TIMEOUT_MS")
+      : DEFAULT_CREDENTIAL_RESOLVER_TIMEOUT_MS;
     const includeInTranscripts = env.GAUNTLET_CREDENTIAL_INCLUDE_IN_TRANSCRIPTS
       ? parseBoolEnv(env.GAUNTLET_CREDENTIAL_INCLUDE_IN_TRANSCRIPTS, "GAUNTLET_CREDENTIAL_INCLUDE_IN_TRANSCRIPTS")
       : false;

@@ -1,6 +1,6 @@
 import { readFileSync } from "fs";
 import * as YAML from "yaml";
-import type { ToolDefinition, ToolResult } from "../../models/provider";
+import { textResult, type ToolDefinition, type ToolResult } from "../../models/provider";
 import type { EvidenceLogger } from "../../evidence/logger";
 import { contextRootIsPopulated, resolveInside } from "../../paths";
 
@@ -177,9 +177,7 @@ export function buildInstallPasskeyTool(
       logger?.logEvent("install_passkey_failed", {
         path: "", step: "validate_args", error: "missing path argument",
       });
-      return {
-        text: `Error: install_passkey requires a "path" argument (relative to .gauntlet/context/).`,
-      };
+      return textResult(`Error: install_passkey requires a "path" argument (relative to .gauntlet/context/).`);
     }
 
     let resolved: string;
@@ -190,7 +188,7 @@ export function buildInstallPasskeyTool(
       logger?.logEvent("install_passkey_failed", {
         path, step: "resolve_path", error,
       });
-      return { text: `Error: ${error}` };
+      return textResult(`Error: ${error}`);
     }
 
     let credential: PasskeyCredential;
@@ -201,7 +199,7 @@ export function buildInstallPasskeyTool(
       logger?.logEvent("install_passkey_failed", {
         path, step: "read_passkey", error,
       });
-      return { text: `Error: ${error}` };
+      return textResult(`Error: ${error}`);
     }
 
     // Close any prior session so the next ceremony starts clean. Prior
@@ -224,9 +222,7 @@ export function buildInstallPasskeyTool(
       logger?.logEvent("install_passkey_ok", {
         path, authenticatorId, ...credentialContext(credential),
       });
-      return {
-        text: `Installed passkey from "${path}" (rpId: ${credential.rpId}). The browser will now answer WebAuthn challenges for this credential until the next navigation.`,
-      };
+      return textResult(`Installed passkey from "${path}" (rpId: ${credential.rpId}). The browser will now answer WebAuthn challenges for this credential until the next navigation.`);
     } catch (err) {
       const error = errorMessage(err);
       logger?.logEvent("install_passkey_failed", {
@@ -235,7 +231,7 @@ export function buildInstallPasskeyTool(
         authenticatorOptions: DEFAULT_AUTHENTICATOR_OPTIONS,
         credential: credentialContext(credential),
       });
-      return { text: `Error installing passkey from "${path}" at step "${step}": ${error}` };
+      return textResult(`Error installing passkey from "${path}" at step "${step}": ${error}`);
     }
   };
 

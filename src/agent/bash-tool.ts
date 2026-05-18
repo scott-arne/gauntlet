@@ -1,10 +1,10 @@
 import { mkdirSync } from "fs";
-import type { ToolDefinition, ToolResult } from "../models/provider";
+import { textResult, type ToolDefinition, type ToolResult } from "../models/provider";
 import type { EvidenceLogger } from "../evidence/logger";
 import { spawn } from "../runtime/spawn";
 import { killProcessTree, listDescendants } from "../runtime/process-tree";
 
-export const BASH_TOOL_DESCRIPTION =
+const BASH_TOOL_DESCRIPTION =
   "The best interface for inspecting logs and files on the host via " +
   "standard Unix tools (rg, tail, grep, cat, wc, find, head, jq, etc.). " +
   "Use this to verify what the system under test actually did or what " +
@@ -57,10 +57,10 @@ export function buildBashTool(opts: BashToolOptions): BashTool {
   ): Promise<ToolResult> => {
     const command = typeof args.command === "string" ? args.command : "";
     if (!command) {
-      return { text: `Error: bash requires a non-empty "command" argument.` };
+      return textResult(`Error: bash requires a non-empty "command" argument.`);
     }
     if (!opts.cwd) {
-      return { text: `Error: bash tool has no cwd configured (adapter was constructed without runDir; this path is for tool-definition introspection, not execution).` };
+      return textResult(`Error: bash tool has no cwd configured (adapter was constructed without runDir; this path is for tool-definition introspection, not execution).`);
     }
 
     const cwd = opts.cwd;
@@ -83,7 +83,7 @@ export function buildBashTool(opts: BashToolOptions): BashTool {
     } catch (err) {
       const msg = err instanceof Error ? err.message : String(err);
       logger.logEvent("bash_spawn_failed", { command, error: msg });
-      return { text: `Error: bash spawn failed: ${msg}` };
+      return textResult(`Error: bash spawn failed: ${msg}`);
     }
 
     let timedOut = false;
@@ -113,8 +113,8 @@ export function buildBashTool(opts: BashToolOptions): BashTool {
       elapsed_ms: elapsedMs,
     });
 
-    return {
-      text: formatResult({
+    return textResult(
+      formatResult({
         stdout: stdoutResult.text,
         stderr: stderrResult.text,
         exit_code: timedOut || code < 0 ? null : code,
@@ -122,7 +122,7 @@ export function buildBashTool(opts: BashToolOptions): BashTool {
         timed_out: timedOut,
         elapsed_ms: elapsedMs,
       }),
-    };
+    );
   };
 
   return { definition, execute };

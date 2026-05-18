@@ -117,7 +117,7 @@ export async function ask(args: AskArgs, config: AppConfig): Promise<number> {
         const answerCall = response.toolCalls.find((tc) => tc.name === "answer");
         if (answerCall) {
           messages.push(
-            ...client.toolResultMessages([answerCall], [{ text: "" }]),
+            ...client.toolResultMessages([answerCall], [{ kind: "text", text: "" }]),
           );
         }
       } catch (err) {

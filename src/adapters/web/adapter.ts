@@ -1,10 +1,7 @@
-import { readFileSync, unlinkSync } from "fs";
-import { rm } from "fs/promises";
 import { join } from "path";
-import { tmpdir } from "os";
 import type { Adapter } from "../adapter";
-import type { ToolDefinition, ToolResult } from "../../models/provider";
-import type { EvidenceLogger, BrowserEventCategory } from "../../evidence/logger";
+import { textResult, type ToolDefinition, type ToolResult } from "../../models/provider";
+import type { EvidenceLogger } from "../../evidence/logger";
 import { DEFAULT_VIEWPORT, type ChromeEndpoint, type Viewport } from "../../config";
 import type { CredentialResolverConfig } from "../../config";
 import { buildSharedTools, type SharedTools } from "../../agent/shared-tools";
@@ -19,6 +16,32 @@ import {
   type CookiesTool,
 } from "./cookies";
 import { validateToolArgs } from "../../agent/validators";
+import { webToolDefinitions } from "./tool-defs";
+import { executeScreenshot, executeExtract, executeWaitFor } from "./tools/visual";
+import {
+  executeClick,
+  executeHover,
+  executeDoubleClick,
+  executeRightClick,
+  executeDrag,
+  executeMouseMove,
+  executeScroll,
+} from "./tools/pointer";
+import { executeType, executePress } from "./tools/keyboard";
+import { executeNavigate, executeEval, executeFileUpload } from "./tools/page-actions";
+import {
+  startWebAdapter,
+  closeWebAdapter,
+  type WebLifecycleState,
+} from "./lifecycle";
+import { buildReturnScreenshot } from "./tools/return-screenshot";
+import {
+  executeNewTab,
+  executeCloseTab,
+  MAX_TAB_DEPTH,
+  type WebTabsCtx,
+} from "./tools/tabs";
+import type { WebToolCtx } from "./tools/types";
 
 // The forked CDP library is CommonJS JS — use require for bun compatibility.
 // PRI-1436: chrome-ws-lib's only top-level export is now `createSession()`.
@@ -43,12 +66,6 @@ const { createSession } = require("./lib/chrome-ws-lib") as {
 const PASSKEY_TAB = 0;
 const COOKIES_TAB = 0;
 
-// PRI-1439: cap on side-trip nesting depth. 1 = original tab only;
-// each `new_tab` pushes; each `close_tab` pops. Typical use is 1–2 levels
-// (signin → email; signin → password manager → 2FA portal). The cap is
-// a guardrail against runaway tab creation, not a tuning knob.
-const MAX_TAB_DEPTH = 5;
-
 // Tools whose successful invocation changes browser/application state.
 // Used by isMutatingTool() to decide which calls land in the reflection
 // trace. read / screenshot / extract / wait_for / install_passkey /
@@ -60,12 +77,6 @@ const WEB_MUTATING_TOOLS = new Set([
   "drag", "mouse_move", "scroll", "file_upload", "navigate", "eval",
   "new_tab", "close_tab",
 ]);
-
-// Hard cap on how long a `return_screenshot` capture is allowed to take.
-// The pre-fix observed failure mode was a 30s hang when the capture was
-// issued mid-navigation; this cap turns that into a fast skip-with-reason
-// instead (see PRI-1517).
-const RETURN_SCREENSHOT_TIMEOUT_MS = 5000;
 
 // The default driver opens a dedicated CDP session (pinned WebSocket) for
 // WebAuthn. See chrome-ws-lib's webAuthnOpenSession comment for why we
@@ -146,7 +157,7 @@ export interface WebAdapterOptions {
 }
 
 export interface ScreenshotResult {
-  image?: ToolResult["image"];
+  image?: { data: string; mediaType: string };
   imagePath?: string;
   screenshotSkipped?: string;
 }
@@ -156,19 +167,21 @@ export function composeResult(
   screenshot: ScreenshotResult
 ): ToolResult {
   if (screenshot.screenshotSkipped) {
-    return {
-      text: `${text} (screenshot unavailable: ${screenshot.screenshotSkipped})`,
-    };
+    return textResult(
+      `${text} (screenshot unavailable: ${screenshot.screenshotSkipped})`,
+    );
   }
   // Always pass image + imagePath together — takeReturnScreenshot sets
   // them as a unit. If imagePath is set without image, that would be a
   // bug worth surfacing rather than silently dropping.
+  if (screenshot.image === undefined) {
+    return textResult(text);
+  }
   return {
+    kind: "image",
     text,
-    ...(screenshot.image !== undefined && {
-      image: screenshot.image,
-      imagePath: screenshot.imagePath,
-    }),
+    image: screenshot.image,
+    imagePath: screenshot.imagePath,
   };
 }
 
@@ -332,72 +345,31 @@ export class WebAdapter implements Adapter {
   }
 
   async start(url: string): Promise<void> {
-    if (!this.remote) {
-      // Pass the per-run profile name (spec §5.1) so each run gets its
-      // own --user-data-dir. Falls back to chrome-ws-lib's default when
-      // the runner did not provide one (kept for test backwards-compat).
-      await this.chrome.startChrome(true, this.chromeProfileName ?? null); // headless
-    }
+    const state = this.lifecycleState();
+    await startWebAdapter(state, url);
+    // Copy mutated fields back to the class instance.
+    this.context = state.context;
+    this.observerSession = state.observerSession;
+  }
 
-    // PRI-1535: one BrowserContext per WebAdapter — atomic isolation primitive
-    // replacing the per-launch --user-data-dir for cleanup. createBrowserContext
-    // lazy-opens the browser-WS under the hood. createPage navigates the new
-    // page to the target URL, so no separate navigate(0, url) is needed.
-    const ctx = await this.chrome.createBrowserContext();
-    this.context = ctx;
-    const page = await ctx.createPage(url);
-
-    // Seed the focus stack with the page's WS URL (PRI-1439).
-    this.tabStack.push({
-      wsUrl: page.webSocketDebuggerUrl,
-      url: page.url ?? url,
-    });
-
-    // Pin the viewport against this specific page's WS URL — under
-    // BrowserContext-per-adapter, getTabs()[0] is no longer guaranteed to
-    // be our page. Best-effort: a failed viewport override does not fail
-    // the run, since --window-size already gives a reasonable default.
-    if (this.viewport) {
-      try {
-        await this.chrome.setViewport(page.webSocketDebuggerUrl, {
-          width: this.viewport.width,
-          height: this.viewport.height,
-          deviceScaleFactor: 1,
-          mobile: false,
-        });
-      } catch (err) {
-        this.logger?.logEvent("set_viewport_failed", {
-          reason: err instanceof Error ? err.message : String(err),
-          requested: this.viewport,
-        });
-      }
-    }
-
-    // PRI-1535: the previous remote-only `clearBrowserData(0)` call is gone —
-    // a fresh BrowserContext starts clean by construction.
-
-    // Open the observer session against the page's WS URL (not numeric 0).
-    // Runs *after* the page is created so the initial load and LiveSocket
-    // handshake are captured as the first events we see.
-    if (this.logger) {
-      const logger = this.logger;
-      try {
-        this.observerSession = await this.chrome.openObserverSession(
-          page.webSocketDebuggerUrl,
-          (category: BrowserEventCategory, payload: Record<string, unknown>) => {
-            try {
-              logger.logBrowserEvent(category, payload);
-            } catch {
-              // evidence writes are best-effort; never let them break a run
-            }
-          },
-        );
-      } catch (err) {
-        // Observer is supplementary. If it fails to start, log and continue.
-        const reason = err instanceof Error ? err.message : String(err);
-        logger.logEvent("observer_session_failed", { reason });
-      }
-    }
+  /**
+   * Build a mutable lifecycle-state view over this adapter's fields.
+   * The lifecycle helpers mutate `tabStack` in place and reassign
+   * `context` / `observerSession` on the struct; the caller copies
+   * those reassignments back onto `this` after the call.
+   */
+  private lifecycleState(): WebLifecycleState {
+    return {
+      remote: this.remote,
+      chrome: this.chrome,
+      chromeProfileName: this.chromeProfileName,
+      viewport: this.viewport,
+      logger: this.logger,
+      passkeyTool: this.passkeyTool,
+      tabStack: this.tabStack,
+      context: this.context,
+      observerSession: this.observerSession,
+    };
   }
 
   describeTarget(target: string): string {
@@ -412,87 +384,10 @@ export class WebAdapter implements Adapter {
   }
 
   async close(): Promise<void> {
-    // Close the observer first so it stops trying to drain events from
-    // a dying target.
-    if (this.observerSession) {
-      try {
-        this.observerSession.close();
-      } catch {
-        // best-effort
-      }
-      this.observerSession = null;
-    }
-    // PRI-1439: pop and close any side-trip tabs the agent left open
-    // (anything pushed above the original). The original tab is left
-    // alone — it'll go away when killChrome() runs (local) or be reset
-    // by the next run via clearBrowserData (remote). Each force-close
-    // emits a `tab_focus_changed` pop so the run.jsonl timeline shows
-    // every push paired with a pop.
-    while (this.tabStack.length > 1) {
-      const popped = this.tabStack.pop()!;
-      this.logger?.logEvent("tab_focus_changed", {
-        action: "pop",
-        depth: this.tabStack.length,
-        ws_url: popped.wsUrl,
-        url: popped.url,
-        reason: "adapter_close",
-      });
-      try {
-        await this.chrome.closeTab(popped.wsUrl);
-      } catch (err) {
-        this.logger?.logEvent("tab_force_close_failed", {
-          ws_url: popped.wsUrl,
-          url: popped.url,
-          reason: err instanceof Error ? err.message : String(err),
-        });
-      }
-    }
-    // Drop the original tab from the stack so a reused adapter would
-    // start clean. Reuse isn't a current code path, but the inconsistent
-    // post-close state is an easy footgun.
-    this.tabStack = [];
-
-    // PRI-1535: dispose the BrowserContext atomically. Runs AFTER the
-    // side-trip pop loop (which relies on per-page WS being usable for
-    // closeTab) and BEFORE killChrome / passkey teardown. Chrome tears
-    // down cookies/storage/IDB/SW for the context in one call, replacing
-    // the inline clearBrowserData sweep that used to live in start().
-    if (this.context) {
-      try {
-        await this.context.dispose();
-      } catch (err) {
-        this.logger?.logEvent("browser_context_dispose_failed", {
-          reason: err instanceof Error ? err.message : String(err),
-        });
-      }
-      this.context = null;
-    }
-    // Tear the virtual authenticator down before killing Chrome so that
-    // remote Chrome sessions (where we didn't start the process) don't
-    // leak state across runs. For locally-spawned Chrome, killChrome
-    // makes this a best-effort no-op — errors are swallowed inside.
-    if (this.passkeyTool) {
-      await this.passkeyTool.teardown();
-    }
-    if (!this.remote) {
-      await this.chrome.killChrome();
-      // Recursively delete the per-run Chrome profile directory (spec
-      // §5.1). Best-effort: failures are logged as an action-log entry
-      // but never thrown — a leftover stale dir is preferable to
-      // failing the close path. Skipped when no profile name was
-      // provided (e.g., legacy/test usage without a runner).
-      if (this.chromeProfileName) {
-        const dir = this.chrome.getChromeProfileDir(this.chromeProfileName);
-        try {
-          await rm(dir, { recursive: true, force: true });
-        } catch (err) {
-          this.logger?.logEvent("chrome_profile_cleanup_failed", {
-            dir,
-            error: err instanceof Error ? err.message : String(err),
-          });
-        }
-      }
-    }
+    const state = this.lifecycleState();
+    await closeWebAdapter(state);
+    this.context = state.context;
+    this.observerSession = state.observerSession;
   }
 
   isMutatingTool(name: string): boolean {
@@ -500,384 +395,7 @@ export class WebAdapter implements Adapter {
   }
 
   toolDefinitions(): ToolDefinition[] {
-    const tools: ToolDefinition[] = [
-      {
-        name: "screenshot",
-        description:
-          "Capture rendered pixels of the page or an element. Use for " +
-          "anything visual (images, icons, SVG, canvas, layout, color) — " +
-          "`extract` only returns DOM text.",
-        parameters: {
-          type: "object",
-          properties: {
-            selector: {
-              type: "string",
-              description: "CSS selector to screenshot a specific element",
-            },
-            fullPage: {
-              type: "boolean",
-              description: "Capture the full scrollable page",
-            },
-          },
-        },
-      },
-      {
-        name: "click",
-        description:
-          "Click an element matching the given selector. Supports CSS " +
-          "selectors, XPath (starts with `/`), and jQuery-style " +
-          "`:contains('text')` for matching by text content (e.g. " +
-          "`button:contains('Log in')`). Reports an Error result if the " +
-          "element cannot be found — if the result starts with 'Error:', " +
-          "the click did NOT happen and the page state is unchanged.",
-        parameters: {
-          type: "object",
-          properties: {
-            selector: {
-              type: "string",
-              description:
-                "Selector of the element to click. CSS (e.g. `#foo .btn`), XPath (e.g. `//button[text()='Log in']`), or CSS + jQuery-style `:contains('text')`.",
-            },
-            return_screenshot: {
-              type: "boolean",
-              description:
-                "Screenshot after the action. Set true when the outcome " +
-                "is visual (image loads, modal/chart appears, layout shifts).",
-            },
-          },
-          required: ["selector"],
-        },
-      },
-      {
-        name: "type",
-        description:
-          "Type text into an element. If selector is provided, clicks it first then fills.",
-        parameters: {
-          type: "object",
-          properties: {
-            text: { type: "string", description: "Text to type" },
-            selector: {
-              type: "string",
-              description: "CSS selector of the input element",
-            },
-            return_screenshot: {
-              type: "boolean",
-              description:
-                "Screenshot after the action. Set true when the outcome " +
-                "is visual (image loads, modal/chart appears, layout shifts).",
-            },
-          },
-          required: ["text"],
-        },
-      },
-      {
-        name: "press",
-        description:
-          "Press a special key (Enter, Tab, Escape, ArrowDown, etc.)",
-        parameters: {
-          type: "object",
-          properties: {
-            key: { type: "string", description: "Key name to press" },
-            return_screenshot: {
-              type: "boolean",
-              description:
-                "Screenshot after the action. Set true when the outcome " +
-                "is visual (image loads, modal/chart appears, layout shifts).",
-            },
-          },
-          required: ["key"],
-        },
-      },
-      {
-        name: "hover",
-        description:
-          "Move the mouse over an element (fires CSS :hover, tooltips, " +
-          "hover-to-reveal menus). Uses CDP mouse events, not synthetic " +
-          "JS — will fire real pointer/mouse listeners on the page.",
-        parameters: {
-          type: "object",
-          properties: {
-            selector: {
-              type: "string",
-              description: "Selector of the element to hover over (CSS, XPath, or :contains()).",
-            },
-            return_screenshot: {
-              type: "boolean",
-              description:
-                "Screenshot after the action. Set true when the outcome " +
-                "is visual (image loads, modal/chart appears, layout shifts).",
-            },
-          },
-          required: ["selector"],
-        },
-      },
-      {
-        name: "double_click",
-        description: "Double-click an element. Fires two clicks plus dblclick.",
-        parameters: {
-          type: "object",
-          properties: {
-            selector: {
-              type: "string",
-              description: "Selector of the element to double-click.",
-            },
-            return_screenshot: {
-              type: "boolean",
-              description:
-                "Screenshot after the action. Set true when the outcome " +
-                "is visual (image loads, modal/chart appears, layout shifts).",
-            },
-          },
-          required: ["selector"],
-        },
-      },
-      {
-        name: "right_click",
-        description:
-          "Right-click an element (fires contextmenu). Use when you need " +
-          "to open a context menu — does not dismiss the menu on its own.",
-        parameters: {
-          type: "object",
-          properties: {
-            selector: {
-              type: "string",
-              description: "Selector of the element to right-click.",
-            },
-            return_screenshot: {
-              type: "boolean",
-              description:
-                "Screenshot after the action. Set true when the outcome " +
-                "is visual (image loads, modal/chart appears, layout shifts).",
-            },
-          },
-          required: ["selector"],
-        },
-      },
-      {
-        name: "drag",
-        description:
-          "Drag an element to a target (native DnD pipeline via CDP mouse " +
-          "events, so drop handlers receive a real DataTransfer). Target is " +
-          "either another selector or explicit {x, y} coordinates.",
-        parameters: {
-          type: "object",
-          properties: {
-            source_selector: {
-              type: "string",
-              description: "Selector of the element to drag.",
-            },
-            target_selector: {
-              type: "string",
-              description: "Selector of the drop target. Provide this OR target_x+target_y.",
-            },
-            target_x: {
-              type: "number",
-              description: "Drop-target X coordinate (viewport pixels). Use with target_y.",
-            },
-            target_y: {
-              type: "number",
-              description: "Drop-target Y coordinate (viewport pixels). Use with target_x.",
-            },
-            return_screenshot: {
-              type: "boolean",
-              description:
-                "Screenshot after the action. Set true when the outcome " +
-                "is visual (image loads, modal/chart appears, layout shifts).",
-            },
-          },
-          required: ["source_selector"],
-        },
-      },
-      {
-        name: "mouse_move",
-        description:
-          "Move the mouse to (x, y) in viewport coordinates. Used for hover " +
-          "effects at arbitrary points or for bot-detection puzzles that " +
-          "track pointer trajectories.",
-        parameters: {
-          type: "object",
-          properties: {
-            x: { type: "number", description: "Target X coordinate (viewport pixels)." },
-            y: { type: "number", description: "Target Y coordinate (viewport pixels)." },
-            return_screenshot: {
-              type: "boolean",
-              description:
-                "Screenshot after the action. Set true when the outcome " +
-                "is visual (image loads, modal/chart appears, layout shifts).",
-            },
-          },
-          required: ["x", "y"],
-        },
-      },
-      {
-        name: "scroll",
-        description:
-          "Scroll the page (or an element) using real mouse-wheel CDP events. " +
-          "More natural than JS scrollTo, which bot detectors can flag.",
-        parameters: {
-          type: "object",
-          properties: {
-            direction: {
-              type: "string",
-              enum: ["up", "down", "left", "right"],
-              description: "Scroll direction.",
-            },
-            amount: {
-              type: "number",
-              description: "Pixels to scroll. Defaults to 300.",
-            },
-            selector: {
-              type: "string",
-              description: "Optional selector to scroll from (wheel event anchored at its center).",
-            },
-            return_screenshot: {
-              type: "boolean",
-              description:
-                "Screenshot after the action. Set true when the outcome " +
-                "is visual (image loads, modal/chart appears, layout shifts).",
-            },
-          },
-          required: ["direction"],
-        },
-      },
-      {
-        name: "file_upload",
-        description:
-          "Upload local files to an <input type=file> element via " +
-          "DOM.setFileInputFiles — the only way to programmatically set " +
-          "files (JS cannot). File paths must be absolute.",
-        parameters: {
-          type: "object",
-          properties: {
-            selector: {
-              type: "string",
-              description: "Selector of the file input.",
-            },
-            file_paths: {
-              type: "array",
-              items: { type: "string" },
-              description: "Absolute paths of files to upload.",
-            },
-            return_screenshot: {
-              type: "boolean",
-              description:
-                "Screenshot after the action. Set true when the outcome " +
-                "is visual (image loads, modal/chart appears, layout shifts).",
-            },
-          },
-          required: ["selector", "file_paths"],
-        },
-      },
-      {
-        name: "navigate",
-        description: "Navigate the browser to a URL",
-        parameters: {
-          type: "object",
-          properties: {
-            url: { type: "string", description: "URL to navigate to" },
-            return_screenshot: {
-              type: "boolean",
-              description:
-                "Screenshot after the action. Set true when the outcome " +
-                "is visual (image loads, modal/chart appears, layout shifts).",
-            },
-          },
-          required: ["url"],
-        },
-      },
-      {
-        name: "extract",
-        description:
-          "Return the DOM text of the page or an element — text only. " +
-          "Images, SVG, canvas, and CSS backgrounds aren't seen; use " +
-          "`screenshot` for visual checks.",
-        parameters: {
-          type: "object",
-          properties: {
-            selector: {
-              type: "string",
-              description:
-                "CSS selector to extract from. Omit for full page markdown.",
-            },
-          },
-        },
-      },
-      // `eval` is intentionally not exposed (PRI-1590 experiment). The
-      // executor below still implements it so re-enabling is one line, but
-      // keeping it out of toolDefinitions() removes its pull on the agent
-      // toward developer-pattern escapes (form.submit(), raw fetch, etc.).
-      {
-        name: "wait_for",
-        description: "Wait for an element or text to appear on the page",
-        parameters: {
-          type: "object",
-          properties: {
-            selector: {
-              type: "string",
-              description: "CSS selector to wait for",
-            },
-            text: {
-              type: "string",
-              description: "Text content to wait for",
-            },
-            timeout: {
-              type: "number",
-              description: "Timeout in milliseconds (default 5000)",
-            },
-            return_screenshot: {
-              type: "boolean",
-              description:
-                "Screenshot after the action. Set true when the outcome " +
-                "is visual (image loads, modal/chart appears, layout shifts).",
-            },
-          },
-        },
-      },
-      {
-        name: "new_tab",
-        description:
-          "Open a new browser tab in the foreground for a side trip — " +
-          "fetching an OTP from email, retrieving a credential from a " +
-          "password manager, completing a 2FA portal handoff. Subsequent " +
-          "tool calls operate on the new tab. Use `close_tab` when done " +
-          "to return to the original page with its form values, cookies, " +
-          "and scroll position intact. Do NOT use `navigate` for side " +
-          "trips — it resets the original page state.",
-        parameters: {
-          type: "object",
-          properties: {
-            url: {
-              type: "string",
-              description: "Absolute URL to open in the new tab.",
-            },
-            return_screenshot: {
-              type: "boolean",
-              description:
-                "Screenshot the new tab after it loads.",
-            },
-          },
-          required: ["url"],
-        },
-      },
-      {
-        name: "close_tab",
-        description:
-          "Close the current side-trip tab and return focus to the " +
-          "previous tab. Use this when finished with a side trip opened " +
-          "via `new_tab`. Cannot close the original tab — for primary " +
-          "navigation use `navigate` instead.",
-        parameters: {
-          type: "object",
-          properties: {
-            return_screenshot: {
-              type: "boolean",
-              description:
-                "Screenshot the now-active tab after closing.",
-            },
-          },
-        },
-      },
-    ];
+    const tools: ToolDefinition[] = webToolDefinitions();
     if (this.passkeyTool) {
       tools.push(this.passkeyTool.definition);
     }
@@ -906,7 +424,7 @@ export class WebAdapter implements Adapter {
     if (schema) {
       const check = validateToolArgs(name, args, schema);
       if (!check.ok) {
-        return { text: `Error: invalid args for ${name}: ${check.reason}` };
+        return textResult(`Error: invalid args for ${name}: ${check.reason}`);
       }
     }
 
@@ -945,308 +463,62 @@ export class WebAdapter implements Adapter {
     }
 
     const tab = this.activeTab();
+    const takeReturnScreenshot = buildReturnScreenshot({
+      chrome: this.chrome,
+      defaultTab: tab,
+      logger,
+      toolName: name,
+      args,
+    });
 
-    const takeReturnScreenshot = async (
-      tabOverride?: typeof tab
-    ): Promise<ScreenshotResult> => {
-      if (!args.return_screenshot) return {};
-      const targetTab = tabOverride ?? tab;
-      const t0 = Date.now();
-      const tmpFile = join(tmpdir(), `gauntlet-screenshot-${Date.now()}.png`);
-      try {
-        await this.chrome.screenshot(targetTab, tmpFile, null, false, {
-          timeoutMs: RETURN_SCREENSHOT_TIMEOUT_MS,
-        });
-        const data = readFileSync(tmpFile);
-        const imagePath = logger.saveScreenshot(Buffer.from(data));
-        try { unlinkSync(tmpFile); } catch { /* best-effort */ }
-        return {
-          image: { data: Buffer.from(data).toString("base64"), mediaType: "image/png" },
-          imagePath,
-        };
-      } catch (err) {
-        try { unlinkSync(tmpFile); } catch { /* best-effort */ }
-        const reason = err instanceof Error ? err.message : String(err);
-        const elapsed = Date.now() - t0;
-        console.warn(
-          `[gauntlet] return_screenshot skipped (${name}, ${elapsed}ms): ${reason}`
-        );
-        return { screenshotSkipped: reason };
-      }
+    const ctx: WebToolCtx = {
+      chrome: this.chrome,
+      tab,
+      logger,
+      takeReturnScreenshot,
+    };
+
+    const tabsCtx: WebTabsCtx = {
+      ...ctx,
+      tabStack: this.tabStack,
+      recomputeActiveTab: () => this.activeTab(),
     };
 
     switch (name) {
-      case "screenshot": {
-        const tmpFile = join(
-          tmpdir(),
-          `gauntlet-screenshot-${Date.now()}.png`
-        );
-        await this.chrome.screenshot(
-          tab,
-          tmpFile,
-          (args.selector as string) ?? null,
-          (args.fullPage as boolean) ?? false
-        );
-        const data = readFileSync(tmpFile);
-        const saved = logger.saveScreenshot(Buffer.from(data));
-        try {
-          unlinkSync(tmpFile);
-        } catch {
-          // temp file cleanup is best-effort
-        }
-        return {
-          text: `Screenshot saved to ${saved}`,
-          image: { data: Buffer.from(data).toString("base64"), mediaType: "image/png" },
-          imagePath: saved,
-        };
-      }
-      case "click": {
-        try {
-          const result = await this.chrome.click(tab, args.selector as string);
-          const note = result?.fallback
-            ? ` (fallback: ${result.fallback})`
-            : "";
-          return composeResult(
-            `clicked ${args.selector}${note}`,
-            await takeReturnScreenshot()
-          );
-        } catch (err) {
-          // Make failures visible to the agent. A silent "clicked" when
-          // nothing actually got clicked is a classic way to waste 40
-          // turns.
-          const reason = err instanceof Error ? err.message : String(err);
-          return composeResult(
-            `Error: ${reason}`,
-            await takeReturnScreenshot()
-          );
-        }
-      }
-      case "type": {
-        const selector = args.selector as string | undefined;
-        const text = args.text as string;
-        if (selector) {
-          await this.chrome.fill(tab, selector, text);
-        } else {
-          // No selector — type via keyboard
-          for (const char of text) {
-            await this.chrome.keyboardPress(tab, char);
-          }
-        }
-        return composeResult("typed", await takeReturnScreenshot());
-      }
-      case "press": {
-        await this.chrome.keyboardPress(tab, args.key as string);
-        return composeResult("pressed", await takeReturnScreenshot());
-      }
-      case "hover": {
-        try {
-          await this.chrome.hover(tab, args.selector as string);
-          return composeResult(`hovered ${args.selector}`, await takeReturnScreenshot());
-        } catch (err) {
-          const reason = err instanceof Error ? err.message : String(err);
-          return composeResult(`Error: ${reason}`, await takeReturnScreenshot());
-        }
-      }
-      case "double_click": {
-        try {
-          await this.chrome.doubleClick(tab, args.selector as string);
-          return composeResult(`double-clicked ${args.selector}`, await takeReturnScreenshot());
-        } catch (err) {
-          const reason = err instanceof Error ? err.message : String(err);
-          return composeResult(`Error: ${reason}`, await takeReturnScreenshot());
-        }
-      }
-      case "right_click": {
-        try {
-          await this.chrome.rightClick(tab, args.selector as string);
-          return composeResult(`right-clicked ${args.selector}`, await takeReturnScreenshot());
-        } catch (err) {
-          const reason = err instanceof Error ? err.message : String(err);
-          return composeResult(`Error: ${reason}`, await takeReturnScreenshot());
-        }
-      }
-      case "drag": {
-        const sourceSelector = args.source_selector as string;
-        const targetSelector = args.target_selector as string | undefined;
-        const targetX = args.target_x as number | undefined;
-        const targetY = args.target_y as number | undefined;
-        // Agent supplies target_selector XOR (target_x AND target_y).
-        // A real validation error — not something the lib will diagnose
-        // helpfully — so catch it here with a pointer back to the schema.
-        let target: string | { x: number; y: number };
-        if (targetSelector) {
-          target = targetSelector;
-        } else if (typeof targetX === "number" && typeof targetY === "number") {
-          target = { x: targetX, y: targetY };
-        } else {
-          return {
-            text: "Error: drag requires either target_selector or both target_x and target_y",
-          };
-        }
-        try {
-          await this.chrome.drag(tab, sourceSelector, target);
-          return composeResult(`dragged ${sourceSelector}`, await takeReturnScreenshot());
-        } catch (err) {
-          const reason = err instanceof Error ? err.message : String(err);
-          return composeResult(`Error: ${reason}`, await takeReturnScreenshot());
-        }
-      }
-      case "mouse_move": {
-        await this.chrome.mouseMove(tab, args.x as number, args.y as number);
-        return composeResult(`moved mouse to (${args.x}, ${args.y})`, await takeReturnScreenshot());
-      }
-      case "scroll": {
-        const direction = args.direction as "up" | "down" | "left" | "right";
-        const amount = (args.amount as number) ?? 300;
-        // Map direction → wheel delta. Chrome's mouseWheel uses +y=down,
-        // +x=right, which matches intuitive direction names.
-        const deltaX = direction === "left" ? -amount : direction === "right" ? amount : 0;
-        const deltaY = direction === "up" ? -amount : direction === "down" ? amount : 0;
-        await this.chrome.scroll(tab, {
-          deltaX,
-          deltaY,
-          selector: (args.selector as string) ?? undefined,
-        });
-        return composeResult(`scrolled ${direction} ${amount}px`, await takeReturnScreenshot());
-      }
-      case "file_upload": {
-        try {
-          const result = await this.chrome.fileUpload(
-            tab,
-            args.selector as string,
-            args.file_paths as string[],
-          );
-          return composeResult(
-            `uploaded ${result.files} file(s) to ${args.selector}`,
-            await takeReturnScreenshot()
-          );
-        } catch (err) {
-          const reason = err instanceof Error ? err.message : String(err);
-          return composeResult(`Error: ${reason}`, await takeReturnScreenshot());
-        }
-      }
-      case "navigate": {
-        await this.chrome.navigate(tab, args.url as string);
-        return composeResult("navigated", await takeReturnScreenshot());
-      }
-      case "extract": {
-        const selector = args.selector as string | undefined;
-        if (selector) {
-          const text = await this.chrome.extractText(tab, selector);
-          return { text };
-        }
-        // Return the full markdown inline so the model can read it. The
-        // logger will spill to artifacts/N.txt for run.jsonl readability
-        // when the text exceeds its inline limit, but that's a
-        // reviewer-facing concern — the model has already consumed the
-        // content by the time logging happens.
-        const markdown = await this.chrome.generateMarkdown(tab);
-        return { text: markdown };
-      }
-      case "eval": {
-        const result = await this.chrome.evaluate(tab, args.expression as string);
-        const text = result === undefined ? "undefined" : (typeof result === "string" ? result : JSON.stringify(result));
-        return composeResult(text, await takeReturnScreenshot());
-      }
-      case "wait_for": {
-        const timeout = (args.timeout as number) ?? 5000;
-        if (args.selector) {
-          await this.chrome.waitForElement(tab, args.selector as string, timeout);
-          return composeResult("element found", await takeReturnScreenshot());
-        }
-        if (args.text) {
-          await this.chrome.waitForText(tab, args.text as string, timeout);
-          return composeResult("text found", await takeReturnScreenshot());
-        }
-        return { text: "nothing to wait for — provide selector or text" };
-      }
-      case "new_tab": {
-        // The cap is on total stack depth (1 original + N side trips).
-        // Frame the user-facing error in side-trip terms so the agent
-        // can plan against the number it cares about.
-        if (this.tabStack.length >= MAX_TAB_DEPTH) {
-          return {
-            text:
-              `Error: too many side-trip tabs (max ${MAX_TAB_DEPTH - 1}; ` +
-              `close one with close_tab before opening another)`,
-          };
-        }
-        const targetUrl = args.url as string | undefined;
-        // Empty / non-http URLs would otherwise become about:blank and
-        // silently consume a stack slot — refuse explicitly so the
-        // agent doesn't waste turns.
-        if (
-          typeof targetUrl !== "string" ||
-          !/^(https?:|file:|about:)/i.test(targetUrl)
-        ) {
-          return {
-            text:
-              "Error: new_tab requires an absolute URL (http://, https://, " +
-              "file://, or about:)",
-          };
-        }
-        try {
-          const created = await this.chrome.newTab(targetUrl);
-          const wsUrl = created?.webSocketDebuggerUrl as string | undefined;
-          if (!wsUrl) {
-            return { text: "Error: chrome did not return a tab WebSocket URL" };
-          }
-          this.tabStack.push({ wsUrl, url: targetUrl });
-          logger.logEvent("tab_focus_changed", {
-            action: "push",
-            depth: this.tabStack.length,
-            ws_url: wsUrl,
-            url: targetUrl,
-          });
-          // Recompute against the now-pushed tab so return_screenshot
-          // captures the *new* tab, not the one we just left.
-          const newActive = this.activeTab();
-          return composeResult(
-            `opened tab (depth ${this.tabStack.length})`,
-            await takeReturnScreenshot(newActive)
-          );
-        } catch (err) {
-          const reason = err instanceof Error ? err.message : String(err);
-          return { text: `Error: ${reason}` };
-        }
-      }
-      case "close_tab": {
-        if (this.tabStack.length <= 1) {
-          return {
-            text: "Error: cannot close the original tab — use navigate to change the page",
-          };
-        }
-        const popped = this.tabStack.pop()!;
-        logger.logEvent("tab_focus_changed", {
-          action: "pop",
-          depth: this.tabStack.length,
-          ws_url: popped.wsUrl,
-          url: popped.url,
-        });
-        let closeWarning = "";
-        try {
-          await this.chrome.closeTab(popped.wsUrl);
-        } catch (err) {
-          // Surface the chrome-side failure so the agent knows the tab
-          // *might* still exist in Chrome (its stack-mutation already
-          // happened — focus has moved). Worst case the orphan is GC'd
-          // when the run ends.
-          const reason = err instanceof Error ? err.message : String(err);
-          closeWarning = ` (warning: chrome closeTab failed — ${reason})`;
-          logger.logEvent("tab_force_close_failed", {
-            ws_url: popped.wsUrl,
-            url: popped.url,
-            reason,
-          });
-        }
-        // Same fix as new_tab: return_screenshot must hit the *now-active*
-        // tab (the one we popped back to), not the just-closed tab.
-        const newActive = this.activeTab();
-        return composeResult(
-          `closed tab (depth ${this.tabStack.length})${closeWarning}`,
-          await takeReturnScreenshot(newActive)
-        );
-      }
+      case "screenshot":
+        return executeScreenshot(ctx, args);
+      case "click":
+        return executeClick(ctx, args);
+      case "type":
+        return executeType(ctx, args);
+      case "press":
+        return executePress(ctx, args);
+      case "hover":
+        return executeHover(ctx, args);
+      case "double_click":
+        return executeDoubleClick(ctx, args);
+      case "right_click":
+        return executeRightClick(ctx, args);
+      case "drag":
+        return executeDrag(ctx, args);
+      case "mouse_move":
+        return executeMouseMove(ctx, args);
+      case "scroll":
+        return executeScroll(ctx, args);
+      case "file_upload":
+        return executeFileUpload(ctx, args);
+      case "navigate":
+        return executeNavigate(ctx, args);
+      case "extract":
+        return executeExtract(ctx, args);
+      case "eval":
+        return executeEval(ctx, args);
+      case "wait_for":
+        return executeWaitFor(ctx, args);
+      case "new_tab":
+        return executeNewTab(tabsCtx, args);
+      case "close_tab":
+        return executeCloseTab(tabsCtx, args);
       default:
         throw new Error(`Unknown tool: ${name}`);
     }

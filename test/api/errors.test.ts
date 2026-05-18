@@ -1,5 +1,6 @@
 import { describe, test, expect } from "bun:test";
-import { ErrorLog, errorRoutes } from "../../src/api/routes/errors";
+import { ErrorLog } from "../../src/util/error-log";
+import { errorRoutes } from "../../src/api/routes/errors";
 import { Hono } from "hono";
 
 describe("ErrorLog", () => {

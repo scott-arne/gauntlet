@@ -6,7 +6,7 @@
 import { spawn, type ChildProcessByStdio } from "child_process";
 import type { Readable } from "stream";
 import type { CredentialResolverConfig } from "../config";
-import type { ToolDefinition, ToolResult } from "../models/provider";
+import { textResult, type ToolDefinition, type ToolResult } from "../models/provider";
 import type { EvidenceLogger } from "../evidence/logger";
 import { contextRootIsPopulated } from "../paths";
 
@@ -225,7 +225,7 @@ export function buildFetchCredentialTool(
         step: "validate_args",
         error: `entity ${reason}`,
       });
-      return { text: `Error: fetch_credential argument "entity" rejected: ${reason}.` };
+      return textResult(`Error: fetch_credential argument "entity" rejected: ${reason}.`);
     }
     const keyValidation = validateKey(args.key);
     if (!keyValidation.ok) {
@@ -236,7 +236,7 @@ export function buildFetchCredentialTool(
         step: "validate_args",
         error: `key ${reason}`,
       });
-      return { text: `Error: fetch_credential argument "key" rejected: ${reason}.` };
+      return textResult(`Error: fetch_credential argument "key" rejected: ${reason}.`);
     }
 
     const entity = entityValidation.value;
@@ -256,12 +256,11 @@ export function buildFetchCredentialTool(
         // the value). The transcript (run.jsonl) gets a redacted marker
         // by default; the opt-in env var keeps the raw bytes.
         if (resolverConfig.includeInTranscripts) {
-          return { text: result.stdout };
+          return textResult(result.stdout);
         }
-        return {
-          text: result.stdout,
+        return textResult(result.stdout, {
           transcriptText: `<credential redacted: entity=${entity} key=${key} len=${result.stdout.length}>`,
-        };
+        });
       case "nonzero_exit":
         logger?.logEvent("fetch_credential_failed", {
           entity, key, step: "nonzero_exit",
@@ -270,18 +269,14 @@ export function buildFetchCredentialTool(
           stderrLength: result.stderr.length,
           elapsedMs: result.elapsedMs,
         });
-        return {
-          text: `Error: fetch_credential resolver exited ${result.exitCode} for ${entity}:${key}:\n${result.stderr}`,
-        };
+        return textResult(`Error: fetch_credential resolver exited ${result.exitCode} for ${entity}:${key}:\n${result.stderr}`);
       case "empty_stdout":
         logger?.logEvent("fetch_credential_failed", {
           entity, key, step: "empty_stdout",
           stderrLength: result.stderr.length,
           elapsedMs: result.elapsedMs,
         });
-        return {
-          text: `Error: fetch_credential resolver returned empty success for ${entity}:${key}.`,
-        };
+        return textResult(`Error: fetch_credential resolver returned empty success for ${entity}:${key}.`);
       case "timeout":
         logger?.logEvent("fetch_credential_failed", {
           entity, key, step: "timeout",
@@ -289,33 +284,25 @@ export function buildFetchCredentialTool(
           stderrLength: result.stderr.length,
           elapsedMs: result.elapsedMs,
         });
-        return {
-          text: `Error: fetch_credential resolver timed out after ${result.timeoutMs}ms for ${entity}:${key}.`,
-        };
+        return textResult(`Error: fetch_credential resolver timed out after ${result.timeoutMs}ms for ${entity}:${key}.`);
       case "stdout_overflow":
         logger?.logEvent("fetch_credential_failed", {
           entity, key, step: "stdout_overflow",
           elapsedMs: result.elapsedMs,
         });
-        return {
-          text: `Error: fetch_credential resolver stdout exceeded 64 KiB for ${entity}:${key}.`,
-        };
+        return textResult(`Error: fetch_credential resolver stdout exceeded 64 KiB for ${entity}:${key}.`);
       case "stderr_overflow":
         logger?.logEvent("fetch_credential_failed", {
           entity, key, step: "stderr_overflow",
           elapsedMs: result.elapsedMs,
         });
-        return {
-          text: `Error: fetch_credential resolver stderr exceeded 8 KiB for ${entity}:${key}.`,
-        };
+        return textResult(`Error: fetch_credential resolver stderr exceeded 8 KiB for ${entity}:${key}.`);
       case "spawn_failed":
         logger?.logEvent("fetch_credential_failed", {
           entity, key, step: "spawn",
           error: result.error,
         });
-        return {
-          text: `Error: fetch_credential resolver failed to spawn: ${result.error}.`,
-        };
+        return textResult(`Error: fetch_credential resolver failed to spawn: ${result.error}.`);
     }
   };
 

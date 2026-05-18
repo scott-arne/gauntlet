@@ -7,6 +7,7 @@ import type { AppConfig } from "../config";
 import type { LLMClient } from "../models/provider";
 import type { VetResult } from "../types";
 import type { RunSetCtx } from "../runs/run-set-types";
+import type { RunId } from "../util/brands";
 
 export interface RunOneOptions {
   scenarioPath: string;
@@ -24,7 +25,7 @@ export interface RunOneOptions {
   /** Externally-supplied runId (from the orchestrator). When provided,
    * this overrides the `makeRunId(card.id)` call so the run directory
    * name matches what the RunSet manifest already recorded. */
-  runId?: string;
+  runId?: RunId;
   /** Test seam: substitute the LLM client construction. Production callers
    * leave this undefined and the shim falls through to `createClient`.
    * Tests inject a scripted client here instead of `mock.module`-ing
@@ -37,7 +38,7 @@ export interface RunOneOptions {
 }
 
 export interface RunOneSummary {
-  runId: string;
+  runId: RunId;
   outDir: string;
   result: VetResult;
 }
@@ -70,6 +71,7 @@ export async function runOne(opts: RunOneOptions): Promise<RunOneSummary> {
       reflectionInterval: config.defaultReflectionInterval,
       chrome,
       viewport: config.defaultViewport,
+      saveScreencast: config.defaultSaveScreencast,
       credentialResolver: config.credentialResolver,
     },
     hooks: opts.onLogger

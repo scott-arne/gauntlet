@@ -69,7 +69,7 @@ export function anthropicToolResultMessages(
 ): unknown[] {
   const content: unknown[] = calls.map((call, i) => {
     const result = results[i];
-    if (result.image) {
+    if (result.kind === "image") {
       return {
         type: "tool_result",
         tool_use_id: call.id,

@@ -22,13 +22,14 @@ import type { ActiveRunRegistry } from "../active-runs";
 import type { RunSetBroadcaster } from "../run-set-broadcaster";
 import type { CancelTokenRegistry } from "../run-cancel";
 import type { ScreencastStreamer as ScreencastStreamerType } from "../../streaming/screencast";
-import type { ErrorLog } from "./errors";
+import type { ErrorLog } from "../../util/error-log";
 import type { StoryCard } from "../../format/story-card";
 import type { LLMClient } from "../../models/provider";
 import type { RunSetCtx } from "../../runs/run-set-types";
+import type { RunId } from "../../util/brands";
 
 export interface ExecuteHttpRunOpts {
-  runId: string;
+  runId: RunId;
   card: StoryCard;
   storyPath: string;
   client: LLMClient;
@@ -77,7 +78,7 @@ export async function executeHttpRun(
     onLogger: (logger) => {
       const detachers: Array<() => void> = [];
       if (broadcaster || registry) {
-        detachers.push(logger.addObserver((action, params) => {
+        detachers.push(logger.addProgressObserver((action, params) => {
           const message = `[${action}] ${JSON.stringify(params)}`;
           broadcaster?.send(runId, {
             type: "progress",
@@ -148,17 +149,7 @@ export async function executeHttpRun(
       runSetCtx,
       adapterFactory: opts.adapterFactory,
       abortSignal: opts.abortSignal,
-      runConfig: {
-        projectRoot,
-        model: effective.model,
-        adapter: effective.adapter,
-        target: effective.target,
-        budgetMs: effective.budgetMs,
-        reflectionInterval: effective.reflectionInterval,
-        chrome: effective.chrome,
-        viewport: effective.viewport,
-        credentialResolver: effective.credentialResolver,
-      },
+      runConfig: effective,
       hooks,
     });
     terminal = { type: "complete", result: result.result };

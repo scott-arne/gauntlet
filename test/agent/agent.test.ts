@@ -1,6 +1,7 @@
 import { describe, test, expect } from "bun:test";
 import { runAgent } from "../../src/agent/agent";
 import { makeRunId } from "../../src/util/id";
+import { textResult } from "../../src/models/provider";
 import type { LLMClient, AgentResponse, ToolCall, ToolResult } from "../../src/models/provider";
 import type { Adapter } from "../../src/adapters/adapter";
 import type { EvidenceLogger } from "../../src/evidence/logger";
@@ -51,8 +52,8 @@ function makeMockAdapter(
       },
     ],
     executeTool: async (name: string) => {
-      if (name in toolResults) return { text: toolResults[name] };
-      return { text: `result of ${name}` };
+      if (name in toolResults) return textResult(toolResults[name]);
+      return textResult(`result of ${name}`);
     },
     start: async () => {},
     close: async () => {},
@@ -338,7 +339,7 @@ describe("runAgent", () => {
       },
       async executeTool(): Promise<ToolResult> {
         await new Promise((resolve) => setTimeout(resolve, 60000));
-        return { text: "done" };
+        return textResult("done");
       },
       describeTarget: (target: string) => `The application is available at: ${target}`,
       defaultViewport: () => null,
@@ -584,7 +585,7 @@ describe("runAgent", () => {
     const failingAdapter = makeMockAdapter();
     failingAdapter.executeTool = async (name: string) => {
       if (name === "click") throw new Error("Element not found: .missing");
-      return { text: `result of ${name}` };
+      return textResult(`result of ${name}`);
     };
 
     const client = makeMockClient([

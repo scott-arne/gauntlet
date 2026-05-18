@@ -14,10 +14,12 @@
  * - Lex-sortable (left-anchored cardId, then chrono) — agents reading
  *   `.gauntlet/results/` can tell which card tested and when at a glance.
  */
-export function makeRunId(cardId: string): string {
+import { asRunId, asRunSetId, type RunId, type RunSetId } from "./brands";
+
+export function makeRunId(cardId: string): RunId {
   const ts = isoBasicNow();
   const nonce = Math.random().toString(36).slice(2, 6).padEnd(4, "0");
-  return `${cardId}_${ts}_${nonce}`;
+  return asRunId(`${cardId}_${ts}_${nonce}`);
 }
 
 /**
@@ -31,10 +33,10 @@ export function makeRunId(cardId: string): string {
  * The kind is preserved verbatim (single or batch), followed by the timestamp
  * for chronological ordering, and a 4-char nonce to resolve same-second collisions.
  */
-export function makeRunSetId(kind: "single" | "batch"): string {
+export function makeRunSetId(kind: "single" | "batch"): RunSetId {
   const ts = isoBasicNow();
   const nonce = Math.random().toString(36).slice(2, 6).padEnd(4, "0");
-  return `${kind}_${ts}_${nonce}`;
+  return asRunSetId(`${kind}_${ts}_${nonce}`);
 }
 
 /**
@@ -57,9 +59,9 @@ function isoBasicNow(): string {
  * traversal sequences (`..`, `/`, etc).
  */
 const RUN_ID_RE = /^[a-zA-Z0-9-]+_\d{8}T\d{6}Z_[a-z0-9]{4}$/;
-export function parseRunId(s: unknown): string | null {
+export function parseRunId(s: unknown): RunId | null {
   if (typeof s !== "string" || !s) return null;
-  return RUN_ID_RE.test(s) ? s : null;
+  return RUN_ID_RE.test(s) ? asRunId(s) : null;
 }
 
 /**
@@ -67,9 +69,9 @@ export function parseRunId(s: unknown): string | null {
  * `<kind>_<YYYYMMDDTHHMMSSZ>_<nonce>` where kind is `single` or `batch`.
  */
 const RUN_SET_ID_RE = /^(?:single|batch)_\d{8}T\d{6}Z_[a-z0-9]{4}$/;
-export function parseRunSetId(s: unknown): string | null {
+export function parseRunSetId(s: unknown): RunSetId | null {
   if (typeof s !== "string" || !s) return null;
-  return RUN_SET_ID_RE.test(s) ? s : null;
+  return RUN_SET_ID_RE.test(s) ? asRunSetId(s) : null;
 }
 
 /**

@@ -1,5 +1,5 @@
 import type { Adapter } from "../adapter";
-import type { ToolDefinition, ToolResult } from "../../models/provider";
+import { textResult, type ToolDefinition, type ToolResult } from "../../models/provider";
 import type { EvidenceLogger } from "../../evidence/logger";
 import { buildSharedTools, type SharedTools } from "../../agent/shared-tools";
 import { validateToolArgs } from "../../agent/validators";
@@ -286,7 +286,7 @@ export class TUIAdapter implements Adapter {
     if (schema) {
       const check = validateToolArgs(name, args, schema);
       if (!check.ok) {
-        return { text: `Error: invalid args for ${name}: ${check.reason}` };
+        return textResult(`Error: invalid args for ${name}: ${check.reason}`);
       }
     }
 
@@ -297,11 +297,11 @@ export class TUIAdapter implements Adapter {
     switch (name) {
       case "type": {
         await this.type(args.text as string);
-        return { text: "typed" };
+        return textResult("typed");
       }
       case "press": {
         await this.press(args.key as string);
-        return { text: "pressed" };
+        return textResult("pressed");
       }
       case "read_screen": {
         const screen = await this.readScreen();
@@ -326,7 +326,7 @@ export class TUIAdapter implements Adapter {
         // LLM still sees the full ANSI via `text`; the logger will
         // substitute `capturePath` for `text` when writing the
         // tool_result row to run.jsonl.
-        return { text: screen, capturePath };
+        return { kind: "capture", text: screen, capturePath };
       }
       default:
         throw new Error(`Unknown tool: ${name}`);

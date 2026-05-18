@@ -1,6 +1,6 @@
 import { readFileSync } from "fs";
 import * as YAML from "yaml";
-import type { ToolDefinition, ToolResult } from "../../models/provider";
+import { textResult, type ToolDefinition, type ToolResult } from "../../models/provider";
 import type { EvidenceLogger } from "../../evidence/logger";
 import { contextRootIsPopulated, resolveInside } from "../../paths";
 
@@ -222,9 +222,9 @@ export function buildInstallCookiesTool(
       logger?.logEvent("install_cookies_failed", {
         path: "", step: "validate_args", error: "missing path argument",
       });
-      return {
-        text: `Error: install_cookies requires a "path" argument (relative to .gauntlet/context/).`,
-      };
+      return textResult(
+        `Error: install_cookies requires a "path" argument (relative to .gauntlet/context/).`,
+      );
     }
 
     let resolved: string;
@@ -235,7 +235,7 @@ export function buildInstallCookiesTool(
       logger?.logEvent("install_cookies_failed", {
         path, step: "resolve_path", error,
       });
-      return { text: `Error: ${error}` };
+      return textResult(`Error: ${error}`);
     }
 
     let cookies: CookieParam[];
@@ -246,7 +246,7 @@ export function buildInstallCookiesTool(
       logger?.logEvent("install_cookies_failed", {
         path, step: "read_cookies", error,
       });
-      return { text: `Error: ${error}` };
+      return textResult(`Error: ${error}`);
     }
 
     let results: SetCookieResult[];
@@ -260,9 +260,9 @@ export function buildInstallCookiesTool(
         error,
         cookies: cookies.map(cookieContext),
       });
-      return {
-        text: `Error installing cookies from "${path}" at step "set_cookies": ${error}`,
-      };
+      return textResult(
+        `Error installing cookies from "${path}" at step "set_cookies": ${error}`,
+      );
     }
 
     const accepted: string[] = [];
@@ -300,7 +300,7 @@ export function buildInstallCookiesTool(
       text = `Installed ${accepted.length}/${total} cookies (${path}). Accepted: ${acceptedNames}. Rejected: ${rejectedSummary}.`;
     }
 
-    return { text };
+    return textResult(text);
   };
 
   return { definition, execute };

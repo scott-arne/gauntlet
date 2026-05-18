@@ -2,7 +2,8 @@ import { existsSync, readFileSync } from "fs";
 import { join } from "path";
 import { CLIAdapter } from "../adapters/cli/adapter";
 import { snapshotViewport, type Adapter } from "../adapters/adapter";
-import type { ChromeEndpoint, CredentialResolverConfig, Viewport } from "../config";
+import type { ChromeEndpoint, CredentialResolverConfig, ResolvedRunConfig, Viewport } from "../config";
+import type { RunId } from "../util/brands";
 import { renderContextTree } from "../context/tree";
 import { EvidenceLogger } from "../evidence/logger";
 import { writeResultFiles } from "../evidence/writer";
@@ -13,7 +14,7 @@ import { gauntletPath } from "../paths";
 import { snapshotRunInputs } from "./snapshot";
 import { makeRunId } from "../util/id";
 import type { StoryCard } from "../format/story-card";
-import type { RunConfigSnapshot, VetResult } from "../types";
+import { snapshotRunConfig, type VetResult } from "../types";
 import type { RunSetCtx } from "./run-set-types";
 
 export type RunAdapterType = "web" | "cli" | "tui";
@@ -40,28 +41,8 @@ export function resolveProjectPrompt(
   return undefined;
 }
 
-export interface RunCoreConfig {
-  projectRoot: string;
-  model: string;
-  adapter: RunAdapterType;
-  target: string;
-  budgetMs: number;
-  /** Turns between reflection-checkpoint injections; 0 disables. */
-  reflectionInterval: number;
-  /** Already-resolved Chrome endpoint, or undefined to let WebAdapter
-   * auto-launch. Surfaces collapse "default" → undefined themselves. */
-  chrome?: ChromeEndpoint;
-  viewport?: Viewport;
-  /**
-   * Caller-provided credential resolver, threaded through from
-   * AppConfig/EffectiveRunConfig. When set, adapters register the
-   * fetch_credential tool. PRI-1605.
-   */
-  credentialResolver?: CredentialResolverConfig;
-}
-
 export interface RunCorePrepared {
-  runId: string;
+  runId: RunId;
   outDir: string;
   card: StoryCard;
 }
@@ -86,16 +67,16 @@ export interface RunCoreHooks {
 
 export interface AdapterFactoryCtx {
   contextRoot: string;
-  runId: string;
+  runId: RunId;
   logger: EvidenceLogger;
 }
 
 export interface ExecuteRunCoreOptions {
   card: StoryCard;
   storyPath: string;
-  runId?: string;
+  runId?: RunId;
   outDir?: string;
-  runConfig: RunCoreConfig;
+  runConfig: ResolvedRunConfig;
   /** Already-built client — surfaces resolve provider/allow-list before
    * calling the core so config errors stay on the request thread. */
   client: LLMClient;
@@ -134,7 +115,7 @@ export interface ExecuteRunCoreOptions {
 }
 
 export interface ExecuteRunCoreResult {
-  runId: string;
+  runId: RunId;
   outDir: string;
   result: VetResult;
 }
@@ -147,7 +128,7 @@ async function buildDefaultAdapter(
   type: RunAdapterType,
   contextRoot: string,
   logger: EvidenceLogger,
-  runId: string,
+  runId: RunId,
   runDir: string,
   chrome: ChromeEndpoint | undefined,
   viewport: Viewport | undefined,
@@ -215,14 +196,7 @@ export async function executeRunCore(
     const started: RunCoreStarted = { ...prepared, contextRoot, adapter };
     await hooks?.beforeAgent?.(started);
 
-    const stampedRunConfig: RunConfigSnapshot = {
-      target: runConfig.target,
-      model: runConfig.model,
-      adapter: runConfig.adapter,
-      chrome: runConfig.chrome ? `${runConfig.chrome.host}:${runConfig.chrome.port}` : undefined,
-      budgetMs: runConfig.budgetMs,
-      viewport: snapshotViewport(adapter),
-    };
+    const stampedRunConfig = snapshotRunConfig(runConfig, snapshotViewport(adapter));
 
     const result = await runAgent(card, adapter, client, logger, runConfig.target, {
       contextTree,

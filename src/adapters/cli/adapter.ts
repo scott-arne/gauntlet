@@ -1,7 +1,7 @@
 import { mkdirSync } from "fs";
 import { join } from "path";
 import type { Adapter } from "../adapter";
-import type { ToolDefinition, ToolResult } from "../../models/provider";
+import { textResult, type ToolDefinition, type ToolResult } from "../../models/provider";
 import type { EvidenceLogger } from "../../evidence/logger";
 import { buildSharedTools, type SharedTools } from "../../agent/shared-tools";
 import type { CredentialResolverConfig } from "../../config";
@@ -208,7 +208,7 @@ export class CLIAdapter implements Adapter {
     if (schema) {
       const check = validateToolArgs(name, args, schema);
       if (!check.ok) {
-        return { text: `Error: invalid args for ${name}: ${check.reason}` };
+        return textResult(`Error: invalid args for ${name}: ${check.reason}`);
       }
     }
 
@@ -219,14 +219,14 @@ export class CLIAdapter implements Adapter {
     switch (name) {
       case "type": {
         await this.type(args.text as string);
-        return { text: "typed" };
+        return textResult("typed");
       }
       case "press": {
         await this.press(args.key as string);
-        return { text: "pressed" };
+        return textResult("pressed");
       }
       case "read_output": {
-        return { text: this.readOutput() };
+        return textResult(this.readOutput());
       }
       default:
         throw new Error(`Unknown tool: ${name}`);

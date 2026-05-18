@@ -13,7 +13,14 @@
  * `properties` — so a 50-line validator handles what actually ships.
  */
 import type { ToolDefinition } from "../models/provider";
-import type { VetStatus, Observation, ObservationKind } from "../types";
+import type { Observation, ObservationKind } from "../types";
+
+/**
+ * The statuses the LLM is allowed to report via `report_result`. Note that
+ * `"errored"` is NOT included — that variant is reserved for internal
+ * emitters (shutdown drain, etc.) and never comes through the LLM seam.
+ */
+export type ReportableStatus = "pass" | "fail" | "investigate";
 
 export type ParseOk<T> = { ok: true; value: T };
 export type ParseErr = { ok: false; reason: string };
@@ -27,7 +34,7 @@ const OBSERVATION_KINDS: readonly ObservationKind[] = [
   "a11y",
   "performance",
 ];
-const VET_STATUSES: readonly VetStatus[] = ["pass", "fail", "investigate"];
+const VET_STATUSES: readonly ReportableStatus[] = ["pass", "fail", "investigate"];
 
 /**
  * Validate `report_result` tool call arguments against the VetResult shape.
@@ -36,7 +43,7 @@ const VET_STATUSES: readonly VetStatus[] = ["pass", "fail", "investigate"];
  * Optional: observations (array of {kind, description}).
  */
 export function parseReportResult(args: unknown): ParseResult<{
-  status: VetStatus;
+  status: ReportableStatus;
   summary: string;
   reasoning: string;
   observations: Observation[];
@@ -49,7 +56,7 @@ export function parseReportResult(args: unknown): ParseResult<{
   if (typeof statusRaw !== "string") {
     return { ok: false, reason: `status: expected string, got ${typeName(statusRaw)}` };
   }
-  if (!VET_STATUSES.includes(statusRaw as VetStatus)) {
+  if (!VET_STATUSES.includes(statusRaw as ReportableStatus)) {
     return {
       ok: false,
       reason: `status: "${statusRaw}" not in [${VET_STATUSES.join(", ")}]`,
@@ -112,7 +119,7 @@ export function parseReportResult(args: unknown): ParseResult<{
   return {
     ok: true,
     value: {
-      status: statusRaw as VetStatus,
+      status: statusRaw as ReportableStatus,
       summary: args.summary,
       reasoning: args.reasoning,
       observations,

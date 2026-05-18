@@ -1,20 +1,22 @@
+import type { CardId, RunId, RunSetId } from "../util/brands";
+
 export interface ActiveRunInfo {
   /**
    * Primary key for the run. Self-describing: `<cardId>_<YYYYMMDDTHHMMSSZ>_<nonce>`
    * (see `makeRunId`). Concurrent runs of the same card now have distinct
    * registry entries.
    */
-  id: string;
+  id: RunId;
   /** The card id this run is exercising. Stored as payload metadata so
    * UIs can still group/filter by card without using it as the registry key. */
-  cardId: string;
+  cardId: CardId;
   title: string;
   target: string;
   model: string;
   startedAt: number; // ms since epoch
   status: "queued" | "running";
   /** Link back to the run set, if any. */
-  runSetId?: string;
+  runSetId?: RunSetId;
   /** 1-indexed attempt number when part of a run set. */
   attemptNumber?: number;
   /** Total passes in the run set. */

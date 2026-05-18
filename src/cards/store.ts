@@ -2,7 +2,7 @@ import { existsSync, readdirSync, readFileSync } from "fs";
 import { join } from "path";
 import { parseStoryCard, type StoryCard } from "../format/story-card";
 import { gauntletPath } from "../paths";
-import type { ErrorLog } from "../api/routes/errors";
+import type { ErrorLog } from "../util/error-log";
 
 export interface CardEntry {
   card: StoryCard;

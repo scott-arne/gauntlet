@@ -1,5 +1,6 @@
 import { mkdirSync, appendFileSync, writeFileSync } from "fs";
 import { join } from "path";
+import type { CardId, RunId } from "../util/brands";
 
 export type BrowserEventCategory =
   | "console"
@@ -7,7 +8,7 @@ export type BrowserEventCategory =
   | "log"
   | "network-ws";
 
-export type ActionObserver = (
+export type ProgressObserver = (
   action: string,
   params: Record<string, unknown>,
 ) => void;
@@ -15,8 +16,8 @@ export type ActionObserver = (
 export type EventObserver = (event: Record<string, unknown>) => void;
 
 export interface RunStartFields {
-  runId: string;
-  cardId: string;
+  runId: RunId;
+  cardId: CardId;
   target: string | undefined;
   provider: string;
   model: string;
@@ -131,7 +132,7 @@ export class EvidenceLogger {
   private _artifacts: string[] = [];
   private _captures: string[] = [];
   private captureDirEnsured = false;
-  private observers: Set<ActionObserver> = new Set();
+  private observers: Set<ProgressObserver> = new Set();
   private eventObservers: Set<EventObserver> = new Set();
   private eventCounter = 0;
   private lastEventId = 0;
@@ -147,23 +148,32 @@ export class EvidenceLogger {
   get captures(): string[] { return [...this._captures]; }
   get logPath(): string { return "run.jsonl"; }
 
-  addObserver(fn: ActionObserver): () => void {
+  // Two distinct observer channels fire side-by-side:
+  //
+  //   addProgressObserver — coarse `(action, params)` only on `logToolCall`
+  //     and `logEvent`. Drives the human-readable "progress" WS message
+  //     and the ActiveRunRegistry progress string. Loses the structured
+  //     wrapper (eventId, parentEventId, ts, type) by design.
+  //
+  //   addEventObserver — full structured entry on every `writeEvent` (so
+  //     every row that lands in run.jsonl). Drives the "event" WS feed and
+  //     the CLI live renderers. Spec §6.3.
+  //
+  // They serve different consumers — the progress channel is a derived
+  // summary feed, the event channel is the structured firehose.
+  addProgressObserver(fn: ProgressObserver): () => void {
     this.observers.add(fn);
     return () => { this.observers.delete(fn); };
   }
 
   // A misbehaving observer (one that throws) will not prevent other observers
   // from receiving the action.
-  private notifyObservers(action: string, params: Record<string, unknown>): void {
+  private notifyProgressObservers(action: string, params: Record<string, unknown>): void {
     for (const fn of this.observers) {
       try { fn(action, params); } catch { /* isolated */ }
     }
   }
 
-  // Second, independent observer channel (spec §6.3). Delivers the full
-  // structured entry (eventId, parentEventId, ts, type, and body fields)
-  // that was just written to run.jsonl. The legacy action-observer
-  // channel is unchanged — both fire side-by-side.
   addEventObserver(fn: EventObserver): () => void {
     this.eventObservers.add(fn);
     return () => { this.eventObservers.delete(fn); };
@@ -227,7 +237,7 @@ export class EvidenceLogger {
     // Fire observers so live consumers (WS broadcaster, registry) still see
     // per-tool progress. Shape matches the old adapter-side logAction call
     // that this emitter replaced, so the feed looks unchanged to readers.
-    this.notifyObservers(fields.name, fields.arguments);
+    this.notifyProgressObservers(fields.name, fields.arguments);
   }
 
   logToolResult(fields: ToolResultFields): void {
@@ -284,7 +294,7 @@ export class EvidenceLogger {
 
   logEvent(name: string, data: Record<string, unknown>): void {
     this.writeEvent("event", { name, ...data });
-    this.notifyObservers(name, data);
+    this.notifyProgressObservers(name, data);
   }
 
   logRunError(fields: { turn: number; message: string; stack?: string }): void {

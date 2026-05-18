@@ -23,6 +23,8 @@
 export const RESULT_SCHEMA_VERSION = 5;
 
 import type { RunSetCtx } from "./runs/run-set-types";
+import type { ResolvedRunConfig, Viewport } from "./config";
+import type { CardId, RunId } from "./util/brands";
 
 export interface RunConfigSnapshot {
   target: string;
@@ -56,28 +58,27 @@ export interface Observation {
   evidence?: string[];
 }
 
-export interface VetResult {
+/**
+ * Base shape — the fields shared by every VetResult variant. `VetResult`
+ * itself is a discriminated union on `status`: "errored" variants carry
+ * a required `error` object; non-errored variants don't have the field.
+ *
+ * The JSON on disk is unchanged — an "errored" result already has an
+ * `error` field; a non-errored result already omits it. No
+ * RESULT_SCHEMA_VERSION bump.
+ */
+interface VetResultBase {
   schemaVersion: number;
   /**
    * Self-describing primary key for the run, set by the caller (route or
    * CLI) before writing. Shape: `<cardId>_<YYYYMMDDTHHMMSSZ>_<nonce>`.
    * `scenario` (the cardId) is retained for back-compat readers.
    */
-  runId: string;
-  scenario: string;
-  status: VetStatus;
+  runId: RunId;
+  scenario: CardId;
   summary: string;
   reasoning: string;
   observations: Observation[];
-  /**
-   * Set when `status === "errored"`. Categorizes the cause so consumers
-   * can distinguish shutdown interruption from other future error
-   * surfaces. `type` is open-typed (string) so additive new categories
-   * don't require a schema bump or TypeScript type widening — consumers
-   * MUST tolerate unknown `type` values. Today the only emitted type is
-   * `"shutdown_interrupted"` (PRI-1507).
-   */
-  error?: { type: string; message: string };
   evidence: {
     screenshots: string[];
     log: string;
@@ -118,7 +119,46 @@ export interface VetResult {
   runSet?: RunSetCtx;
 }
 
+export type VetResult =
+  | (VetResultBase & { status: "pass" | "fail" | "investigate" })
+  | (VetResultBase & {
+      status: "errored";
+      /**
+       * Categorizes the cause so consumers can distinguish shutdown
+       * interruption from other future error surfaces. `type` is
+       * open-typed (string) so additive new categories don't require a
+       * schema bump or TypeScript type widening — consumers MUST
+       * tolerate unknown `type` values. Today the only emitted type is
+       * `"shutdown_interrupted"` (PRI-1507).
+       */
+      error: { type: string; message: string };
+    });
+
 export interface ModelConfig {
   agent: string;
   fanout?: string;
+}
+
+/**
+ * Derive a `RunConfigSnapshot` (versioned wire format stamped into
+ * result.json) from the in-memory `ResolvedRunConfig`. Single-sources
+ * the field set so the snapshot can't drift from the resolved config.
+ *
+ * `viewport` is passed in separately because the snapshot viewport
+ * comes from the started adapter (via `snapshotViewport(adapter)`),
+ * not the config's intended viewport — adapters may report something
+ * different from what was requested (e.g., cli has no viewport).
+ */
+export function snapshotRunConfig(
+  rc: ResolvedRunConfig,
+  viewport: Viewport | undefined,
+): RunConfigSnapshot {
+  return {
+    target: rc.target,
+    model: rc.model,
+    adapter: rc.adapter,
+    chrome: rc.chrome ? `${rc.chrome.host}:${rc.chrome.port}` : undefined,
+    budgetMs: rc.budgetMs,
+    viewport,
+  };
 }

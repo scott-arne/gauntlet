@@ -9,15 +9,16 @@ import type { LLMClient } from "../../models/provider";
 import type { VetResult } from "../../types";
 import type { AppConfig } from "../../config";
 import { findCard } from "../../cards/store";
-import type { ErrorLog } from "./errors";
+import type { ErrorLog } from "../../util/error-log";
+import type { ParseResult } from "../../agent/validators";
 
-function resolveClient(config: AppConfig, clientFactory?: () => LLMClient): LLMClient | { error: string } {
-  if (clientFactory) return clientFactory();
+function resolveClient(config: AppConfig, clientFactory?: () => LLMClient): ParseResult<LLMClient> {
+  if (clientFactory) return { ok: true, value: clientFactory() };
   const model = config.models.fanout ?? config.models.agent;
   if (config.models.available.length > 0 && !config.models.available.includes(model)) {
-    return { error: `model "${model}" is not in GAUNTLET_MODELS allow-list` };
+    return { ok: false, reason: `model "${model}" is not in GAUNTLET_MODELS allow-list` };
   }
-  return createClient(model);
+  return { ok: true, value: createClient(model) };
 }
 
 function writeCards(
@@ -86,11 +87,11 @@ export function fanoutRoutes(config: AppConfig, clientFactory?: () => LLMClient,
     const entry = findCard(projectRoot, cardId, errorLog);
     if (!entry) return c.json({ error: "not found" }, 404);
 
-    const clientOrError = resolveClient(config, clientFactory);
-    if ("error" in clientOrError) return c.json({ error: clientOrError.error }, 400);
+    const resolved = resolveClient(config, clientFactory);
+    if (!resolved.ok) return c.json({ error: resolved.reason }, 400);
 
     try {
-      const cardTexts = await generateFanout(entry.card, clientOrError);
+      const cardTexts = await generateFanout(entry.card, resolved.value);
       const generated = writeCards(storiesDir, cardTexts, errorLog);
       return c.json({ parent: entry.card.id, generated });
     } catch (err) {
@@ -121,11 +122,11 @@ export function fanoutRoutes(config: AppConfig, clientFactory?: () => LLMClient,
       return c.json({ parent: cardId, runId, generated: [] });
     }
 
-    const clientOrError = resolveClient(config, clientFactory);
-    if ("error" in clientOrError) return c.json({ error: clientOrError.error }, 400);
+    const resolved = resolveClient(config, clientFactory);
+    if (!resolved.ok) return c.json({ error: resolved.reason }, 400);
 
     try {
-      const cardTexts = await modeConfig.generator(result, clientOrError);
+      const cardTexts = await modeConfig.generator(result, resolved.value);
       const generated = writeCards(storiesDir, cardTexts, errorLog);
       return c.json({ parent: cardId, runId, generated });
     } catch (err) {

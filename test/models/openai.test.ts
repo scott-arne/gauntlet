@@ -36,8 +36,8 @@ describe("OpenAI message helpers (Responses API shape)", () => {
       { id: "call_def", name: "click", arguments: { x: 10, y: 20 } },
     ];
     const results = [
-      { text: "Screenshot captured", image: { data: "iVBOR...", mediaType: "image/png" } },
-      { text: "clicked" },
+      { kind: "image" as const, text: "Screenshot captured", image: { data: "iVBOR...", mediaType: "image/png" } },
+      { kind: "text" as const, text: "clicked" },
     ];
 
     const messages = openaiToolResultMessages(calls, results);
@@ -73,8 +73,8 @@ describe("OpenAI message helpers (Responses API shape)", () => {
       { id: "call_2", name: "click", arguments: { return_screenshot: true } },
     ];
     const results = [
-      { text: "Screenshot 1", image: { data: "img1data", mediaType: "image/png" } },
-      { text: "Clicked + screenshot", image: { data: "img2data", mediaType: "image/png" } },
+      { kind: "image" as const, text: "Screenshot 1", image: { data: "img1data", mediaType: "image/png" } },
+      { kind: "image" as const, text: "Clicked + screenshot", image: { data: "img2data", mediaType: "image/png" } },
     ];
 
     const messages = openaiToolResultMessages(calls, results);

@@ -1,6 +1,7 @@
 import { describe, test, expect } from "bun:test";
 import { runAgent } from "../../src/agent/agent";
 import { makeRunId } from "../../src/util/id";
+import { textResult } from "../../src/models/provider";
 import type { LLMClient, AgentResponse, ToolCall, ToolResult } from "../../src/models/provider";
 import type { Adapter } from "../../src/adapters/adapter";
 import type { EvidenceLogger } from "../../src/evidence/logger";
@@ -68,7 +69,7 @@ function makeAdapter(executeToolImpl?: (name: string) => Promise<ToolResult>): A
     ],
     executeTool: async (name: string) => {
       if (executeToolImpl) return executeToolImpl(name);
-      return { text: `result of ${name}` };
+      return textResult(`result of ${name}`);
     },
     start: async () => {},
     close: async () => {},
@@ -140,7 +141,7 @@ describe("runAgent abort signal", () => {
       // After the first turn's single tool call resolves, abort the signal —
       // the next iteration's between-turn check should observe it.
       if (executeToolCalls === 1) ac.abort("test-shutdown");
-      return { text: "ok" };
+      return textResult("ok");
     });
 
     const client = makeClient([
@@ -178,7 +179,7 @@ describe("runAgent abort signal", () => {
       // the between-adjacent-tool-call check at the top of the next loop
       // iteration should observe it.
       if (executeToolCalls === 1) ac.abort("test-shutdown");
-      return { text: "ok" };
+      return textResult("ok");
     });
 
     const client = makeClient([

@@ -12,7 +12,24 @@ export interface ToolCall {
   arguments: Record<string, unknown>;
 }
 
-export interface ToolResult {
+/**
+ * Result returned from a tool invocation. Modeled as a discriminated
+ * union on `kind` (PRI-1628 phase 6): every variant has `text` (what
+ * the LLM sees on the next turn) and an optional `transcriptText`
+ * (the run.jsonl override used for transcript redaction, PRI-1605).
+ * The four `as any` casts in agent.ts that previously accessed
+ * imagePath/image/artifactPath/capturePath are now narrowed via the
+ * field-presence properties below.
+ *
+ * Producer survey (live in src/, not aspirational):
+ *  - `text`     — most paths (errors, navigate, type, press, …)
+ *  - `image`    — web screenshot + return_screenshot
+ *  - `capture`  — TUI read_screen
+ *  - `artifact` — no current producer; kept for the spill-to-artifacts
+ *    pathway tracked by the evidence-log plan (artifactPath ends up
+ *    on disk via logger.normalizeText, not a tool producer).
+ */
+interface ToolResultBase {
   text: string;
   /**
    * Optional alternative representation used for the run transcript /
@@ -23,20 +40,52 @@ export interface ToolResult {
    * not land in the transcript by default. PRI-1605.
    */
   transcriptText?: string;
-  image?: {
-    data: string;       // base64-encoded
-    mediaType: string;  // e.g. "image/png"
+}
+
+export interface TextToolResult extends ToolResultBase {
+  kind: "text";
+}
+
+export interface ImageToolResult extends ToolResultBase {
+  kind: "image";
+  image: {
+    data: string; // base64-encoded
+    mediaType: string; // e.g. "image/png"
   };
-  imagePath?: string;       // relative path if the image has been persisted
-  artifactPath?: string;    // relative path if a large payload was spilled
+  imagePath?: string; // relative path if the image has been persisted
+}
+
+export interface ArtifactToolResult extends ToolResultBase {
+  kind: "artifact";
+  artifactPath: string; // relative path of the spilled payload
+}
+
+export interface CaptureToolResult extends ToolResultBase {
+  kind: "capture";
   /**
    * TUI screen capture path (`captures/NNN.ansi`). Populated by the TUI
-   * adapter's `read_screen` handler. When set, the evidence logger
-   * substitutes this path for `text` in the tool_result row — the
-   * in-memory `text` still carries the full ANSI content so the LLM
-   * sees the screen content on its next turn.
+   * adapter's `read_screen` handler. The evidence logger substitutes
+   * this path for `text` in the tool_result row — the in-memory `text`
+   * still carries the full ANSI content so the LLM sees the screen
+   * content on its next turn.
    */
-  capturePath?: string;
+  capturePath: string;
+}
+
+export type ToolResult =
+  | TextToolResult
+  | ImageToolResult
+  | ArtifactToolResult
+  | CaptureToolResult;
+
+/**
+ * Convenience constructor for the dominant `text` variant. Saves
+ * every producer from spelling `{ kind: "text", text }`.
+ */
+export function textResult(text: string, opts?: { transcriptText?: string }): TextToolResult {
+  return opts?.transcriptText !== undefined
+    ? { kind: "text", text, transcriptText: opts.transcriptText }
+    : { kind: "text", text };
 }
 
 export interface TokenUsage {

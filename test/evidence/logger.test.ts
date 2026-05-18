@@ -49,9 +49,9 @@ describe("EvidenceLogger", () => {
     expect(p2).toBe("screenshots/002.png");
   });
 
-  test("addObserver receives events when logEvent is called", () => {
+  test("addProgressObserver receives events when logEvent is called", () => {
     const received: { action: string; params: Record<string, unknown> }[] = [];
-    logger.addObserver((action, params) => {
+    logger.addProgressObserver((action, params) => {
       received.push({ action, params });
     });
 
@@ -69,9 +69,9 @@ describe("EvidenceLogger", () => {
     logger.logEvent("click", { selector: "#btn" });
   });
 
-  test("addObserver returns an unsubscribe function that removes the observer", () => {
+  test("addProgressObserver returns an unsubscribe function that removes the observer", () => {
     const received: string[] = [];
-    const unsubscribe = logger.addObserver((action) => {
+    const unsubscribe = logger.addProgressObserver((action) => {
       received.push(action);
     });
 
@@ -85,8 +85,8 @@ describe("EvidenceLogger", () => {
   test("two observers both receive the action", () => {
     const a: string[] = [];
     const b: string[] = [];
-    logger.addObserver((action) => a.push(action));
-    logger.addObserver((action) => b.push(action));
+    logger.addProgressObserver((action) => a.push(action));
+    logger.addProgressObserver((action) => b.push(action));
 
     logger.logEvent("click", { selector: "#btn" });
 
@@ -96,10 +96,10 @@ describe("EvidenceLogger", () => {
 
   test("an observer that throws doesn't prevent other observers from receiving the action", () => {
     const received: string[] = [];
-    logger.addObserver(() => {
+    logger.addProgressObserver(() => {
       throw new Error("boom");
     });
-    logger.addObserver((action) => {
+    logger.addProgressObserver((action) => {
       received.push(action);
     });
 
@@ -110,7 +110,7 @@ describe("EvidenceLogger", () => {
 
   test("logToolCall notifies observers with (name, arguments) for live feeds", () => {
     const received: { name: string; args: Record<string, unknown> }[] = [];
-    logger.addObserver((name, args) => {
+    logger.addProgressObserver((name, args) => {
       received.push({ name, args });
     });
 
@@ -349,10 +349,10 @@ describe("EvidenceLogger", () => {
     expect(received[0]!.name).toBe("click");
   });
 
-  test("addEventObserver and addObserver fire independently on the same logger", () => {
+  test("addEventObserver and addProgressObserver fire independently on the same logger", () => {
     const actionEvents: Array<{ action: string }> = [];
     const fullEvents: Array<Record<string, unknown>> = [];
-    logger.addObserver((action) => { actionEvents.push({ action }); });
+    logger.addProgressObserver((action) => { actionEvents.push({ action }); });
     logger.addEventObserver((event) => { fullEvents.push(event); });
 
     logger.logToolCall({

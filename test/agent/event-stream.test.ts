@@ -4,6 +4,7 @@ import { join } from "path";
 import { tmpdir } from "os";
 import { EvidenceLogger } from "../../src/evidence/logger";
 import { runAgent } from "../../src/agent/agent";
+import { textResult } from "../../src/models/provider";
 import type { LLMClient, AgentResponse, ToolCall, ToolResult } from "../../src/models/provider";
 import type { Adapter } from "../../src/adapters/adapter";
 import type { StoryCard } from "../../src/format/story-card";
@@ -32,7 +33,7 @@ function makeAdapter(): Adapter {
   return {
     name: "test",
     toolDefinitions: () => [],
-    async executeTool(_n, _a, _l): Promise<ToolResult> { return { text: "ok" }; },
+    async executeTool(_n, _a, _l): Promise<ToolResult> { return textResult("ok"); },
     async start() {}, async close() {},
     describeTarget: (target: string) => `The application is available at: ${target}`,
     defaultViewport: () => null,
@@ -136,7 +137,7 @@ describe("agent event stream", () => {
     const adapter = {
       name: "test",
       toolDefinitions: () => [{ name: "noop", description: "", parameters: { type: "object", properties: {} } }],
-      async executeTool() { return { text: "done" }; },
+      async executeTool() { return textResult("done"); },
       async start() {}, async close() {},
       describeTarget: (target: string) => `The application is available at: ${target}`,
       defaultViewport: () => null,

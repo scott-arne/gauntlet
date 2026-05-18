@@ -1,6 +1,6 @@
 import { describe, test, expect, beforeEach, afterEach } from "bun:test";
 import { findCard, loadAllCards } from "../../src/cards/store";
-import { ErrorLog } from "../../src/api/routes/errors";
+import { ErrorLog } from "../../src/util/error-log";
 import { gauntletPath } from "../../src/paths";
 import { mkdtempSync, rmSync, mkdirSync, writeFileSync, readdirSync } from "fs";
 import { join } from "path";

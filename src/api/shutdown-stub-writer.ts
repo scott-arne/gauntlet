@@ -2,6 +2,7 @@ import { existsSync, mkdirSync, writeFileSync } from "fs";
 import { dirname, join } from "path";
 import type { VetResult } from "../types";
 import { RESULT_SCHEMA_VERSION } from "../types";
+import type { CardId, RunId } from "../util/brands";
 
 /**
  * The floor-of-quality fallback for the shutdown drain story (PRI-1507):
@@ -28,8 +29,8 @@ import { RESULT_SCHEMA_VERSION } from "../types";
  * to live with given the alternative (full atomic-rename plumbing).
  */
 export interface StubTarget {
-  runId: string;
-  cardId: string;
+  runId: RunId;
+  cardId: CardId;
   /** Used to derive `duration_ms`. `-1` sentinel if absent. */
   startedAt?: number;
 }

@@ -1,10 +1,11 @@
 import type { LLMClient, ToolDefinition, ToolResult } from "../models/provider";
-import { pushAssistantTurn } from "../models/provider";
+import { pushAssistantTurn, textResult } from "../models/provider";
 import type { Adapter } from "../adapters/adapter";
 import type { EvidenceLogger } from "../evidence/logger";
 import type { StoryCard } from "../format/story-card";
 import type { VetResult, VetStatus } from "../types";
 import { RESULT_SCHEMA_VERSION } from "../types";
+import type { RunId } from "../util/brands";
 import { buildSystemPrompt } from "./prompts";
 import { buildInitialUserMessage } from "./initial-message";
 import { parseReportResult } from "./validators";
@@ -54,7 +55,7 @@ export interface AgentOptions {
    * so a forgetful caller can't silently produce an empty-string runId
    * in `result.json`.
    */
-  runId: string;
+  runId: RunId;
   /** LLM provider name (e.g. "anthropic", "openai"). Surfaced on the run_start log row. */
   provider?: string;
   /** LLM model name (e.g. "claude-opus-4-7"). Surfaced on the run_start log row. */
@@ -194,23 +195,38 @@ export async function runAgent(
    * Build a terminal VetResult with shared scaffolding (schema, evidence,
    * duration, usage). Used by every early-exit: report_result, max_tokens
    * truncation, empty response, and the max-turns fallthrough.
+   *
+   * Overloaded so the discriminated union is compiler-enforced: the
+   * "errored" variant requires an `error` object; other statuses must
+   * omit it.
    */
-  const buildResult = (partial: {
+  function buildResult(partial: {
+    status: "pass" | "fail" | "investigate";
+    summary: string;
+    reasoning: string;
+    observations?: VetResult["observations"];
+  }): VetResult;
+  function buildResult(partial: {
+    status: "errored";
+    summary: string;
+    reasoning: string;
+    observations?: VetResult["observations"];
+    error: { type: string; message: string };
+  }): VetResult;
+  function buildResult(partial: {
     status: VetStatus;
     summary: string;
     reasoning: string;
     observations?: VetResult["observations"];
-    error?: VetResult["error"];
-  }): VetResult => {
-    const result: VetResult = {
+    error?: { type: string; message: string };
+  }): VetResult {
+    const base = {
       schemaVersion: RESULT_SCHEMA_VERSION,
       runId,
       scenario: card.id,
-      status: partial.status,
       summary: partial.summary,
       reasoning: partial.reasoning,
       observations: partial.observations ?? [],
-      ...(partial.error ? { error: partial.error } : {}),
       evidence: {
         screenshots: logger.screenshots,
         log: logger.logPath,
@@ -226,6 +242,9 @@ export async function runAgent(
         turns,
       },
     };
+    const result: VetResult = partial.status === "errored"
+      ? { ...base, status: "errored", error: partial.error! }
+      : { ...base, status: partial.status };
     logger.logRunEnd({
       status: result.status,
       summary: result.summary,
@@ -243,7 +262,7 @@ export async function runAgent(
       outDir: options.outDir,
     });
     return result;
-  };
+  }
 
   const isAborted = (): boolean => options.abortSignal?.aborted === true;
   const abortedResult = (): VetResult => {
@@ -382,7 +401,7 @@ export async function runAgent(
         } catch (error) {
           errored = true;
           const message = error instanceof Error ? error.message : String(error);
-          result = { text: `Error: ${message}` };
+          result = textResult(`Error: ${message}`);
         } finally {
           if (timeoutHandle) clearTimeout(timeoutHandle);
         }
@@ -392,12 +411,12 @@ export async function runAgent(
           toolUseId: tc.id,
           name: tc.name,
           durationMs: Date.now() - started,
-          text: result.text ?? "",
+          text: result.text,
           transcriptText: result.transcriptText,
-          image: (result as any).imagePath,       // populated by T6; undefined today
-          mediaType: (result as any).image?.mediaType, // pairs with imagePath; needed by revival image rehydration
-          artifact: (result as any).artifactPath, // populated by T6/T7
-          capturePath: (result as any).capturePath, // populated by TUIAdapter read_screen
+          image: result.kind === "image" ? result.imagePath : undefined,
+          mediaType: result.kind === "image" ? result.image.mediaType : undefined,
+          artifact: result.kind === "artifact" ? result.artifactPath : undefined,
+          capturePath: result.kind === "capture" ? result.capturePath : undefined,
           error: errored,
         });
       }

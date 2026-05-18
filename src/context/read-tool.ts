@@ -1,5 +1,5 @@
 import { readFileSync, statSync } from "fs";
-import type { ToolDefinition, ToolResult } from "../models/provider";
+import { textResult, type ToolDefinition, type ToolResult } from "../models/provider";
 import { contextRootIsPopulated, resolveInside } from "../paths";
 
 // The `read` tool is the agent-facing primitive for pulling file contents
@@ -66,40 +66,38 @@ export function buildReadTool(contextRoot: string): ReadTool | null {
     const path = typeof args.path === "string" ? args.path : "";
 
     if (!path) {
-      return {
-        text: `Error: read requires a "path" argument (a name from the Context tree).`,
-      };
+      return textResult(`Error: read requires a "path" argument (a name from the Context tree).`);
     }
 
     let resolved: string;
     try {
       resolved = resolveInside(contextRoot, path);
     } catch (err) {
-      return { text: `Error: ${errorMessage(err)}` };
+      return textResult(`Error: ${errorMessage(err)}`);
     }
 
     let stat;
     try {
       stat = statSync(resolved);
     } catch {
-      return { text: `Error: file not found: ${path}` };
+      return textResult(`Error: file not found: ${path}`);
     }
     if (!stat.isFile()) {
-      return { text: `Error: not a file: ${path}` };
+      return textResult(`Error: not a file: ${path}`);
     }
 
     let buf: Buffer;
     try {
       buf = readFileSync(resolved);
     } catch (err) {
-      return { text: `Error: ${errorMessage(err)}` };
+      return textResult(`Error: ${errorMessage(err)}`);
     }
 
     if (looksBinary(buf)) {
-      return { text: `Error: binary file not supported: ${path}` };
+      return textResult(`Error: binary file not supported: ${path}`);
     }
 
-    return { text: buf.toString("utf-8") };
+    return textResult(buf.toString("utf-8"));
   };
 
   return { definition, execute };

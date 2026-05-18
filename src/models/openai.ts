@@ -59,7 +59,7 @@ export function openaiToolResultMessages(
   // here (not nested under image_url.url like Chat Completions).
   const imageParts: Array<Record<string, unknown>> = [];
   for (const result of results) {
-    if (result.image) {
+    if (result.kind === "image") {
       imageParts.push({
         type: "input_image",
         image_url: `data:${result.image.mediaType};base64,${result.image.data}`,

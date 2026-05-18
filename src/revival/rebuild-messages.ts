@@ -1,7 +1,7 @@
 import { readFileSync } from "fs";
 import { join } from "path";
 import type { LLMClient, ToolCall, ToolDefinition, ToolResult } from "../models/provider";
-import { pushAssistantTurn } from "../models/provider";
+import { pushAssistantTurn, textResult } from "../models/provider";
 import { buildRevivalAddendum } from "./system-prompt-addendum";
 import { getAdapterToolDefinitionsByName } from "../adapters/registry";
 import { REPORT_TOOL } from "../agent/agent";
@@ -170,9 +170,9 @@ export function rebuildMessages(
       );
       const unmatched = finalCalls.filter((c) => !executedIds.has(c.id));
       if (unmatched.length > 0) {
-        const stubResults: ToolResult[] = unmatched.map(() => ({
-          text: "[revival: tool was not executed during the original run]",
-        }));
+        const stubResults: ToolResult[] = unmatched.map(() =>
+          textResult("[revival: tool was not executed during the original run]"),
+        );
         messages.push(...client.toolResultMessages(unmatched, stubResults));
       }
     }
@@ -190,16 +190,23 @@ function rebuildToolResult(
   runDir: string,
   warnings: string[],
 ): ToolResult {
-  const result: ToolResult = { text: String(tr.text ?? "") };
-
+  // Reconstruct the variant from the per-field signals on disk. The
+  // run.jsonl rows don't carry an explicit `kind`; we infer from
+  // which fields the original producer set:
+  //   - capturePath set → capture variant (TUI read_screen)
+  //   - image set       → image variant   (web screenshot)
+  //   - else            → text variant    (most paths)
+  // textTruncated+artifact rehydrates `text` for any variant.
+  let text = String(tr.text ?? "");
   const textTruncated = tr.textTruncated === true;
   const artifactRel = tr.artifact as string | undefined;
   if (textTruncated && artifactRel) {
-    result.text = readFileSync(join(runDir, artifactRel), "utf8");
+    text = readFileSync(join(runDir, artifactRel), "utf8");
   }
   const capturePathRel = tr.capturePath as string | undefined;
   if (capturePathRel) {
-    result.text = readFileSync(join(runDir, capturePathRel), "utf8");
+    text = readFileSync(join(runDir, capturePathRel), "utf8");
+    return { kind: "capture", text, capturePath: capturePathRel };
   }
 
   const imageRel = tr.image as string | undefined;
@@ -212,8 +219,13 @@ function rebuildToolResult(
       );
     }
     const data = readFileSync(join(runDir, imageRel)).toString("base64");
-    result.image = { data, mediaType };
+    return {
+      kind: "image",
+      text,
+      image: { data, mediaType },
+      imagePath: imageRel,
+    };
   }
 
-  return result;
+  return textResult(text);
 }

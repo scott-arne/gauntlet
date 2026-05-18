@@ -3,9 +3,10 @@ import { mkdirSync, writeFileSync, unlinkSync } from "fs";
 import { join } from "path";
 import { serializeStoryCard } from "../../format/story-card";
 import type { StoryCard } from "../../format/story-card";
+import { asCardId } from "../../util/brands";
 import { loadAllCards, findCard } from "../../cards/store";
 import { isSafePath, gauntletPath } from "../../paths";
-import type { ErrorLog } from "./errors";
+import type { ErrorLog } from "../../util/error-log";
 
 /**
  * Type-checked subset of StoryCard fields that scenario create/update bodies
@@ -138,11 +139,12 @@ export function scenarioRoutes(projectRoot: string, errorLog?: ErrorLog) {
     }
 
     const card: StoryCard = {
-      id,
+      // HTTP boundary: route param/body strings become branded ids.
+      id: asCardId(id),
       title,
       status: body.status ?? "draft",
       tags: body.tags ?? [],
-      parent: body.parent,
+      parent: body.parent ? asCardId(body.parent) : undefined,
       stakeholder: body.stakeholder,
       description: body.description ?? "",
       acceptanceCriteria: body.acceptanceCriteria ?? [],
@@ -184,7 +186,17 @@ export function scenarioRoutes(projectRoot: string, errorLog?: ErrorLog) {
       return c.json({ error: err instanceof Error ? err.message : String(err) }, 400);
     }
 
-    const updated: StoryCard = { ...entry.card, ...updates, id: entry.card.id };
+    // HTTP boundary: brand parent (route-body string) before merging into
+    // the existing card. id always comes from the path-bound entry.
+    const brandedParent = updates.parent !== undefined
+      ? asCardId(updates.parent)
+      : entry.card.parent;
+    const updated: StoryCard = {
+      ...entry.card,
+      ...updates,
+      id: entry.card.id,
+      parent: brandedParent,
+    };
     updated.raw = serializeStoryCard(updated);
 
     writeFileSync(join(storiesDir, entry.filename), updated.raw);

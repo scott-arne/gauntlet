@@ -12,7 +12,10 @@ describe("anthropicToolResultMessages", () => {
       { id: "toolu_abc", name: "screenshot", arguments: {} },
       { id: "toolu_def", name: "click", arguments: { x: 10, y: 20 } },
     ];
-    const results = [{ text: "base64data" }, { text: "clicked" }];
+    const results = [
+      { kind: "text" as const, text: "base64data" },
+      { kind: "text" as const, text: "clicked" },
+    ];
 
     const messages = anthropicToolResultMessages(calls, results);
 
@@ -30,7 +33,7 @@ describe("anthropicToolResultMessages", () => {
     const calls = [
       { id: "toolu_abc", name: "eval", arguments: {} },
     ];
-    const results = [{ text: undefined as unknown as string }];
+    const results = [{ kind: "text" as const, text: undefined as unknown as string }];
 
     const messages = anthropicToolResultMessages(calls, results);
 
@@ -44,6 +47,7 @@ describe("anthropicToolResultMessages", () => {
       { id: "toolu_img", name: "screenshot", arguments: {} },
     ];
     const results = [{
+      kind: "image" as const,
       text: undefined as unknown as string,
       image: { data: "aGVsbG8=", mediaType: "image/png" },
     }];
@@ -62,6 +66,7 @@ describe("anthropicToolResultMessages", () => {
       { id: "toolu_img", name: "screenshot", arguments: {} },
     ];
     const results = [{
+      kind: "image" as const,
       text: "Screenshot saved to screenshots/001.png",
       image: { data: "aGVsbG8=", mediaType: "image/png" },
     }];
