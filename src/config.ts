@@ -2,6 +2,7 @@ import { isAbsolute, resolve as resolvePath } from "node:path";
 import { statSync } from "node:fs";
 import { ADAPTER_TYPES, isAdapterType, type AdapterType } from "./adapters/adapter";
 import { parseDuration } from "./util/parse-duration";
+import { resolveSetting, resolveEnvOnlySetting } from "./config-helpers";
 
 export interface ChromeEndpoint {
   host: string;
@@ -407,16 +408,13 @@ export function requireLlmCapable(config: AppConfig): void {
 
 export function loadConfig(args: CliArgsInput, env: NodeJS.ProcessEnv): AppConfig {
   // projectRoot
-  let projectRoot = DEFAULT_PROJECT_ROOT;
-  let projectRootSource: "default" | "env" | "flag" = "default";
-  if (env.GAUNTLET_PROJECT_ROOT) {
-    projectRoot = env.GAUNTLET_PROJECT_ROOT;
-    projectRootSource = "env";
-  }
-  if (args.projectRoot !== undefined) {
-    projectRoot = args.projectRoot;
-    projectRootSource = "flag";
-  }
+  const projectRootR = resolveSetting({
+    default: DEFAULT_PROJECT_ROOT,
+    env: { name: "GAUNTLET_PROJECT_ROOT", parse: (s) => s },
+    arg: { value: args.projectRoot },
+  }, env);
+  const projectRoot = projectRootR.value;
+  const projectRootSource = projectRootR.source;
 
   // port
   let port = DEFAULT_PORT;
