@@ -80,11 +80,12 @@ function isMode(s: string): s is Mode {
 export function fanoutRoutes(config: AppConfig, clientFactory?: () => LLMClient, errorLog?: ErrorLog) {
   const router = new Hono();
   const projectRoot = config.projectRoot;
-  const storiesDir = gauntletPath(projectRoot, "stories");
+  const stateDirName = config.stateDirName;
+  const storiesDir = gauntletPath(projectRoot, stateDirName, "stories");
 
   router.post("/:id", async (c) => {
     const cardId = c.req.param("id");
-    const entry = findCard(projectRoot, cardId, errorLog);
+    const entry = findCard(projectRoot, stateDirName, cardId, errorLog);
     if (!entry) return c.json({ error: "not found" }, 404);
 
     const resolved = resolveClient(config, clientFactory);
@@ -107,7 +108,7 @@ export function fanoutRoutes(config: AppConfig, clientFactory?: () => LLMClient,
     const modeConfig = MODES[mode];
 
     const runId = c.req.param("id");
-    const resultPath = gauntletPath(projectRoot, "results", runId, "result.json");
+    const resultPath = gauntletPath(projectRoot, stateDirName, "results", runId, "result.json");
     if (!existsSync(resultPath)) return c.json({ error: "not found" }, 404);
 
     const result: VetResult = JSON.parse(readFileSync(resultPath, "utf-8"));

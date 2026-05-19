@@ -134,7 +134,7 @@ export const FETCH_CREDENTIAL_TOOL_DESCRIPTION =
   "whichever the system-under-test recognizes; extract it from the context file " +
   "that describes the user (use the `read` tool to fetch that file first). The " +
   "second argument `key` names which credential is being requested (e.g. \"otp\", " +
-  "\"signup_verification\"). The file under .gauntlet/context/ that describes " +
+  "\"signup_verification\"). The file under the project's context directory that describes " +
   "the entity declares which `key` values are valid. Returns the credential's " +
   "current value as markdown; on failure returns an error message naming the " +
   "step that failed.";

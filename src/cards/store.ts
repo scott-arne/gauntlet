@@ -23,10 +23,11 @@ export interface CardEntry {
  */
 export function findCard(
   projectRoot: string,
+  stateDirName: string,
   id: string,
   errorLog?: ErrorLog,
 ): CardEntry | undefined {
-  const storiesDir = gauntletPath(projectRoot, "stories");
+  const storiesDir = gauntletPath(projectRoot, stateDirName, "stories");
   const directPath = join(storiesDir, `${id}.md`);
 
   if (existsSync(directPath)) {
@@ -40,7 +41,7 @@ export function findCard(
     // scan — maybe another file has the right id.
   }
 
-  return loadAllCards(projectRoot, errorLog).find((entry) => entry.card.id === id);
+  return loadAllCards(projectRoot, stateDirName, errorLog).find((entry) => entry.card.id === id);
 }
 
 /**
@@ -50,9 +51,10 @@ export function findCard(
  */
 export function loadAllCards(
   projectRoot: string,
+  stateDirName: string,
   errorLog?: ErrorLog,
 ): CardEntry[] {
-  const storiesDir = gauntletPath(projectRoot, "stories");
+  const storiesDir = gauntletPath(projectRoot, stateDirName, "stories");
   if (!existsSync(storiesDir)) return [];
 
   const files = readdirSync(storiesDir)

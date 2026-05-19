@@ -4,6 +4,7 @@ import { loadConfig, type AppConfig } from "../config";
 interface ConfigOutput {
   gauntlet: {
     projectRoot: string;
+    stateDirName: string;
     port: number;
     defaultChrome: { host: string; port: number };
     defaultTarget: string | null;
@@ -43,6 +44,7 @@ export function buildConfigOutput(config: AppConfig, env: NodeJS.ProcessEnv): Co
   return {
     gauntlet: {
       projectRoot: config.projectRoot,
+      stateDirName: config.stateDirName,
       port: config.port,
       defaultChrome: config.defaultChrome,
       defaultTarget: config.defaultTarget ?? null,
@@ -87,6 +89,7 @@ export function formatConfigText(output: ConfigOutput): string {
   lines.push("# Gauntlet configuration");
   lines.push("");
   lines.push(`  projectRoot:    ${output.gauntlet.projectRoot}  (${output.gauntlet.sources.projectRoot})`);
+  lines.push(`  stateDirName:   ${output.gauntlet.stateDirName}  (${output.gauntlet.sources.stateDirName})`);
   lines.push(`  port:           ${output.gauntlet.port}  (${output.gauntlet.sources.port})`);
   lines.push(`  defaultChrome:  ${output.gauntlet.defaultChrome.host}:${output.gauntlet.defaultChrome.port}  (${output.gauntlet.sources.defaultChrome})`);
   lines.push(`  defaultTarget:  ${output.gauntlet.defaultTarget ?? "(unset)"}  (${output.gauntlet.sources.defaultTarget})`);

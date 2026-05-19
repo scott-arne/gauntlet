@@ -3,18 +3,19 @@
 import { isAbsolute, join, resolve as resolvePath, sep } from "path";
 import { readdirSync, realpathSync, statSync } from "fs";
 
-export const GAUNTLET_DIRNAME = ".gauntlet";
+export const DEFAULT_STATE_DIR_NAME = ".gauntlet";
 
 /**
- * Compose a path under the project's `.gauntlet/` state directory.
- * Centralizes the `.gauntlet/` convention so no call site hardcodes it.
+ * Compose a path under the project's state directory (default `.gauntlet`,
+ * configurable via `--state-dir` / `GAUNTLET_STATE_DIR`). Centralizes the
+ * state-dir convention so no call site joins the literal name.
  *
- *   gauntletPath(root, "stories")              → <root>/.gauntlet/stories
- *   gauntletPath(root, "results", runId)       → <root>/.gauntlet/results/<runId>
- *   gauntletPath(root, "context", user, "foo") → <root>/.gauntlet/context/<user>/foo
+ *   gauntletPath(root, ".gauntlet", "stories")              → <root>/.gauntlet/stories
+ *   gauntletPath(root, ".gauntlet", "results", runId)       → <root>/.gauntlet/results/<runId>
+ *   gauntletPath(root, "gauntlet",  "context", user, "foo") → <root>/gauntlet/context/<user>/foo
  */
-export function gauntletPath(projectRoot: string, ...sub: string[]): string {
-  return join(projectRoot, GAUNTLET_DIRNAME, ...sub);
+export function gauntletPath(projectRoot: string, stateDirName: string, ...sub: string[]): string {
+  return join(projectRoot, stateDirName, ...sub);
 }
 
 // Canonicalize a path to its realpath if it exists; otherwise walk up

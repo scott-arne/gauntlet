@@ -17,6 +17,7 @@ export function makeConfig(
 ): AppConfig {
   const base: AppConfig = {
     projectRoot,
+    stateDirName: ".gauntlet",
     port: 4400,
     defaultChrome: { host: "127.0.0.1", port: 9222 },
     defaultBudgetMs: 300_000,
@@ -33,6 +34,7 @@ export function makeConfig(
     apiKeys: { anthropic: false, openai: false },
     sources: {
       projectRoot: "default",
+      stateDirName: "default",
       port: "default",
       defaultChrome: "default",
       defaultTarget: "unset",

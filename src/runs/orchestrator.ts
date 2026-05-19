@@ -21,11 +21,12 @@ export type RunAdapterType = "web" | "cli" | "tui";
 
 /**
  * Resolve the Project prompt block. Explicit path wins; otherwise look
- * for .gauntlet/project.md in the project root; otherwise undefined.
+ * for `<stateDirName>/project.md` in the project root; otherwise undefined.
  * Missing explicit path is a hard error (the caller asked for it).
  */
 export function resolveProjectPrompt(
   projectRoot: string,
+  stateDirName: string,
   explicitPath: string | undefined,
 ): string | undefined {
   if (explicitPath) {
@@ -34,7 +35,7 @@ export function resolveProjectPrompt(
     }
     return readFileSync(explicitPath, "utf-8").replace(/\s+$/, "");
   }
-  const defaultPath = join(projectRoot, ".gauntlet", "project.md");
+  const defaultPath = gauntletPath(projectRoot, stateDirName, "project.md");
   if (existsSync(defaultPath)) {
     return readFileSync(defaultPath, "utf-8").replace(/\s+$/, "");
   }
@@ -89,7 +90,7 @@ export interface ExecuteRunCoreOptions {
    * `clientFactory?` pattern from PRI-1505. */
   adapterFactory?: (ctx: AdapterFactoryCtx) => Adapter | Promise<Adapter>;
   /** Optional explicit path to a Project prompt augmentation file. When
-   * unset, `resolveProjectPrompt` falls through to `.gauntlet/project.md`
+   * unset, `resolveProjectPrompt` falls through to `<state-dir>/project.md`
    * under `runConfig.projectRoot` (or no Project block if that's absent). */
   projectPromptPath?: string;
   /**
@@ -162,12 +163,12 @@ export async function executeRunCore(
   const { card, storyPath, runConfig, client, runSetCtx, hooks } = opts;
 
   const runId = opts.runId ?? makeRunId(card.id);
-  const outDir = opts.outDir ?? gauntletPath(runConfig.projectRoot, "results", runId);
+  const outDir = opts.outDir ?? gauntletPath(runConfig.projectRoot, runConfig.stateDirName, "results", runId);
 
   snapshotRunInputs({
     runDir: outDir,
     storyPath,
-    contextRoot: gauntletPath(runConfig.projectRoot, "context"),
+    contextRoot: gauntletPath(runConfig.projectRoot, runConfig.stateDirName, "context"),
   });
 
   const logger = new EvidenceLogger(outDir);
@@ -176,7 +177,7 @@ export async function executeRunCore(
 
   const contextRoot = join(outDir, "inputs", "context");
   const contextTree = renderContextTree(contextRoot);
-  const projectPrompt = resolveProjectPrompt(runConfig.projectRoot, opts.projectPromptPath);
+  const projectPrompt = resolveProjectPrompt(runConfig.projectRoot, runConfig.stateDirName, opts.projectPromptPath);
 
   const adapter = await (opts.adapterFactory
     ? opts.adapterFactory({ contextRoot, runId, logger })

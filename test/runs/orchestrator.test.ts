@@ -36,6 +36,7 @@ describe("executeRunCore — happy path", () => {
       client,
       runConfig: {
         projectRoot,
+        stateDirName: ".gauntlet",
         model: "claude-sonnet-4-6",
         adapter: "cli",
         target: "true",
@@ -69,6 +70,7 @@ describe("executeRunCore — result metadata", () => {
       client,
       runConfig: {
         projectRoot,
+        stateDirName: ".gauntlet",
         model: "claude-sonnet-4-6",
         adapter: "cli",
         target: "true",
@@ -107,6 +109,7 @@ describe("executeRunCore — result metadata", () => {
       client,
       runConfig: {
         projectRoot,
+        stateDirName: ".gauntlet",
         model: "claude-sonnet-4-6",
         adapter: "cli",
         target: "true",
@@ -132,6 +135,7 @@ describe("executeRunCore — result metadata", () => {
       client,
       runConfig: {
         projectRoot,
+        stateDirName: ".gauntlet",
         model: "claude-sonnet-4-6",
         adapter: "cli",
         target: "true",
@@ -161,6 +165,7 @@ describe("executeRunCore — onLogger hook", () => {
       client,
       runConfig: {
         projectRoot,
+        stateDirName: ".gauntlet",
         model: "claude-sonnet-4-6",
         adapter: "cli",
         target: "true",
@@ -196,6 +201,7 @@ describe("executeRunCore — onLogger hook", () => {
       client,
       runConfig: {
         projectRoot,
+        stateDirName: ".gauntlet",
         model: "claude-sonnet-4-6",
         adapter: "cli",
         target: "true",
@@ -227,6 +233,7 @@ describe("executeRunCore — lifecycle hooks", () => {
       client,
       runConfig: {
         projectRoot,
+        stateDirName: ".gauntlet",
         model: "claude-sonnet-4-6",
         adapter: "cli",
         target: "true",
@@ -274,6 +281,7 @@ describe("executeRunCore — error path", () => {
         client,
         runConfig: {
           projectRoot,
+          stateDirName: ".gauntlet",
           model: "claude-sonnet-4-6",
           adapter: "cli",
           target: "true",
@@ -356,6 +364,7 @@ describe("executeRunCore — abort signal", () => {
       client,
       runConfig: {
         projectRoot,
+        stateDirName: ".gauntlet",
         model: "claude-sonnet-4-6",
         adapter: "cli",
         target: "true",

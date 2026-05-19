@@ -30,7 +30,7 @@ describe("findCard", () => {
 
   beforeEach(() => {
     projectRoot = mkdtempSync(join(tmpdir(), "gauntlet-store-find-"));
-    storiesDir = gauntletPath(projectRoot, "stories");
+    storiesDir = gauntletPath(projectRoot, ".gauntlet", "stories");
     mkdirSync(storiesDir, { recursive: true });
   });
 
@@ -46,7 +46,7 @@ describe("findCard", () => {
     writeFileSync(join(storiesDir, "story-001.md"), cardMd("story-001", "Test"));
     writeFileSync(join(storiesDir, "broken.md"), "not frontmatter at all");
 
-    const entry = findCard(projectRoot, "story-001");
+    const entry = findCard(projectRoot, ".gauntlet", "story-001");
     expect(entry).toBeDefined();
     expect(entry!.card.id).toBe("story-001");
     expect(entry!.filename).toBe("story-001.md");
@@ -62,7 +62,7 @@ describe("findCard", () => {
       cardMd("story-xyz", "Legacy card"),
     );
 
-    const entry = findCard(projectRoot, "story-xyz");
+    const entry = findCard(projectRoot, ".gauntlet", "story-xyz");
     expect(entry).toBeDefined();
     expect(entry!.card.id).toBe("story-xyz");
     expect(entry!.filename).toBe("legacy-filename.md");
@@ -70,13 +70,13 @@ describe("findCard", () => {
 
   test("returns undefined when no card matches", () => {
     writeFileSync(join(storiesDir, "story-001.md"), cardMd("story-001", "Test"));
-    expect(findCard(projectRoot, "story-999")).toBeUndefined();
+    expect(findCard(projectRoot, ".gauntlet", "story-999")).toBeUndefined();
   });
 
   test("returns undefined when stories dir doesn't exist", () => {
     const emptyRoot = mkdtempSync(join(tmpdir(), "gauntlet-store-empty-"));
     try {
-      expect(findCard(emptyRoot, "anything")).toBeUndefined();
+      expect(findCard(emptyRoot, ".gauntlet", "anything")).toBeUndefined();
     } finally {
       rmSync(emptyRoot, { recursive: true, force: true });
     }
@@ -86,7 +86,7 @@ describe("findCard", () => {
     // Caller asked for `broken` specifically and we found broken.md —
     // silently skipping would be a lie. Throw.
     writeFileSync(join(storiesDir, "broken.md"), "not a valid card");
-    expect(() => findCard(projectRoot, "broken")).toThrow();
+    expect(() => findCard(projectRoot, ".gauntlet", "broken")).toThrow();
   });
 
   test("direct-hit id mismatch falls through to scan", () => {
@@ -102,7 +102,7 @@ describe("findCard", () => {
       cardMd("story-001", "Correct"),
     );
 
-    const entry = findCard(projectRoot, "story-001");
+    const entry = findCard(projectRoot, ".gauntlet", "story-001");
     expect(entry).toBeDefined();
     expect(entry!.card.id).toBe("story-001");
     expect(entry!.filename).toBe("correct.md");
@@ -118,7 +118,7 @@ describe("findCard", () => {
     );
 
     const log = new ErrorLog();
-    const entry = findCard(projectRoot, "target", log);
+    const entry = findCard(projectRoot, ".gauntlet", "target", log);
     expect(entry).toBeDefined();
     expect(entry!.card.id).toBe("target");
     expect(log.count()).toBe(1);
@@ -133,7 +133,7 @@ describe("loadAllCards", () => {
 
   beforeEach(() => {
     projectRoot = mkdtempSync(join(tmpdir(), "gauntlet-store-load-"));
-    storiesDir = gauntletPath(projectRoot, "stories");
+    storiesDir = gauntletPath(projectRoot, ".gauntlet", "stories");
     mkdirSync(storiesDir, { recursive: true });
   });
 
@@ -146,14 +146,14 @@ describe("loadAllCards", () => {
     writeFileSync(join(storiesDir, "a.md"), cardMd("a", "Ay"));
     writeFileSync(join(storiesDir, "c.md"), cardMd("c", "See"));
 
-    const entries = loadAllCards(projectRoot);
+    const entries = loadAllCards(projectRoot, ".gauntlet");
     expect(entries.map((e) => e.filename)).toEqual(["a.md", "b.md", "c.md"]);
   });
 
   test("returns empty list when stories dir doesn't exist", () => {
     const emptyRoot = mkdtempSync(join(tmpdir(), "gauntlet-store-none-"));
     try {
-      expect(loadAllCards(emptyRoot)).toEqual([]);
+      expect(loadAllCards(emptyRoot, ".gauntlet")).toEqual([]);
     } finally {
       rmSync(emptyRoot, { recursive: true, force: true });
     }
@@ -165,7 +165,7 @@ describe("loadAllCards", () => {
     writeFileSync(join(storiesDir, "missing-title.md"), "---\nid: x\n---\n");
 
     const log = new ErrorLog();
-    const entries = loadAllCards(projectRoot, log);
+    const entries = loadAllCards(projectRoot, ".gauntlet", log);
     expect(entries.map((e) => e.card.id)).toEqual(["good"]);
     expect(log.count()).toBe(2);
     const messages = log.entries().map((e) => e.message);
@@ -180,7 +180,7 @@ describe("loadAllCards", () => {
     writeFileSync(join(storiesDir, "good.md"), cardMd("good", "Good"));
     writeFileSync(join(storiesDir, "broken.md"), "garbage");
 
-    const entries = loadAllCards(projectRoot);
+    const entries = loadAllCards(projectRoot, ".gauntlet");
     expect(entries).toHaveLength(1);
     expect(entries[0].card.id).toBe("good");
   });
@@ -190,7 +190,7 @@ describe("loadAllCards", () => {
     writeFileSync(join(storiesDir, "notes.txt"), "scratch");
     writeFileSync(join(storiesDir, "README"), "docs");
 
-    const entries = loadAllCards(projectRoot);
+    const entries = loadAllCards(projectRoot, ".gauntlet");
     expect(entries).toHaveLength(1);
     expect(entries[0].filename).toBe("a.md");
     // Sanity: the other files really are on disk

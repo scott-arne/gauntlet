@@ -26,7 +26,7 @@ describe("Manifest-gated file route", () => {
   });
 
   function makeRun(scenario: string, manifest: Record<string, unknown>) {
-    const runDir = gauntletPath(projectRoot, "results", scenario);
+    const runDir = gauntletPath(projectRoot, ".gauntlet", "results", scenario);
     mkdirSync(runDir, { recursive: true });
     writeFileSync(join(runDir, "result.json"), JSON.stringify(manifest));
     return runDir;
@@ -74,7 +74,7 @@ describe("Manifest-gated file route", () => {
   });
 
   test("404s when the run directory has no result.json", async () => {
-    const runDir = gauntletPath(projectRoot, "results", "no-manifest");
+    const runDir = gauntletPath(projectRoot, ".gauntlet", "results", "no-manifest");
     mkdirSync(runDir, { recursive: true });
     writeFileSync(join(runDir, "video.webm"), "fake-video-data");
 

@@ -71,7 +71,7 @@ describe("Fanout API", () => {
 
   beforeEach(() => {
     projectRoot = mkdtempSync(join(tmpdir(), "gauntlet-fanout-api-"));
-    storiesDir = gauntletPath(projectRoot, "stories");
+    storiesDir = gauntletPath(projectRoot, ".gauntlet", "stories");
     mkdirSync(storiesDir, { recursive: true });
     writeFileSync(join(storiesDir, "story-001-test.md"), STORY_MD);
   });
@@ -194,7 +194,7 @@ describe("Fanout observations API", () => {
 
   beforeEach(() => {
     projectRoot = mkdtempSync(join(tmpdir(), "gauntlet-fanout-obs-"));
-    storiesDir = gauntletPath(projectRoot, "stories");
+    storiesDir = gauntletPath(projectRoot, ".gauntlet", "stories");
     mkdirSync(storiesDir, { recursive: true });
   });
 
@@ -204,7 +204,7 @@ describe("Fanout observations API", () => {
 
   test("POST /api/fanout/:id/observations promotes observations to story cards", async () => {
     const runId = "test-001_20260416T142301Z_k3xm";
-    const resultsDir = gauntletPath(projectRoot, "results", runId);
+    const resultsDir = gauntletPath(projectRoot, ".gauntlet", "results", runId);
     mkdirSync(resultsDir, { recursive: true });
     writeFileSync(
       join(resultsDir, "result.json"),
@@ -247,7 +247,7 @@ describe("Fanout observations API", () => {
 
   test("POST /api/fanout/:id/observations returns empty generated when no observations", async () => {
     const runId = "test-noobs_20260416T142301Z_q9x2";
-    const resultsDir = gauntletPath(projectRoot, "results", runId);
+    const resultsDir = gauntletPath(projectRoot, ".gauntlet", "results", runId);
     mkdirSync(resultsDir, { recursive: true });
     writeFileSync(
       join(resultsDir, "result.json"),
@@ -299,7 +299,7 @@ describe("Fanout failure API", () => {
 
   beforeEach(() => {
     projectRoot = mkdtempSync(join(tmpdir(), "gauntlet-fanout-fail-"));
-    storiesDir = gauntletPath(projectRoot, "stories");
+    storiesDir = gauntletPath(projectRoot, ".gauntlet", "stories");
     mkdirSync(storiesDir, { recursive: true });
   });
 
@@ -309,7 +309,7 @@ describe("Fanout failure API", () => {
 
   test("POST /api/fanout/:id/failure generates follow-up stories from a failed run", async () => {
     const runId = "test-002_20260416T142301Z_f7v1";
-    const resultsDir = gauntletPath(projectRoot, "results", runId);
+    const resultsDir = gauntletPath(projectRoot, ".gauntlet", "results", runId);
     mkdirSync(resultsDir, { recursive: true });
     writeFileSync(
       join(resultsDir, "result.json"),
@@ -348,7 +348,7 @@ describe("Fanout failure API", () => {
 
   test("POST /api/fanout/:id/failure returns 400 when result is not a failure", async () => {
     const runId = "test-003_20260416T142301Z_p2xq";
-    const resultsDir = gauntletPath(projectRoot, "results", runId);
+    const resultsDir = gauntletPath(projectRoot, ".gauntlet", "results", runId);
     mkdirSync(resultsDir, { recursive: true });
     writeFileSync(
       join(resultsDir, "result.json"),

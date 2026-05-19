@@ -31,7 +31,7 @@ describe("Run API", () => {
 
   beforeEach(() => {
     projectRoot = mkdtempSync(join(tmpdir(), "gauntlet-run-api-"));
-    storiesDir = gauntletPath(projectRoot, "stories");
+    storiesDir = gauntletPath(projectRoot, ".gauntlet", "stories");
     mkdirSync(storiesDir, { recursive: true });
     writeFileSync(join(storiesDir, "story-001-test.md"), STORY_MD);
   });
@@ -207,7 +207,7 @@ describe("Run API", () => {
     broadcaster.addClient(runId, ws as any);
 
     // Write a minimal story file so snapshotRunInputs has something to copy.
-    const storyDir = gauntletPath(projectRoot, "stories");
+    const storyDir = gauntletPath(projectRoot, ".gauntlet", "stories");
     mkdirSync(storyDir, { recursive: true });
     const storyPath = join(storyDir, "story-001.md");
     writeFileSync(storyPath, `---\nid: story-001\ntitle: Test\nstatus: draft\ntags: core\n---\n\nbody\n\n## Acceptance Criteria\n- works\n`);
@@ -228,6 +228,7 @@ describe("Run API", () => {
       client: stubClient,
       effective,
       projectRoot,
+      stateDirName: ".gauntlet",
       broadcaster,
       registry,
       adapterFactory: () => stubAdapter,
@@ -358,7 +359,7 @@ describe("Run API", () => {
     const runId = `story-001_20260422T120000Z_${saveScreencast ? "save" : "drop"}`;
 
     // Write a minimal story file so snapshotRunInputs has something to copy.
-    const storyDir = gauntletPath(projectRoot, "stories");
+    const storyDir = gauntletPath(projectRoot, ".gauntlet", "stories");
     mkdirSync(storyDir, { recursive: true });
     const storyPath = join(storyDir, "story-001.md");
     writeFileSync(storyPath, `---\nid: story-001\ntitle: Test\nstatus: draft\ntags: core\n---\n\nbody\n\n## Acceptance Criteria\n- works\n`);
@@ -380,11 +381,12 @@ describe("Run API", () => {
       client: stubClient,
       effective,
       projectRoot,
+      stateDirName: ".gauntlet",
       registry,
       adapterFactory: () => stubAdapter,
     }).catch(() => { /* swallow expected streamer failure */ });
 
-    return { framesDir: join(gauntletPath(projectRoot, "results", runId), "frames") };
+    return { framesDir: join(gauntletPath(projectRoot, ".gauntlet", "results", runId), "frames") };
   }
 
   test("screencast gate: saveScreencast=false does NOT create frames/ on disk", async () => {

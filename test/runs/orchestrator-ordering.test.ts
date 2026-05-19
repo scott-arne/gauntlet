@@ -46,6 +46,7 @@ describe("executeRunCore — ordering invariant (PRI-1507)", () => {
       client,
       runConfig: {
         projectRoot,
+        stateDirName: ".gauntlet",
         model: "claude-sonnet-4-6",
         adapter: "cli",
         target: "true",

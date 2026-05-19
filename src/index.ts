@@ -39,6 +39,7 @@ async function main() {
           target: args.cli.target ?? "",
           adapter: args.adapter,
           projectRoot: config.projectRoot,
+          stateDirName: config.stateDirName,
           projectPromptPath: args.projectPromptPath,
           viewport,
         });
@@ -135,8 +136,8 @@ async function main() {
 
       const here = dirname(fileURLToPath(import.meta.url));
       const uiDir = join(here, "..", "ui", "dist");
-      const gauntletRoot = gauntletPath(config.projectRoot);
-      const resultsRoot = gauntletPath(config.projectRoot, "results");
+      const gauntletRoot = gauntletPath(config.projectRoot, config.stateDirName);
+      const resultsRoot = gauntletPath(config.projectRoot, config.stateDirName, "results");
       const broadcaster = new RunBroadcaster();
       const registry = new ActiveRunRegistry();
       const setBroadcaster = new RunSetBroadcaster();

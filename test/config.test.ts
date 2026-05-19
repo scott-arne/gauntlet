@@ -22,6 +22,7 @@ describe("loadConfig", () => {
   test("all defaults when no args and empty env", () => {
     const c = loadConfig({}, emptyEnv);
     expect(c.projectRoot).toBe(".");
+    expect(c.stateDirName).toBe(".gauntlet");
     expect(c.port).toBe(4400);
     expect(c.defaultChrome).toEqual({ host: "127.0.0.1", port: 9222 });
     expect(c.models.agent).toBe("claude-sonnet-4-6");
@@ -29,6 +30,40 @@ describe("loadConfig", () => {
     expect(c.models.available).toEqual([]);
     expect(c.apiKeys).toEqual({ anthropic: false, openai: false });
     expect(c.sources.projectRoot).toBe("default");
+    expect(c.sources.stateDirName).toBe("default");
+  });
+
+  describe("stateDirName", () => {
+    test("GAUNTLET_STATE_DIR env var overrides default", () => {
+      const c = loadConfig({}, { GAUNTLET_STATE_DIR: "gauntlet" } as NodeJS.ProcessEnv);
+      expect(c.stateDirName).toBe("gauntlet");
+      expect(c.sources.stateDirName).toBe("env");
+    });
+
+    test("--state-dir flag overrides env", () => {
+      const c = loadConfig(
+        { stateDirName: ".gnt" },
+        { GAUNTLET_STATE_DIR: "gauntlet" } as NodeJS.ProcessEnv,
+      );
+      expect(c.stateDirName).toBe(".gnt");
+      expect(c.sources.stateDirName).toBe("flag");
+    });
+
+    test("rejects empty string", () => {
+      expect(() => loadConfig({ stateDirName: "" }, emptyEnv)).toThrow(/--state-dir/);
+    });
+
+    test("rejects slashes", () => {
+      expect(() => loadConfig({ stateDirName: "a/b" }, emptyEnv)).toThrow(/single path segment/);
+      expect(() => loadConfig({ stateDirName: "a\\b" }, emptyEnv)).toThrow(/single path segment/);
+      expect(() => loadConfig({}, { GAUNTLET_STATE_DIR: "x/y" } as NodeJS.ProcessEnv))
+        .toThrow(/single path segment/);
+    });
+
+    test("rejects . and ..", () => {
+      expect(() => loadConfig({ stateDirName: "." }, emptyEnv)).toThrow(/cannot be/);
+      expect(() => loadConfig({ stateDirName: ".." }, emptyEnv)).toThrow(/cannot be/);
+    });
   });
 
   test("env vars override defaults", () => {

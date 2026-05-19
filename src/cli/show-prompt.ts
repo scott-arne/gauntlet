@@ -1,10 +1,10 @@
 import { readFileSync, existsSync } from "fs";
-import { join } from "path";
 import { parseStoryCard } from "../format/story-card";
 import { buildInitialUserMessage } from "../agent/initial-message";
 import { buildScenarioBlocks } from "../agent/prompts";
 import { renderContextTree } from "../context/tree";
 import { resolveProjectPrompt } from "../runs/orchestrator";
+import { gauntletPath } from "../paths";
 import { loadPromptFile } from "../agent/prompts/loader";
 import type { Adapter, AdapterType } from "../adapters/adapter";
 import { WebAdapter } from "../adapters/web/adapter";
@@ -16,6 +16,7 @@ export interface ShowPromptOptions {
   target: string;
   adapter: AdapterType;
   projectRoot: string;
+  stateDirName: string;
   projectPromptPath?: string;
   viewport: string;
 }
@@ -53,9 +54,9 @@ export function showPromptAndExit(opts: ShowPromptOptions): void {
   const h = useAscii ? asciiHeader : header;
 
   const card = parseStoryCard(readFileSync(opts.scenarioPath, "utf-8"));
-  const contextRoot = join(opts.projectRoot, ".gauntlet", "context");
+  const contextRoot = gauntletPath(opts.projectRoot, opts.stateDirName, "context");
   const contextTree = existsSync(contextRoot) ? renderContextTree(contextRoot) : "";
-  const projectPrompt = resolveProjectPrompt(opts.projectRoot, opts.projectPromptPath);
+  const projectPrompt = resolveProjectPrompt(opts.projectRoot, opts.stateDirName, opts.projectPromptPath);
 
   // Honest introspection: instantiate the actual adapter (no start()) so
   // tool list and describeTarget() match what the agent receives. The
@@ -88,7 +89,7 @@ export function showPromptAndExit(opts: ShowPromptOptions): void {
   if (projectPrompt) {
     const provenance = opts.projectPromptPath
       ? `${opts.projectPromptPath}   (caller-supplied)`
-      : `${join(opts.projectRoot, ".gauntlet", "project.md")}   (default)`;
+      : `${gauntletPath(opts.projectRoot, opts.stateDirName, "project.md")}   (default)`;
     out.push(h("Project", provenance));
     out.push(projectPrompt);
   } else {

@@ -163,7 +163,7 @@ export function buildInstallPasskeyTool(
         path: {
           type: "string",
           description:
-            "Path to the passkey YAML file, relative to .gauntlet/context/. Example: 'alice/passkey.yaml'.",
+            "Path to the passkey YAML file, relative to the project's context directory. Example: 'alice/passkey.yaml'.",
         },
       },
       required: ["path"],
@@ -177,7 +177,7 @@ export function buildInstallPasskeyTool(
       logger?.logEvent("install_passkey_failed", {
         path: "", step: "validate_args", error: "missing path argument",
       });
-      return textResult(`Error: install_passkey requires a "path" argument (relative to .gauntlet/context/).`);
+      return textResult(`Error: install_passkey requires a "path" argument (relative to the project's context directory).`);
     }
 
     let resolved: string;

@@ -215,6 +215,7 @@ describe("runBatch — RunSet artifact", () => {
     tmpdirs.push(projectRoot);
     return {
       projectRoot,
+      stateDirName: ".gauntlet",
       port: 4400,
       defaultChrome: { host: "127.0.0.1", port: 9222 },
       defaultBudgetMs: 300000,

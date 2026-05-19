@@ -59,6 +59,7 @@ describe("gauntlet batch — e2e against CLI adapter", () => {
       adapterType: "cli",
       config: {
         projectRoot,
+        stateDirName: ".gauntlet",
         port: 4400,
         defaultChrome: { host: "127.0.0.1", port: 9222 },
         defaultBudgetMs: 300000,

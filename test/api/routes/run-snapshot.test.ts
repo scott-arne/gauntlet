@@ -28,18 +28,19 @@ describe("POST /run/:id — snapshot", () => {
   test("writes <runDir>/inputs/{story.md,context/} synchronously in the handler", async () => {
     const projectRoot = mkdtempSync(join(tmpdir(), "gauntlet-api-snap-"));
     try {
-      const storiesDir = gauntletPath(projectRoot, "stories");
+      const storiesDir = gauntletPath(projectRoot, ".gauntlet", "stories");
       mkdirSync(storiesDir, { recursive: true });
       const storyBody =
         "---\nid: snap-story\ntitle: Snap\n---\n# Snap\n\nBody.\n";
       writeFileSync(join(storiesDir, "snap-story.md"), storyBody);
 
-      const ctxRoot = gauntletPath(projectRoot, "context");
+      const ctxRoot = gauntletPath(projectRoot, ".gauntlet", "context");
       mkdirSync(join(ctxRoot, "matt"), { recursive: true });
       writeFileSync(join(ctxRoot, "matt", "identity.md"), "name: matt");
 
       const config: AppConfig = {
         projectRoot,
+        stateDirName: ".gauntlet",
         // "claude-stub" (vs "stub") so resolveProvider() in the handler
         // succeeds (anthropic branch). clientFactory below still short-
         // circuits createClient, so no real network client is built.
@@ -68,7 +69,7 @@ describe("POST /run/:id — snapshot", () => {
       // Snapshot is synchronous in the request handler — so it MUST be
       // present as soon as the 202 is returned, regardless of what the
       // detached executeRun goes on to do (including failing).
-      const runDir = gauntletPath(projectRoot, "results", body.runs[0].runId);
+      const runDir = gauntletPath(projectRoot, ".gauntlet", "results", body.runs[0].runId);
       expect(existsSync(join(runDir, "inputs", "story.md"))).toBe(true);
       expect(readFileSync(join(runDir, "inputs", "story.md"), "utf-8")).toBe(storyBody);
       expect(readFileSync(join(runDir, "inputs", "context", "matt", "identity.md"), "utf-8"))

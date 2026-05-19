@@ -208,7 +208,7 @@ export function buildInstallCookiesTool(
         path: {
           type: "string",
           description:
-            "Path to the cookies YAML file, relative to .gauntlet/context/. Example: 'alice/cookies.yaml'.",
+            "Path to the cookies YAML file, relative to the project's context directory. Example: 'alice/cookies.yaml'.",
         },
       },
       required: ["path"],
@@ -223,7 +223,7 @@ export function buildInstallCookiesTool(
         path: "", step: "validate_args", error: "missing path argument",
       });
       return textResult(
-        `Error: install_cookies requires a "path" argument (relative to .gauntlet/context/).`,
+        `Error: install_cookies requires a "path" argument (relative to the project's context directory).`,
       );
     }
 

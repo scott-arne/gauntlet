@@ -80,7 +80,7 @@ export async function runBatch(
   runOneImpl: RunOneFn = runOne,
 ): Promise<number> {
   const cards = opts.scenarioPaths.map((p) => ({ scenarioPath: p, id: cardIdForPath(p) }));
-  const resultsRoot = gauntletPath(opts.config.projectRoot, "results");
+  const resultsRoot = gauntletPath(opts.config.projectRoot, opts.config.stateDirName, "results");
   const useTable = !opts.silent && opts.format !== "jsonl";
   const table = useTable
     ? new BatchTableRenderer(opts.sink, {
@@ -107,8 +107,8 @@ export async function runBatch(
       }
     };
 
-    // The .gauntlet/ dir is the parent of both results/ and run-sets/.
-    const gauntletRoot = gauntletPath(opts.config.projectRoot);
+    // The state dir is the parent of both results/ and run-sets/.
+    const gauntletRoot = gauntletPath(opts.config.projectRoot, opts.config.stateDirName);
 
     const cancelToken = { cancelled: false };
     const detach = installSigintHandler(cancelToken);

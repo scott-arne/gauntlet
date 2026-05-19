@@ -15,7 +15,7 @@ describe("Static UI serving", () => {
 
   beforeEach(() => {
     projectRoot = mkdtempSync(join(tmpdir(), "gauntlet-static-"));
-    mkdirSync(gauntletPath(projectRoot, "stories"), { recursive: true });
+    mkdirSync(gauntletPath(projectRoot, ".gauntlet", "stories"), { recursive: true });
   });
 
   afterEach(() => {

@@ -63,13 +63,14 @@ export function createApp(
 
   const errorLog = new ErrorLog();
   const projectRoot = config.projectRoot;
+  const stateDirName = config.stateDirName;
 
   const api = new Hono();
-  api.route("/scenarios", scenarioRoutes(projectRoot, errorLog));
-  api.route("/results", resultRoutes(gauntletPath(projectRoot, "results"), registry));
+  api.route("/scenarios", scenarioRoutes(projectRoot, stateDirName, errorLog));
+  api.route("/results", resultRoutes(gauntletPath(projectRoot, stateDirName, "results"), registry));
   api.route("/fanout", fanoutRoutes(config, undefined, errorLog));
   api.route("/run", runRoutes(config, broadcaster, errorLog, registry, setBroadcaster, cancelTokens));
-  api.route("/run-sets", runSetRoutes(gauntletPath(projectRoot), cancelTokens));
+  api.route("/run-sets", runSetRoutes(gauntletPath(projectRoot, stateDirName), cancelTokens));
   api.route("/config", configRoutes(config));
   api.route("/config/effective", configEffectiveRoutes(config));
   api.route("/errors", errorRoutes(errorLog));

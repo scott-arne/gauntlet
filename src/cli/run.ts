@@ -108,8 +108,8 @@ export async function run(opts: RunCommandOptions): Promise<void> {
   const content = readFileSync(opts.scenarioPath, "utf-8");
   const card = parseStoryCard(content);
 
-  const gauntletRoot = gauntletPath(opts.config.projectRoot);
-  const resultsRoot = gauntletPath(opts.config.projectRoot, "results");
+  const gauntletRoot = gauntletPath(opts.config.projectRoot, opts.config.stateDirName);
+  const resultsRoot = gauntletPath(opts.config.projectRoot, opts.config.stateDirName, "results");
 
   const sink = { write: (s: string) => process.stdout.write(s) };
   const useTable = !opts.silent && opts.format !== "jsonl";

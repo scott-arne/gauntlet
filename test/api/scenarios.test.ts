@@ -15,7 +15,7 @@ describe("Scenarios API", () => {
 
   beforeEach(() => {
     projectRoot = mkdtempSync(join(tmpdir(), "gauntlet-api-"));
-    const storiesDir = gauntletPath(projectRoot, "stories");
+    const storiesDir = gauntletPath(projectRoot, ".gauntlet", "stories");
     mkdirSync(storiesDir, { recursive: true });
 
     writeFileSync(

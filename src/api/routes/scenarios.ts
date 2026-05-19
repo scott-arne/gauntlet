@@ -99,12 +99,12 @@ function parseScenarioBody(raw: unknown, kind: "create" | "update"): ScenarioBod
   return out;
 }
 
-export function scenarioRoutes(projectRoot: string, errorLog?: ErrorLog) {
+export function scenarioRoutes(projectRoot: string, stateDirName: string, errorLog?: ErrorLog) {
   const router = new Hono();
-  const storiesDir = gauntletPath(projectRoot, "stories");
+  const storiesDir = gauntletPath(projectRoot, stateDirName, "stories");
 
   router.get("/", (c) => {
-    const entries = loadAllCards(projectRoot, errorLog);
+    const entries = loadAllCards(projectRoot, stateDirName, errorLog);
     const summaries = entries.map(({ card }) => ({
       id: card.id,
       title: card.title,
@@ -133,7 +133,7 @@ export function scenarioRoutes(projectRoot: string, errorLog?: ErrorLog) {
       return c.json({ error: "invalid id" }, 400);
     }
 
-    const existing = findCard(projectRoot, id, errorLog);
+    const existing = findCard(projectRoot, stateDirName, id, errorLog);
     if (existing) {
       return c.json({ error: "card already exists" }, 409);
     }
@@ -160,7 +160,7 @@ export function scenarioRoutes(projectRoot: string, errorLog?: ErrorLog) {
   });
 
   router.delete("/:id", (c) => {
-    const entry = findCard(projectRoot, c.req.param("id"), errorLog);
+    const entry = findCard(projectRoot, stateDirName, c.req.param("id"), errorLog);
     if (!entry) return c.json({ error: "not found" }, 404);
 
     unlinkSync(join(storiesDir, entry.filename));
@@ -168,14 +168,14 @@ export function scenarioRoutes(projectRoot: string, errorLog?: ErrorLog) {
   });
 
   router.get("/:id", (c) => {
-    const entry = findCard(projectRoot, c.req.param("id"), errorLog);
+    const entry = findCard(projectRoot, stateDirName, c.req.param("id"), errorLog);
     if (!entry) return c.json({ error: "not found" }, 404);
     const { raw: _raw, ...rest } = entry.card;
     return c.json(rest);
   });
 
   router.put("/:id", async (c) => {
-    const entry = findCard(projectRoot, c.req.param("id"), errorLog);
+    const entry = findCard(projectRoot, stateDirName, c.req.param("id"), errorLog);
     if (!entry) return c.json({ error: "not found" }, 404);
 
     let updates: ScenarioBody;
@@ -206,7 +206,7 @@ export function scenarioRoutes(projectRoot: string, errorLog?: ErrorLog) {
   });
 
   router.post("/:id/approve", (c) => {
-    const entry = findCard(projectRoot, c.req.param("id"), errorLog);
+    const entry = findCard(projectRoot, stateDirName, c.req.param("id"), errorLog);
     if (!entry) return c.json({ error: "not found" }, 404);
 
     const updated: StoryCard = { ...entry.card, status: "ready" };

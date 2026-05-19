@@ -107,7 +107,7 @@ export async function executeHttpRun(
         const chromeSession = webAdapter.getChromeSession();
         const framesDir = effective.saveScreencast === false
           ? undefined
-          : join(gauntletPath(projectRoot, "results", runId), "frames");
+          : join(gauntletPath(projectRoot, effective.stateDirName, "results", runId), "frames");
         streamer = new ScreencastStreamer(0, (frame) => {
           broadcaster?.send(runId, {
             type: "frame",
@@ -177,7 +177,7 @@ export function runRoutes(
   const router = new Hono();
 
   router.post("/:id", async (c) => {
-    const entry = findCard(config.projectRoot, c.req.param("id"), errorLog);
+    const entry = findCard(config.projectRoot, config.stateDirName, c.req.param("id"), errorLog);
     if (!entry) return c.json({ error: "not found" }, 404);
 
     const rawBody = await c.req.json().catch(() => ({}));
@@ -228,7 +228,7 @@ export function runRoutes(
       : createClientForProvider(effective.model, provider);
 
     const passes = body.passes ?? 1;
-    const storyPath = join(gauntletPath(config.projectRoot, "stories"), entry.filename);
+    const storyPath = join(gauntletPath(config.projectRoot, config.stateDirName, "stories"), entry.filename);
 
     if (passes === 1) {
       // ── Solo path ──
@@ -287,7 +287,7 @@ export function runRoutes(
     const controllers = new Map<string, AbortController>();
 
     const handle = await runRunSet({
-      resultsRoot: gauntletPath(config.projectRoot),
+      resultsRoot: gauntletPath(config.projectRoot, config.stateDirName),
       cards: [entry.card.id],
       passes,
       kind: "single",

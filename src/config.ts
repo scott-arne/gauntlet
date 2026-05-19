@@ -22,6 +22,13 @@ export interface CredentialResolverConfig {
 
 export interface AppConfig {
   projectRoot: string;
+  /**
+   * Name of the per-project state directory (default `.gauntlet`). Overridable
+   * via `--state-dir` or `GAUNTLET_STATE_DIR` for users who prefer a different
+   * leaf name. Must be a single path segment — no slashes, no `..`. Lives at
+   * `<projectRoot>/<stateDirName>/`.
+   */
+  stateDirName: string;
   port: number;
   defaultChrome: ChromeEndpoint;
   /**
@@ -114,6 +121,7 @@ export interface AppConfig {
   credentialResolver?: CredentialResolverConfig;
   sources: {
     projectRoot: "default" | "env" | "flag";
+    stateDirName: "default" | "env" | "flag";
     port: "default" | "env" | "flag";
     defaultChrome: "default" | "env" | "flag";
     defaultTarget: "default" | "env" | "flag" | "unset";
@@ -136,6 +144,7 @@ export interface AppConfig {
 
 export interface CliArgsInput {
   projectRoot?: string;
+  stateDirName?: string;
   port?: number;
   chrome?: string;
   target?: string;
@@ -174,6 +183,7 @@ export interface ResolvedRunConfig {
    */
   saveScreencast: boolean;
   projectRoot: string;
+  stateDirName: string;
   budgetMs: number;
   reflectionInterval: number;
   /**
@@ -293,6 +303,7 @@ export function mergeRunConfig(app: AppConfig, body: RunRequestBody): ResolvedRu
     viewport: body.viewport ?? app.defaultViewport,
     saveScreencast: body.saveScreencast ?? app.defaultSaveScreencast,
     projectRoot: app.projectRoot,
+    stateDirName: app.stateDirName,
     budgetMs: app.defaultBudgetMs,
     reflectionInterval: app.defaultReflectionInterval,
     credentialResolver: app.credentialResolver,
@@ -300,6 +311,7 @@ export function mergeRunConfig(app: AppConfig, body: RunRequestBody): ResolvedRu
 }
 
 const DEFAULT_PROJECT_ROOT = ".";
+const DEFAULT_STATE_DIR_NAME = ".gauntlet";
 const DEFAULT_PORT = 4400;
 const DEFAULT_CHROME: ChromeEndpoint = { host: "127.0.0.1", port: 9222 };
 const DEFAULT_SHUTDOWN_GRACE_MS = 10000;
@@ -325,6 +337,19 @@ function parseChromeEndpoint(raw: string, label: string): ChromeEndpoint {
     throw new Error(`Invalid ${label} "${raw}": port "${portStr}" is not a number`);
   }
   return { host, port };
+}
+
+function parseStateDirName(raw: string, label: string): string {
+  if (raw.length === 0) {
+    throw new Error(`Invalid ${label}: must be a non-empty single path segment`);
+  }
+  if (raw.includes("/") || raw.includes("\\")) {
+    throw new Error(`Invalid ${label} "${raw}": must be a single path segment (no "/" or "\\")`);
+  }
+  if (raw === "." || raw === "..") {
+    throw new Error(`Invalid ${label} "${raw}": cannot be "." or ".."`);
+  }
+  return raw;
 }
 
 function parsePortNumber(raw: string, label: string): number {
@@ -402,6 +427,16 @@ export function loadConfig(args: CliArgsInput, env: NodeJS.ProcessEnv): AppConfi
   }, env);
   const projectRoot = projectRootR.value;
   const projectRootSource = projectRootR.source;
+
+  // stateDirName — leaf name of the per-project state directory under
+  // projectRoot. Single segment only (validated). Default ".gauntlet".
+  const stateDirNameR = resolveSetting({
+    default: DEFAULT_STATE_DIR_NAME,
+    env: { name: "GAUNTLET_STATE_DIR", parse: (s) => parseStateDirName(s, "GAUNTLET_STATE_DIR") },
+    arg: { value: args.stateDirName !== undefined ? parseStateDirName(args.stateDirName, "--state-dir") : undefined },
+  }, env);
+  const stateDirName = stateDirNameR.value;
+  const stateDirNameSource = stateDirNameR.source;
 
   // port
   const portR = resolveSetting({
@@ -616,6 +651,7 @@ export function loadConfig(args: CliArgsInput, env: NodeJS.ProcessEnv): AppConfi
 
   return {
     projectRoot,
+    stateDirName,
     port,
     defaultChrome,
     defaultTarget,
@@ -638,6 +674,7 @@ export function loadConfig(args: CliArgsInput, env: NodeJS.ProcessEnv): AppConfi
     credentialResolver,
     sources: {
       projectRoot: projectRootSource,
+      stateDirName: stateDirNameSource,
       port: portSource,
       defaultChrome: chromeSource,
       defaultTarget: targetSource,

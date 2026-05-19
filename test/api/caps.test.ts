@@ -25,7 +25,7 @@ A test story.
 
 function makeProjectRoot(): string {
   const root = mkdtempSync(join(tmpdir(), "gauntlet-caps-"));
-  const stories = gauntletPath(root, "stories");
+  const stories = gauntletPath(root, ".gauntlet", "stories");
   mkdirSync(stories, { recursive: true });
   writeFileSync(join(stories, "cap-test-card.md"), STORY_MD);
   return root;

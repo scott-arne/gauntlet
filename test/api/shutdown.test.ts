@@ -197,6 +197,7 @@ describe("createApp drain middleware", () => {
 
     const config = {
       projectRoot: "/tmp/does-not-matter-for-this-test",
+      stateDirName: ".gauntlet",
       port: 4400,
       defaultChrome: { host: "127.0.0.1", port: 9222 },
       defaultBudgetMs: 300_000,
@@ -230,6 +231,7 @@ describe("createApp drain middleware", () => {
 
     const config = {
       projectRoot: "/tmp/does-not-matter-for-this-test",
+      stateDirName: ".gauntlet",
       port: 4400,
       defaultChrome: { host: "127.0.0.1", port: 9222 },
       defaultBudgetMs: 300_000,

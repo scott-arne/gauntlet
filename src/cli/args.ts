@@ -45,7 +45,7 @@ function parsePasses(raw: string | undefined): number {
 }
 
 const RUN_ALLOWED = new Set([
-  "target", "out", "adapter", "model", "chrome", "project-dir",
+  "target", "out", "adapter", "model", "chrome", "project-dir", "state-dir",
   "max-time", "reflection-interval", "viewport", "save-screencast",
   "silent", "format", "no-color", "passes",
   "project-prompt",
@@ -60,9 +60,9 @@ const BATCH_ALLOWED = new Set([...RUN_ALLOWED].filter(
 ));
 const VALIDATE_ALLOWED = new Set<string>([]);
 const FANOUT_ALLOWED = new Set(["out", "model", "from-result"]);
-const SERVE_ALLOWED = new Set(["port", "project-dir", "chrome", "target", "model", "max-time", "reflection-interval", "viewport", "save-screencast"]);
-const CONFIG_ALLOWED = new Set(["json", "project-dir", "port", "chrome", "target", "model", "max-time", "reflection-interval", "viewport", "save-screencast"]);
-const ASK_ALLOWED = new Set(["turn", "model", "project-dir"]);
+const SERVE_ALLOWED = new Set(["port", "project-dir", "state-dir", "chrome", "target", "model", "max-time", "reflection-interval", "viewport", "save-screencast"]);
+const CONFIG_ALLOWED = new Set(["json", "project-dir", "state-dir", "port", "chrome", "target", "model", "max-time", "reflection-interval", "viewport", "save-screencast"]);
+const ASK_ALLOWED = new Set(["turn", "model", "project-dir", "state-dir"]);
 
 function rejectUnknownFlags(
   flags: Record<string, unknown>,
@@ -180,6 +180,7 @@ function parseConfigArgs(args: string[]): ConfigArgs {
     json: flags.json === "true",
     cli: {
       projectRoot: flags["project-dir"],
+      stateDirName: flags["state-dir"],
       port: parseIntFlag(flags.port, "--port"),
       chrome: flags.chrome,
       target: flags.target,
@@ -209,7 +210,7 @@ function parseAskArgs(args: string[]): AskArgs {
     runId: positional,
     upToTurn: parseIntFlag(flags.turn, "--turn"),
     modelOverride,
-    cli: { projectRoot: flags["project-dir"] },
+    cli: { projectRoot: flags["project-dir"], stateDirName: flags["state-dir"] },
   };
 }
 
@@ -256,6 +257,7 @@ function parseRunArgs(args: string[]): RunArgs {
     showPromptAndExit: flags["show-prompt-and-exit"] === "true",
     cli: {
       projectRoot: flags["project-dir"],
+      stateDirName: flags["state-dir"],
       chrome: flags.chrome,
       target: flags.target,
       viewport: flags.viewport,
@@ -314,6 +316,7 @@ function parseBatchArgs(args: string[]): BatchArgs {
     passes: parsePasses(flags.passes),
     cli: {
       projectRoot: flags["project-dir"],
+      stateDirName: flags["state-dir"],
       chrome: flags.chrome,
       target: flags.target,
       viewport: flags.viewport,
@@ -369,6 +372,7 @@ function parseServeArgs(args: string[]): ServeArgs {
     command: "serve",
     cli: {
       projectRoot: flags["project-dir"],
+      stateDirName: flags["state-dir"],
       port: parseIntFlag(flags.port, "--port"),
       chrome: flags.chrome,
       target: flags.target,
@@ -476,12 +480,14 @@ Commands:
     --reflection-interval <n>  Inject a reflection-checkpoint reminder every N turns (default: 10; 0 disables)
     --viewport WxH       Browser viewport (default: 1440x900)
     --save-screencast    Persist screencast frames to disk (default: off; live WS stream is always on)
-    --out <dir>          Evidence output directory (default: <project>/.gauntlet/results/<runId>)
-    --project-dir <dir>  Project root (contains .gauntlet/ state dir)
+    --out <dir>          Evidence output directory (default: <project>/<state-dir>/results/<runId>)
+    --project-dir <dir>  Project root (contains the state dir)
+    --state-dir <name>   State directory leaf name (default: .gauntlet). Single segment, no slashes.
+                         A non-dotted name (e.g. "gauntlet") is committed by default — add to .gitignore yourself.
     --silent             Suppress the streaming transcript (default: stream)
     --format <mode>      Stream format: pretty | jsonl (default: auto by TTY)
     --no-color           Disable ANSI color (also respects NO_COLOR env var)
-    --project-prompt <path> Caller-supplied augmentation prompt (overrides .gauntlet/project.md)
+    --project-prompt <path> Caller-supplied augmentation prompt (overrides <state-dir>/project.md)
     --show-prompt-and-exit  Print the composed system prompt with provenance and exit (no Chrome, no LLM call)
 
   batch <story.md> [more.md ...]  Run multiple cards serially
@@ -507,7 +513,8 @@ Commands:
 
   serve                    Start the API server
     --port <n>               Server port (default: 4400)
-    --project-dir <dir>      Project root (contains .gauntlet/ state dir)
+    --project-dir <dir>      Project root (contains the state dir)
+    --state-dir <name>       State directory leaf name (default: .gauntlet)
     --chrome host:port       Default Chrome endpoint for runs
     --target <url>           Default target (prefilled in the UI; request body still overrides)
     --max-time <duration>    Default time budget per run (default: 5m). Accepts ms/s/m/h suffixes or bare seconds.
@@ -523,11 +530,13 @@ Commands:
   ask <runId>              Chat with the agent from a completed run.
     --turn N                 Cut off at turn N (default: include all turns)
     --model <model-id>       Override the recorded model (default: pin to recorded)
-    --project-dir <dir>      Project root (contains .gauntlet/results/<runId>)
+    --project-dir <dir>      Project root (contains <state-dir>/results/<runId>)
+    --state-dir <name>       State directory leaf name (default: .gauntlet)
 
 Environment:
   GAUNTLET_PORT              Server port
-  GAUNTLET_PROJECT_ROOT      Project root (contains .gauntlet/ state dir)
+  GAUNTLET_PROJECT_ROOT      Project root (contains the state dir)
+  GAUNTLET_STATE_DIR         State directory leaf name (default: .gauntlet)
   GAUNTLET_CHROME            Default Chrome endpoint (host:port)
   GAUNTLET_TARGET            Default target URL (UI prefill)
   GAUNTLET_MAX_TIME          Default time budget (duration string, e.g. 5m)

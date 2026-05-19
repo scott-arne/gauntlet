@@ -49,7 +49,7 @@ describe("ask error paths", () => {
     try {
       const code = await ask(
         { command: "ask", runId: "nonexistent_run", cli: {} },
-        { projectRoot: projRoot } as never,
+        { projectRoot: projRoot, stateDirName: ".gauntlet" } as never,
       );
       expect(code).toBe(1);
       expect(errors.some((e) => e.includes("Run not found"))).toBe(true);
@@ -68,7 +68,7 @@ describe("ask error paths", () => {
     try {
       const code = await ask(
         { command: "ask", runId: "empty_run", cli: {} },
-        { projectRoot: projRoot } as never,
+        { projectRoot: projRoot, stateDirName: ".gauntlet" } as never,
       );
       expect(code).toBe(1);
       expect(errors.some((e) => e.includes("no run.jsonl"))).toBe(true);

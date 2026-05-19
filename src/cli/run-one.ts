@@ -64,6 +64,7 @@ export async function runOne(opts: RunOneOptions): Promise<RunOneSummary> {
     projectPromptPath: opts.projectPromptPath,
     runConfig: {
       projectRoot: config.projectRoot,
+      stateDirName: config.stateDirName,
       model: config.models.agent,
       adapter: adapterType,
       target,
