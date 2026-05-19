@@ -8,24 +8,7 @@ import { Hono } from "hono";
 import type { LLMClient } from "../../src/models/provider";
 import type { AppConfig } from "../../src/config";
 
-function makeConfig(projectRoot: string, overrides: Partial<AppConfig> = {}): AppConfig {
-  return {
-    projectRoot,
-    port: 4400,
-    defaultChrome: { host: "127.0.0.1", port: 9222 },
-    models: { agent: "claude-sonnet-4-6", fanout: undefined, available: [] },
-    apiKeys: { anthropic: false, openai: false },
-    sources: {
-      projectRoot: "default",
-      port: "default",
-      defaultChrome: "default",
-      "models.agent": "default",
-      "models.fanout": "unset",
-      "models.available": "default",
-    },
-    ...overrides,
-  };
-}
+import { makeConfig } from "../helpers/make-config";
 
 const STORY_MD = `---
 id: story-001

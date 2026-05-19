@@ -6,18 +6,7 @@ import type { EvidenceLogger, EventObserver } from "../../src/evidence/logger";
 import { runBatch } from "../../src/cli/batch";
 import type { AppConfig } from "../../src/config";
 
-function makeConfig(): AppConfig {
-  return {
-    projectRoot: "/tmp/x",
-    port: 4400,
-    defaultChrome: { host: "127.0.0.1", port: 9222 },
-    defaultBudgetMs: 300000,
-    defaultViewport: { width: 1440, height: 900 },
-    saveScreencast: false,
-    models: { agent: "claude-sonnet-4-6", fanout: undefined },
-    sources: { defaultChrome: "default" },
-  } as any;
-}
+import { makeConfig } from "../helpers/make-config";
 
 function collectSink() {
   const obj = { out: "", write(s: string) { obj.out += s; } };
@@ -54,7 +43,7 @@ describe("runBatch", () => {
         scenarioPaths: ["a.md", "b.md"],
         target: "http://localhost",
         adapterType: "cli",
-        config: makeConfig(),
+        config: makeConfig("/tmp/x"),
         silent: false,
         format: undefined,
         noColor: true,
@@ -96,7 +85,7 @@ describe("runBatch — error handling", () => {
     const exitCode = await runBatch(
       {
         scenarioPaths: ["a.md", "b.md"],
-        target: "x", adapterType: "cli", config: makeConfig(),
+        target: "x", adapterType: "cli", config: makeConfig("/tmp/x"),
         silent: false, format: undefined, noColor: true,
         sink, isTTY: false,
         passes: 1,
@@ -129,7 +118,7 @@ describe("runBatch — error handling", () => {
     const exitCode = await runBatch(
       {
         scenarioPaths: ["a.md"],
-        target: "x", adapterType: "cli", config: makeConfig(),
+        target: "x", adapterType: "cli", config: makeConfig("/tmp/x"),
         silent: false, format: undefined, noColor: true,
         sink, isTTY: false,
         passes: 1,
@@ -158,7 +147,7 @@ describe("runBatch — output modes", () => {
     await runBatch(
       {
         scenarioPaths: ["a.md"],
-        target: "x", adapterType: "cli", config: makeConfig(),
+        target: "x", adapterType: "cli", config: makeConfig("/tmp/x"),
         silent: false, format: "jsonl", noColor: true,
         sink, isTTY: false,
         passes: 1,
@@ -196,7 +185,7 @@ describe("runBatch — output modes", () => {
       await runBatch(
         {
           scenarioPaths: ["a.md"],
-          target: "x", adapterType: "cli", config: makeConfig(),
+          target: "x", adapterType: "cli", config: makeConfig("/tmp/x"),
           silent: true, format: undefined, noColor: true,
           sink, isTTY: false,
           passes: 1,

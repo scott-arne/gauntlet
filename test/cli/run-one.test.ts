@@ -7,19 +7,7 @@ import type { AppConfig } from "../../src/config";
 import type { RunSetCtx } from "../../src/runs/run-set-types";
 import { report, makeScriptedClient } from "../integration/helpers";
 
-function makeConfig(projectRoot: string): AppConfig {
-  return {
-    projectRoot,
-    port: 4400,
-    defaultChrome: { host: "127.0.0.1", port: 9222 },
-    defaultBudgetMs: 300000,
-    defaultMaxStuckRetries: 5,
-    defaultViewport: { width: 1440, height: 900 },
-    saveScreencast: false,
-    models: { agent: "claude-sonnet-4-6", fanout: undefined },
-    sources: { defaultChrome: "default" },
-  } as any;
-}
+import { makeConfig } from "../helpers/make-config";
 
 const MINIMAL_CARD = `---
 id: run-one-ctx-test

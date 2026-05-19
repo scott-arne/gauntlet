@@ -6,18 +6,7 @@ import { run } from "../../src/cli/run";
 import type { AppConfig } from "../../src/config";
 import { report, makeScriptedClient } from "../integration/helpers";
 
-function makeConfig(projectRoot: string): AppConfig {
-  return {
-    projectRoot,
-    port: 4400,
-    defaultChrome: { host: "127.0.0.1", port: 9222 },
-    defaultBudgetMs: 300000,
-    defaultViewport: { width: 1440, height: 900 },
-    saveScreencast: false,
-    models: { agent: "claude-sonnet-4-6", fanout: undefined },
-    sources: { defaultChrome: "default" },
-  } as any;
-}
+import { makeConfig } from "../helpers/make-config";
 
 const MINIMAL_CARD = `---
 id: run-multi-pass-test
