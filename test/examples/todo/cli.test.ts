@@ -90,7 +90,11 @@ describe("cli", () => {
     expect(r.exitCode).toBe(0);
     const lst = run(["list"]);
     expect(lst.stdout).toContain("[ ] a");
-    expect(lst.stdout).not.toContain("b");
+    // Match the rendered todo line specifically (`<id>  [<state>] <text>`),
+    // not any "b" character — the id column draws from an alphabet that
+    // includes "b", so a literal `.not.toContain("b")` flakes when the
+    // remaining todo's id happens to contain "b". See PRI-1638.
+    expect(lst.stdout).not.toMatch(/\[[ x]\] b(\s|$)/);
   });
 
   test("bare invocation is alias for list", () => {
