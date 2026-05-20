@@ -68,6 +68,7 @@ export interface TUIAdapterOptions {
 export class TUIAdapter implements Adapter {
   readonly name = "tui";
   private _sessionName: string | null = null;
+  private _socket: string | null = null;
   private shared: SharedTools;
   private captureParser: CaptureParser;
   /** Lazy cache of tool name → parameter schema for O(1) validation. */
@@ -92,22 +93,41 @@ export class TUIAdapter implements Adapter {
     return this._sessionName;
   }
 
+  /**
+   * Build a tmux invocation pinned to this session's private server.
+   *
+   * Each session runs on its own `-L <socket>` server rather than the
+   * shared default server. `tmux new-session` against the default server
+   * attaches to whatever server is already running, and the new session
+   * inherits the *server's* environment — which is stale whenever that
+   * server was started by some unrelated process (it never saw this
+   * process's env, so vars like ANTHROPIC_API_KEY never reach the agent).
+   * A private server is started by our own `new-session` call and so
+   * inherits this process's full environment instead. `kill-server`
+   * disposes it cleanly with no orphan.
+   */
+  private tmux(...args: string[]): string[] {
+    if (!this._socket) throw new Error("Session not started");
+    return ["tmux", "-L", this._socket, ...args];
+  }
+
   async start(_target: string): Promise<void> {
     if (!this.runDir) {
       throw new Error("TUIAdapter: runDir is required to start a session");
     }
     const id = `gauntlet-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
     this._sessionName = id;
+    this._socket = id;
     const scratch = join(this.runDir, "scratch");
     mkdirSync(scratch, { recursive: true });
 
-    const create = spawnSync([
-      "tmux", "new-session", "-d", "-s", id,
+    const create = spawnSync(this.tmux(
+      "new-session", "-d", "-s", id,
       "-x", String(TUI_GRID.width),
       "-y", String(TUI_GRID.height),
       "-c", scratch,
       "bash", "--norc", "--noprofile", "-i",
-    ]);
+    ));
     if (create.exitCode !== 0) {
       throw new Error(
         `Failed to start tmux session: ${new TextDecoder().decode(create.stderr)}`,
@@ -122,7 +142,7 @@ export class TUIAdapter implements Adapter {
     // loaded CI machines we've seen the first read race the pane setup.
     // One short retry covers the gap cheaply.
     for (let attempt = 0; attempt < 2; attempt++) {
-      const pane = spawnSync(["tmux", "list-panes", "-t", sessionId, "-F", "#{pane_pid}"]);
+      const pane = spawnSync(this.tmux("list-panes", "-t", sessionId, "-F", "#{pane_pid}"));
       if (pane.exitCode === 0) {
         const pid = Number(new TextDecoder().decode(pane.stdout).trim());
         if (Number.isFinite(pid) && pid > 0) return pid;
@@ -133,14 +153,13 @@ export class TUIAdapter implements Adapter {
   }
 
   async readScreen(): Promise<string> {
-    const result = spawnSync([
-      "tmux",
+    const result = spawnSync(this.tmux(
       "capture-pane",
       "-t",
       this.sessionName,
       "-p",
       "-e",
-    ]);
+    ));
 
     if (result.exitCode !== 0) {
       const stderr = new TextDecoder().decode(result.stderr);
@@ -151,14 +170,13 @@ export class TUIAdapter implements Adapter {
   }
 
   async type(text: string): Promise<void> {
-    const result = spawnSync([
-      "tmux",
+    const result = spawnSync(this.tmux(
       "send-keys",
       "-t",
       this.sessionName,
       "-l",
       text,
-    ]);
+    ));
 
     if (result.exitCode !== 0) {
       const stderr = new TextDecoder().decode(result.stderr);
@@ -170,13 +188,12 @@ export class TUIAdapter implements Adapter {
     const mapped = KEY_MAP[key];
     if (!mapped) throw new Error(`Unknown key: ${key}. Available: ${AVAILABLE_KEYS}`);
 
-    const result = spawnSync([
-      "tmux",
+    const result = spawnSync(this.tmux(
       "send-keys",
       "-t",
       this.sessionName,
       mapped,
-    ]);
+    ));
 
     if (result.exitCode !== 0) {
       const stderr = new TextDecoder().decode(result.stderr);
@@ -207,9 +224,11 @@ export class TUIAdapter implements Adapter {
       : [];
 
     try {
-      spawnSync(["tmux", "kill-session", "-t", sessionName]);
+      // kill-server (not kill-session): the private server holds only this
+      // session, so disposing the whole server is correct and orphan-free.
+      spawnSync(this.tmux("kill-server"));
     } catch {
-      // session may already be dead
+      // server may already be dead
     }
 
     let reaped = 0;
@@ -225,6 +244,7 @@ export class TUIAdapter implements Adapter {
     }
 
     this._sessionName = null;
+    this._socket = null;
     this.bashPid = null;
   }
 
