@@ -13,10 +13,14 @@ import "../../styles/transcript.css";
 
 interface Props {
   mode: "posthoc" | "live";
+  /** Override the URL :id param — used in static/offline contexts where
+   *  there is no router match with a run id. */
+  runId?: string;
 }
 
-export function TranscriptView({ mode }: Props) {
-  const { id: runId } = useParams();
+export function TranscriptView({ mode, runId: runIdProp }: Props) {
+  const { id: paramRunId } = useParams();
+  const runId = runIdProp ?? paramRunId;
   const [artifactPath, setArtifactPath] = useState<string | null>(null);
 
   if (!runId) return <div style={{ padding: 24 }}>No run selected.</div>;
