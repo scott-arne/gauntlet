@@ -58,6 +58,22 @@ export interface VetResult {
   };
 }
 
+/**
+ * Static-mode payload injected at HTML build time. When present, the UI
+ * is rendering a self-contained run report (no server). Hooks that would
+ * normally fetch should read from this object instead.
+ */
+export interface StaticRunPayload {
+  result: VetResult;
+  runJsonl: string;
+}
+
+declare global {
+  interface Window {
+    __GAUNTLET_RUN__?: StaticRunPayload;
+  }
+}
+
 export interface RunSetSummary {
   perCard: Array<{
     cardId: string;
