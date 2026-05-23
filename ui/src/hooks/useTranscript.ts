@@ -45,13 +45,12 @@ export function useTranscript(runId: string | null): UseTranscriptResult {
     const staticPayload = typeof window !== "undefined" ? window.__GAUNTLET_RUN__ : undefined;
     if (staticPayload?.runJsonl) {
       try {
-        const events = parseJsonl(staticPayload.runJsonl);
-        if (!cancelled) setModel(reduceTranscript(events));
+        if (!cancelled) setModel(parseTranscriptFromStaticPayload(staticPayload.runJsonl));
       } catch {
         if (!cancelled) setError("parse");
       }
       if (!cancelled) setLoading(false);
-      return;
+      return () => { cancelled = true; };
     }
 
     api.results.fileText(runId, "run.jsonl")
