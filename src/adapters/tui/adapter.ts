@@ -201,22 +201,37 @@ export class TUIAdapter implements Adapter {
     }
   }
 
-  // Text + CR delivered as one literal send-keys call → one write() to the
-  // PTY → one stdin data event on the TUI side. Splitting into type() then
-  // press("Enter") is two writes with an event-loop tick between them, which
-  // Ink/React TUIs (Codex, Claude Code) can land mid-render and drop.
+  // Type, give the receiving TUI one render cycle to settle, then send Enter.
+  // Submit-then-drop in Ink/React TUIs (Codex, Claude Code) is a render-state
+  // race on the receiver, not a sender-atomicity issue — when Enter arrives
+  // during the render that the text update triggered, the input field's
+  // state machine handles it against a stale view and discards it. A small
+  // fixed delay covers a single ~16ms frame and turns the race into a
+  // guarantee.
   async typeAndSubmit(text: string): Promise<void> {
-    const result = spawnSync(this.tmux(
+    const typed = spawnSync(this.tmux(
       "send-keys",
       "-t",
       this.sessionName,
       "-l",
-      text + "\r",
+      text,
     ));
+    if (typed.exitCode !== 0) {
+      const stderr = new TextDecoder().decode(typed.stderr);
+      throw new Error(`Failed to type-and-submit (typing): ${stderr}`);
+    }
 
-    if (result.exitCode !== 0) {
-      const stderr = new TextDecoder().decode(result.stderr);
-      throw new Error(`Failed to type-and-submit: ${stderr}`);
+    await new Promise((r) => setTimeout(r, 15));
+
+    const submitted = spawnSync(this.tmux(
+      "send-keys",
+      "-t",
+      this.sessionName,
+      "Enter",
+    ));
+    if (submitted.exitCode !== 0) {
+      const stderr = new TextDecoder().decode(submitted.stderr);
+      throw new Error(`Failed to type-and-submit (submitting): ${stderr}`);
     }
   }
 
