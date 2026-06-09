@@ -369,6 +369,13 @@ export async function runAgent(
       rawAssistantMessage: response.rawAssistantMessage,
     });
 
+    // Emit the obol cost-sidecar row: the provider's raw usage object,
+    // verbatim. obol normalizes per-provider at read time (PRI-2125). Guarded
+    // so adapters/tests that don't surface rawUsage simply emit nothing.
+    if (response.rawUsage !== undefined) {
+      logger.logUsageRow(response.rawUsage);
+    }
+
     // Check for report_result.
     //
     // Policy: if the LLM emits report_result *alongside* other tool calls
@@ -610,6 +617,10 @@ export async function runAgent(
     },
     rawAssistantMessage: graceResponse.rawAssistantMessage,
   });
+
+  if (graceResponse.rawUsage !== undefined) {
+    logger.logUsageRow(graceResponse.rawUsage);
+  }
 
   const graceReport = graceResponse.toolCalls.find((tc) => tc.name === "report_result");
   if (graceReport) {

@@ -123,8 +123,15 @@ export interface RunEndFields {
 
 const INLINE_TEXT_LIMIT = 32 * 1024;
 
+/** obol usage-sidecar schema version (ISO date, matched as an opaque string). PRI-2125. */
+const USAGE_SCHEMA_VERSION = "2026-06-08";
+
 export class EvidenceLogger {
   private outDir: string;
+  // Captured at run_start and stamped onto every usage.jsonl row. A Gauntlet
+  // run is single-model, so the run-level provider/model is right for each call.
+  private runProvider?: string;
+  private runModel?: string;
   private screenshotCount = 0;
   private artifactCount = 0;
   private captureCount = 0;
@@ -202,7 +209,31 @@ export class EvidenceLogger {
   }
 
   logRunStart(fields: RunStartFields): void {
+    this.runProvider = fields.provider;
+    this.runModel = fields.model;
     this.writeEvent("run_start", { ...fields });
+  }
+
+  /**
+   * Append one obol cost-sidecar row (`usage.jsonl`) for a single LLM call:
+   * the provider's raw `usage` object, verbatim, tagged with the run's
+   * provider/model (captured at run_start). The producer does no token math —
+   * obol normalizes per-provider at read time (PRI-2125). `service_tier` is
+   * hoisted from the raw usage when the provider includes it (Anthropic does),
+   * else omitted so obol assumes the standard tier.
+   */
+  logUsageRow(rawUsage: unknown): void {
+    const tier = (rawUsage as { service_tier?: unknown } | null | undefined)
+      ?.service_tier;
+    const row = {
+      type: "obol.usage",
+      v: USAGE_SCHEMA_VERSION,
+      provider: this.runProvider,
+      model: this.runModel,
+      ...(typeof tier === "string" ? { service_tier: tier } : {}),
+      usage: rawUsage,
+    };
+    appendFileSync(join(this.outDir, "usage.jsonl"), JSON.stringify(row) + "\n");
   }
 
   logSystemPrompt(content: string): void {

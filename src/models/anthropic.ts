@@ -199,5 +199,6 @@ export function convertResponse(response: Anthropic.Message): AgentResponse {
       cacheCreationInputTokens: cacheCreation ?? undefined,
       cacheReadInputTokens: cacheRead ?? undefined,
     },
+    rawUsage: response.usage,
   };
 }

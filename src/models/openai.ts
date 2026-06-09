@@ -157,6 +157,7 @@ export function convertResponse(response: OpenAI.Responses.Response): AgentRespo
       outputTokens: response.usage?.output_tokens ?? 0,
       cacheReadInputTokens: cached || undefined,
     },
+    rawUsage: response.usage,
   };
 }
 

@@ -245,6 +245,18 @@ describe("convertResponse", () => {
     expect(r.usage.outputTokens).toBe(200);
   });
 
+  test("rawUsage carries the provider usage object verbatim for the cost sidecar", () => {
+    const usage = {
+      input_tokens: 1500,
+      input_tokens_details: { cached_tokens: 1000 },
+      output_tokens: 200,
+      output_tokens_details: { reasoning_tokens: 50 },
+      total_tokens: 1700,
+    };
+    const r = convertResponse(fakeResponse({ output: [], usage }));
+    expect(r.rawUsage).toEqual(usage);
+  });
+
   test("cacheReadInputTokens is undefined when cached_tokens is 0", () => {
     const r = convertResponse(fakeResponse({
       output: [],

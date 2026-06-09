@@ -156,6 +156,15 @@ export interface AgentResponse {
   stopReason: StopReason;
   rawAssistantMessage: unknown;
   usage: TokenUsage;
+  /**
+   * The provider's raw `usage` object, verbatim (Anthropic's
+   * `Message.usage`, OpenAI's `Response.usage`). Carried untouched so the
+   * agent loop can emit it to the obol cost sidecar (`usage.jsonl`) without
+   * doing any token arithmetic — obol normalizes per-provider at read time
+   * (PRI-2125). Distinct from the reduced, provider-neutral `usage` above,
+   * which the loop uses for live token accounting.
+   */
+  rawUsage?: unknown;
 }
 
 /**

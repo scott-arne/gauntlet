@@ -154,6 +154,63 @@ describe("EvidenceLogger", () => {
     expect(row.budgetMs).toBe(300_000);
   });
 
+  test("logUsageRow writes an obol.usage sidecar row stamped with run-start provider/model and the raw usage verbatim", () => {
+    logger.logRunStart({
+      runId: "r",
+      cardId: "card-001",
+      target: undefined,
+      provider: "anthropic",
+      model: "claude-opus-4-8",
+      adapter: "tui",
+      budgetMs: 1,
+      reflectionInterval: 0,
+      toolTimeoutMs: 1,
+      contextTreeBytes: 0,
+    });
+    const rawUsage = {
+      input_tokens: 12,
+      cache_read_input_tokens: 120,
+      cache_creation_input_tokens: 60,
+      output_tokens: 9,
+    };
+    logger.logUsageRow(rawUsage);
+
+    const [row] = readFileSync(join(outDir, "usage.jsonl"), "utf-8")
+      .trim()
+      .split("\n")
+      .map((l) => JSON.parse(l));
+
+    expect(row.type).toBe("obol.usage");
+    expect(row.v).toBe("2026-06-08");
+    expect(row.provider).toBe("anthropic");
+    expect(row.model).toBe("claude-opus-4-8");
+    expect(row.usage).toEqual(rawUsage);
+    expect(row.service_tier).toBeUndefined();
+  });
+
+  test("logUsageRow hoists service_tier from the raw usage into the envelope tag", () => {
+    logger.logRunStart({
+      runId: "r",
+      cardId: "card-001",
+      target: undefined,
+      provider: "anthropic",
+      model: "claude-opus-4-8",
+      adapter: "tui",
+      budgetMs: 1,
+      reflectionInterval: 0,
+      toolTimeoutMs: 1,
+      contextTreeBytes: 0,
+    });
+    logger.logUsageRow({ input_tokens: 1, output_tokens: 1, service_tier: "standard" });
+
+    const [row] = readFileSync(join(outDir, "usage.jsonl"), "utf-8")
+      .trim()
+      .split("\n")
+      .map((l) => JSON.parse(l));
+
+    expect(row.service_tier).toBe("standard");
+  });
+
   test("each subsequent event chains parentEventId to the previous eventId", () => {
     logger.logSystemPrompt("be helpful");
     logger.logUserMessage(0, "go");

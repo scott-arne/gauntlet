@@ -32,6 +32,7 @@ function makeMockLogger(): EvidenceLogger {
     logUserMessage: () => {},
     logLlmRequest: () => {},
     logLlmResponse: () => {},
+    logUsageRow: () => {},
     logToolCall: () => {},
     logToolResult: () => {},
     logEvent: () => {},
@@ -321,6 +322,41 @@ describe("runAgent", () => {
       outputTokens: 100,
       turns: 3,
     });
+  });
+
+  test("emits an obol usage row per LLM call carrying the provider's raw usage", async () => {
+    const rows: unknown[] = [];
+    const logger = {
+      ...makeMockLogger(),
+      logUsageRow: (u: unknown) => {
+        rows.push(u);
+      },
+    } as unknown as EvidenceLogger;
+    const client = makeMockClient([
+      {
+        text: "Done",
+        toolCalls: [
+          {
+            id: "call_1",
+            name: "report_result",
+            arguments: { status: "pass", summary: "ok", reasoning: "done" },
+          },
+        ],
+        stopReason: "tool_use",
+        rawAssistantMessage: { role: "assistant", content: "t1" },
+        usage: { inputTokens: 10, outputTokens: 5 },
+        rawUsage: { input_tokens: 10, output_tokens: 5, service_tier: "standard" },
+      },
+    ]);
+
+    await runAgent(card, makeMockAdapter(), client, logger, undefined, {
+      runId: makeRunId(card.id),
+      budgetMs: 600_000,
+    });
+
+    expect(rows).toEqual([
+      { input_tokens: 10, output_tokens: 5, service_tier: "standard" },
+    ]);
   });
 
   test("times out slow tool calls", async () => {

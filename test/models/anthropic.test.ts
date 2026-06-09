@@ -190,6 +190,17 @@ describe("convertResponse cache token capture", () => {
     expect(r.usage.cacheCreationInputTokens).toBe(0);
   });
 
+  test("rawUsage carries the provider usage object verbatim for the cost sidecar", () => {
+    const usage = {
+      input_tokens: 100,
+      output_tokens: 50,
+      cache_creation_input_tokens: 750,
+      cache_read_input_tokens: 0,
+    };
+    const r = convertResponse(makeMessageWithUsage(usage));
+    expect(r.rawUsage).toEqual(usage);
+  });
+
   test("treats null cache values as undefined", () => {
     const r = convertResponse(
       makeMessageWithUsage({
