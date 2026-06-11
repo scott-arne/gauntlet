@@ -8,7 +8,7 @@ import { RESULT_SCHEMA_VERSION } from "../types";
 import type { RunId } from "../util/brands";
 import { buildSystemPrompt } from "./prompts";
 import { buildInitialUserMessage } from "./initial-message";
-import { parseReportResult } from "./validators";
+import { parseReportResult, salvageReportResult } from "./validators";
 import {
   buildReflectionReminder,
   renderTrace,
@@ -21,6 +21,12 @@ import {
 const RECENT_MUTATING_CAP = 16;
 
 const DEFAULT_TOOL_TIMEOUT_MS = 30000;
+
+// How many times a malformed report_result is fed back to the model for
+// correction before we stop re-asking and fall back to salvage (PRI-2140).
+// LLM-emitted enums occasionally truncate ("ug" for "bug"); the model can
+// almost always fix its own call when shown the validation error.
+const MAX_REPORT_VALIDATION_RETRIES = 2;
 
 const EMPTY_RESPONSE_NUDGE =
   "<SYSTEM-REMINDER>\n" +
@@ -236,6 +242,7 @@ export async function runAgent(
   let totalCacheRead = 0;
   let turns = 0;
   let emptyResponseNudged = false;
+  let reportValidationRetries = 0;
   const deadline = startTime + budgetMs;
   // Bounded buffer of state-changing tool calls, classified by the
   // adapter via isMutatingTool. Drives the reflection-checkpoint trace.
@@ -399,6 +406,49 @@ export async function runAgent(
 
       const parsed = parseReportResult(report.arguments);
       if (!parsed.ok) {
+        // A malformed report_result must not silently discard a
+        // substantive verdict (PRI-2140). First feed the validation
+        // error back to the model for a corrected call (bounded);
+        // when re-asks are exhausted, salvage the valid core verdict
+        // and drop only the malformed observations.
+        if (reportValidationRetries < MAX_REPORT_VALIDATION_RETRIES) {
+          reportValidationRetries++;
+          logger.logEvent("report_result_invalid_retry", {
+            turn: turns,
+            attempt: reportValidationRetries,
+            reason: parsed.reason,
+          });
+          pushAssistantTurn(messages, response.rawAssistantMessage);
+          const retryResults: ToolResult[] = response.toolCalls.map((tc) =>
+            tc.id === report.id
+              ? textResult(
+                  `Error: report_result rejected: ${parsed.reason}. ` +
+                  `Call report_result again with corrected arguments. ` +
+                  `Keep your verdict and findings the same; fix only the invalid field.`,
+                )
+              : textResult(
+                  "Error: not executed — report_result was called in the same turn.",
+                ),
+          );
+          messages.push(...client.toolResultMessages(response.toolCalls, retryResults));
+          continue;
+        }
+
+        const salvaged = salvageReportResult(report.arguments);
+        if (salvaged.ok) {
+          logger.logEvent("report_result_salvaged", {
+            turn: turns,
+            reason: parsed.reason,
+            dropped: salvaged.value.dropped,
+          });
+          return buildResult({
+            status: salvaged.value.status,
+            summary: salvaged.value.summary,
+            reasoning: salvaged.value.reasoning,
+            observations: salvaged.value.observations,
+          });
+        }
+
         // Raw args in reasoning so a human post-mortem can reconstruct
         // what the model tried to report.
         let rawArgs = "<unserializable>";
@@ -633,9 +683,26 @@ export async function runAgent(
         observations: parsed.value.observations,
       });
     }
-    // Grace turn produced report_result but it was malformed. Log and fall
-    // through to the generic result — same posture as the in-loop malformed
-    // path, minus the raw-args dump (already captured in logLlmResponse).
+    // Grace turn produced report_result but it was malformed. There is no
+    // re-ask budget left, so try salvage directly (PRI-2140): a valid
+    // core verdict survives; only malformed observations are dropped.
+    const salvaged = salvageReportResult(graceReport.arguments);
+    if (salvaged.ok) {
+      logger.logEvent("report_result_salvaged", {
+        turn: graceTurn,
+        reason: parsed.reason,
+        dropped: salvaged.value.dropped,
+      });
+      return buildResult({
+        status: salvaged.value.status,
+        summary: salvaged.value.summary,
+        reasoning: salvaged.value.reasoning,
+        observations: salvaged.value.observations,
+      });
+    }
+    // Log and fall through to the generic result — same posture as the
+    // in-loop malformed path, minus the raw-args dump (already captured
+    // in logLlmResponse).
     logger.logEvent("deadline_grace_malformed_report", { reason: parsed.reason });
   }
 

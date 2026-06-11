@@ -37,21 +37,16 @@ const OBSERVATION_KINDS: readonly ObservationKind[] = [
 const VET_STATUSES: readonly ReportableStatus[] = ["pass", "fail", "investigate"];
 
 /**
- * Validate `report_result` tool call arguments against the VetResult shape.
- *
- * Required fields: status (enum), summary (string), reasoning (string).
- * Optional: observations (array of {kind, description}).
+ * Validate the required verdict fields of a `report_result` call:
+ * status (enum), summary (string), reasoning (string). Shared by the
+ * strict parser and the salvage path — the "core" is what makes a
+ * verdict substantive; observations are a sidecar.
  */
-export function parseReportResult(args: unknown): ParseResult<{
+function parseCoreFields(args: Record<string, unknown>): ParseResult<{
   status: ReportableStatus;
   summary: string;
   reasoning: string;
-  observations: Observation[];
 }> {
-  if (!isRecord(args)) {
-    return { ok: false, reason: `expected object, got ${typeName(args)}` };
-  }
-
   const statusRaw = args.status;
   if (typeof statusRaw !== "string") {
     return { ok: false, reason: `status: expected string, got ${typeName(statusRaw)}` };
@@ -70,61 +65,140 @@ export function parseReportResult(args: unknown): ParseResult<{
     return { ok: false, reason: `reasoning: expected string, got ${typeName(args.reasoning)}` };
   }
 
-  const observations: Observation[] = [];
-  if (args.observations !== undefined && args.observations !== null) {
-    // Some models (observed on Sonnet 4.6) sometimes hand us the array
-    // already stringified — `observations: "[{...}, {...}]"`. The data is
-    // valid, just one level too encoded. Try a single JSON.parse before
-    // failing; if it doesn't decode to an array we fall through to the
-    // existing error.
-    let observationsValue: unknown = args.observations;
-    if (typeof observationsValue === "string") {
-      try {
-        const decoded = JSON.parse(observationsValue);
-        if (Array.isArray(decoded)) observationsValue = decoded;
-      } catch {
-        // not JSON; fall through to the type error below
-      }
-    }
-    if (!Array.isArray(observationsValue)) {
-      return {
-        ok: false,
-        reason: `observations: expected array, got ${typeName(observationsValue)}`,
-      };
-    }
-    for (let i = 0; i < observationsValue.length; i++) {
-      const obs = observationsValue[i];
-      if (!isRecord(obs)) {
-        return { ok: false, reason: `observations[${i}]: expected object, got ${typeName(obs)}` };
-      }
-      if (typeof obs.kind !== "string" || !OBSERVATION_KINDS.includes(obs.kind as ObservationKind)) {
-        return {
-          ok: false,
-          reason: `observations[${i}].kind: "${String(obs.kind)}" not in [${OBSERVATION_KINDS.join(", ")}]`,
-        };
-      }
-      if (typeof obs.description !== "string") {
-        return {
-          ok: false,
-          reason: `observations[${i}].description: expected string, got ${typeName(obs.description)}`,
-        };
-      }
-      observations.push({
-        kind: obs.kind as ObservationKind,
-        description: obs.description,
-      });
-    }
-  }
-
   return {
     ok: true,
     value: {
       status: statusRaw as ReportableStatus,
       summary: args.summary,
       reasoning: args.reasoning,
-      observations,
     },
   };
+}
+
+/**
+ * Decode the `observations` field to an array. Some models (observed on
+ * Sonnet 4.6) sometimes hand us the array already stringified —
+ * `observations: "[{...}, {...}]"`. The data is valid, just one level
+ * too encoded. Try a single JSON.parse before failing; if it doesn't
+ * decode to an array we report the type error.
+ */
+function decodeObservationsField(value: unknown): ParseResult<unknown[]> {
+  let decodedValue: unknown = value;
+  if (typeof decodedValue === "string") {
+    try {
+      const decoded = JSON.parse(decodedValue);
+      if (Array.isArray(decoded)) decodedValue = decoded;
+    } catch {
+      // not JSON; fall through to the type error below
+    }
+  }
+  if (!Array.isArray(decodedValue)) {
+    return {
+      ok: false,
+      reason: `observations: expected array, got ${typeName(decodedValue)}`,
+    };
+  }
+  return { ok: true, value: decodedValue };
+}
+
+function parseObservation(obs: unknown, i: number): ParseResult<Observation> {
+  if (!isRecord(obs)) {
+    return { ok: false, reason: `observations[${i}]: expected object, got ${typeName(obs)}` };
+  }
+  if (typeof obs.kind !== "string" || !OBSERVATION_KINDS.includes(obs.kind as ObservationKind)) {
+    return {
+      ok: false,
+      reason: `observations[${i}].kind: "${String(obs.kind)}" not in [${OBSERVATION_KINDS.join(", ")}]`,
+    };
+  }
+  if (typeof obs.description !== "string") {
+    return {
+      ok: false,
+      reason: `observations[${i}].description: expected string, got ${typeName(obs.description)}`,
+    };
+  }
+  return {
+    ok: true,
+    value: { kind: obs.kind as ObservationKind, description: obs.description },
+  };
+}
+
+/**
+ * Validate `report_result` tool call arguments against the VetResult shape.
+ *
+ * Required fields: status (enum), summary (string), reasoning (string).
+ * Optional: observations (array of {kind, description}).
+ */
+export function parseReportResult(args: unknown): ParseResult<{
+  status: ReportableStatus;
+  summary: string;
+  reasoning: string;
+  observations: Observation[];
+}> {
+  if (!isRecord(args)) {
+    return { ok: false, reason: `expected object, got ${typeName(args)}` };
+  }
+
+  const core = parseCoreFields(args);
+  if (!core.ok) return core;
+
+  const observations: Observation[] = [];
+  if (args.observations !== undefined && args.observations !== null) {
+    const decoded = decodeObservationsField(args.observations);
+    if (!decoded.ok) return decoded;
+    for (let i = 0; i < decoded.value.length; i++) {
+      const obs = parseObservation(decoded.value[i], i);
+      if (!obs.ok) return obs;
+      observations.push(obs.value);
+    }
+  }
+
+  return { ok: true, value: { ...core.value, observations } };
+}
+
+/**
+ * Last-resort acceptance of a `report_result` whose core verdict is valid
+ * but whose observations sidecar is (partially) malformed. Never let a
+ * corrupt enum in one observation discard a substantive pass/fail — see
+ * PRI-2140, where `kind: "ug"` (truncated "bug") converted a real pass
+ * into investigate.
+ *
+ * Core fields (status/summary/reasoning) are validated as strictly as
+ * `parseReportResult` — a bad verdict is NOT salvageable. Observations
+ * are kept individually when valid; invalid entries are dropped and
+ * reported in `dropped` so the caller can log them. An entirely
+ * unusable observations field drops the whole sidecar (index -1).
+ */
+export function salvageReportResult(args: unknown): ParseResult<{
+  status: ReportableStatus;
+  summary: string;
+  reasoning: string;
+  observations: Observation[];
+  dropped: Array<{ index: number; reason: string }>;
+}> {
+  if (!isRecord(args)) {
+    return { ok: false, reason: `expected object, got ${typeName(args)}` };
+  }
+
+  const core = parseCoreFields(args);
+  if (!core.ok) return core;
+
+  const observations: Observation[] = [];
+  const dropped: Array<{ index: number; reason: string }> = [];
+  if (args.observations !== undefined && args.observations !== null) {
+    const decoded = decodeObservationsField(args.observations);
+    if (!decoded.ok) {
+      dropped.push({ index: -1, reason: decoded.reason });
+    } else {
+      for (let i = 0; i < decoded.value.length; i++) {
+        const obs = parseObservation(decoded.value[i], i);
+        if (obs.ok) observations.push(obs.value);
+        else dropped.push({ index: i, reason: obs.reason });
+      }
+    }
+  }
+
+  return { ok: true, value: { ...core.value, observations, dropped } };
 }
 
 /**

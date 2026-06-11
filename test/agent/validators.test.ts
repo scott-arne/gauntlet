@@ -1,5 +1,5 @@
 import { describe, test, expect } from "bun:test";
-import { parseReportResult, validateToolArgs } from "../../src/agent/validators";
+import { parseReportResult, salvageReportResult, validateToolArgs } from "../../src/agent/validators";
 import type { ToolDefinition } from "../../src/models/provider";
 
 describe("parseReportResult", () => {
@@ -174,6 +174,132 @@ describe("parseReportResult", () => {
     });
     expect(result.ok).toBe(true);
     if (result.ok) expect(result.value.observations).toEqual([]);
+  });
+});
+
+describe("salvageReportResult", () => {
+  // Regression: PRI-2140. In sdd-go-fractals-pi-20260609T064827Z-be6e the
+  // model reported a real pass, but observations[4].kind arrived as "ug"
+  // (truncated "bug") and the whole verdict was discarded as investigate.
+  // Salvage must keep the verdict and drop only the corrupt observation.
+  test("keeps a valid verdict and drops the observation with a truncated kind enum (PRI-2140)", () => {
+    const result = salvageReportResult({
+      status: "pass",
+      summary:
+        "Pi successfully executed the Go fractals plan end-to-end. All tests pass.",
+      reasoning:
+        "Plan executed, build green, fractal renders match expectations.",
+      observations: [
+        { kind: "suggestion", description: "README could mention the -iterations flag" },
+        { kind: "ux", description: "progress output is noisy" },
+        { kind: "typo", description: "'fractle' in a comment" },
+        { kind: "performance", description: "render is slow at depth 9" },
+        { kind: "ug", description: "off-by-one in axis labels" },
+      ],
+    });
+    expect(result.ok).toBe(true);
+    if (result.ok) {
+      expect(result.value.status).toBe("pass");
+      expect(result.value.summary).toContain("Pi successfully executed");
+      expect(result.value.observations).toHaveLength(4);
+      expect(result.value.observations.map((o) => o.kind)).toEqual([
+        "suggestion",
+        "ux",
+        "typo",
+        "performance",
+      ]);
+      expect(result.value.dropped).toHaveLength(1);
+      expect(result.value.dropped[0].index).toBe(4);
+      expect(result.value.dropped[0].reason).toContain("ug");
+    }
+  });
+
+  test("drops an observation with a non-string description", () => {
+    const result = salvageReportResult({
+      status: "fail",
+      summary: "x",
+      reasoning: "y",
+      observations: [
+        { kind: "bug", description: 42 },
+        { kind: "bug", description: "real one" },
+      ],
+    });
+    expect(result.ok).toBe(true);
+    if (result.ok) {
+      expect(result.value.observations).toHaveLength(1);
+      expect(result.value.dropped).toHaveLength(1);
+      expect(result.value.dropped[0].index).toBe(0);
+    }
+  });
+
+  test("drops a non-object observation entry", () => {
+    const result = salvageReportResult({
+      status: "pass",
+      summary: "x",
+      reasoning: "y",
+      observations: ["loose string", { kind: "ux", description: "ok" }],
+    });
+    expect(result.ok).toBe(true);
+    if (result.ok) {
+      expect(result.value.observations).toHaveLength(1);
+      expect(result.value.dropped).toHaveLength(1);
+    }
+  });
+
+  test("still decodes a JSON-stringified observations array before salvaging", () => {
+    const result = salvageReportResult({
+      status: "pass",
+      summary: "x",
+      reasoning: "y",
+      observations: JSON.stringify([
+        { kind: "ug", description: "truncated kind" },
+        { kind: "bug", description: "valid" },
+      ]),
+    });
+    expect(result.ok).toBe(true);
+    if (result.ok) {
+      expect(result.value.observations).toHaveLength(1);
+      expect(result.value.dropped).toHaveLength(1);
+    }
+  });
+
+  test("treats an entirely unusable observations field as drop-all, not fatal", () => {
+    const result = salvageReportResult({
+      status: "pass",
+      summary: "x",
+      reasoning: "y",
+      observations: "not even json",
+    });
+    expect(result.ok).toBe(true);
+    if (result.ok) {
+      expect(result.value.observations).toEqual([]);
+      expect(result.value.dropped).toHaveLength(1);
+      expect(result.value.dropped[0].reason).toContain("observations");
+    }
+  });
+
+  test("refuses to salvage when status is invalid", () => {
+    const result = salvageReportResult({
+      status: "success",
+      summary: "x",
+      reasoning: "y",
+    });
+    expect(result.ok).toBe(false);
+    if (!result.ok) expect(result.reason).toContain("status");
+  });
+
+  test("refuses to salvage when summary is missing", () => {
+    const result = salvageReportResult({
+      status: "pass",
+      reasoning: "y",
+    });
+    expect(result.ok).toBe(false);
+    if (!result.ok) expect(result.reason).toContain("summary");
+  });
+
+  test("refuses to salvage non-object args", () => {
+    const result = salvageReportResult("pass");
+    expect(result.ok).toBe(false);
   });
 });
 

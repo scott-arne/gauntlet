@@ -457,32 +457,184 @@ describe("runAgent", () => {
     expect((client as any)._chatCalls).toHaveLength(2);
   });
 
-  test("malformed report_result returns investigate with raw args in reasoning", async () => {
-    const client = makeMockClient([
-      {
-        text: "reporting",
-        toolCalls: [
-          {
-            id: "call_1",
-            name: "report_result",
-            arguments: {
-              status: "success", // not a valid VetStatus
-              summary: "x",
-              reasoning: "y",
-            },
+  test("malformed report_result is re-asked with the validation error; a corrected re-call is honored (PRI-2140)", async () => {
+    const badReport = {
+      text: "reporting",
+      toolCalls: [
+        {
+          id: "call_1",
+          name: "report_result",
+          arguments: {
+            status: "pass",
+            summary: "All good",
+            reasoning: "Everything checked out",
+            observations: [{ kind: "ug", description: "truncated kind" }],
           },
-        ],
-        stopReason: "tool_use",
-        rawAssistantMessage: { role: "assistant", content: [] },
-        usage: { inputTokens: 10, outputTokens: 5 },
-      },
+        },
+      ],
+      stopReason: "tool_use" as const,
+      rawAssistantMessage: { role: "assistant", content: "bad_report" },
+      usage: { inputTokens: 10, outputTokens: 5 },
+    };
+    const correctedReport = {
+      text: "corrected",
+      toolCalls: [
+        {
+          id: "call_2",
+          name: "report_result",
+          arguments: {
+            status: "pass",
+            summary: "All good",
+            reasoning: "Everything checked out",
+            observations: [{ kind: "bug", description: "truncated kind" }],
+          },
+        },
+      ],
+      stopReason: "tool_use" as const,
+      rawAssistantMessage: { role: "assistant", content: "corrected_report" },
+      usage: { inputTokens: 10, outputTokens: 5 },
+    };
+    const client = makeMockClient([badReport, correctedReport]);
+
+    const result = await runAgent(card, makeMockAdapter(), client, makeMockLogger(), undefined, { runId: makeRunId(card.id), budgetMs: 600_000 });
+
+    expect(result.status).toBe("pass");
+    expect(result.observations).toEqual([
+      { kind: "bug", description: "truncated kind" },
     ]);
+
+    // Two chat() calls: the rejected report, then the corrected re-call.
+    const chatCalls = (client as any)._chatCalls;
+    expect(chatCalls).toHaveLength(2);
+    // The re-ask carries the validation error back as the tool result.
+    const retryMessages = chatCalls[1];
+    const rejectionResult = retryMessages.find(
+      (m: any) => m.role === "tool_result" && m.tool_call_id === "call_1",
+    );
+    expect(rejectionResult).toBeDefined();
+    expect(String(rejectionResult.content)).toContain("observations[0].kind");
+    expect(String(rejectionResult.content)).toContain("report_result");
+  });
+
+  test("exhausted re-asks salvage a valid core verdict, dropping only the malformed observation (PRI-2140)", async () => {
+    const eventLog: Array<{ name: string; params: Record<string, unknown> }> = [];
+    const logger = makeMockLogger();
+    (logger as any).logEvent = (name: string, params: Record<string, unknown>) => {
+      eventLog.push({ name, params });
+    };
+
+    const stubbornReport = {
+      text: "reporting",
+      toolCalls: [
+        {
+          id: "call_1",
+          name: "report_result",
+          arguments: {
+            status: "pass",
+            summary: "Pi successfully executed the plan end-to-end",
+            reasoning: "All tests pass",
+            observations: [
+              { kind: "suggestion", description: "valid one" },
+              { kind: "ug", description: "stubbornly truncated" },
+            ],
+          },
+        },
+      ],
+      stopReason: "tool_use" as const,
+      rawAssistantMessage: { role: "assistant", content: "stubborn" },
+      usage: { inputTokens: 10, outputTokens: 5 },
+    };
+    // Initial call + 2 re-asks, all malformed the same way.
+    const client = makeMockClient([stubbornReport, stubbornReport, stubbornReport]);
+
+    const result = await runAgent(card, makeMockAdapter(), client, logger, undefined, { runId: makeRunId(card.id), budgetMs: 600_000 });
+
+    expect(result.status).toBe("pass");
+    expect(result.summary).toContain("Pi successfully executed");
+    expect(result.observations).toEqual([
+      { kind: "suggestion", description: "valid one" },
+    ]);
+    expect((client as any)._chatCalls).toHaveLength(3);
+
+    const salvaged = eventLog.find((e) => e.name === "report_result_salvaged");
+    expect(salvaged).toBeDefined();
+    expect(salvaged?.params.dropped).toEqual([
+      { index: 1, reason: expect.stringContaining("ug") },
+    ]);
+  });
+
+  test("unsalvageable malformed report_result returns investigate after bounded re-asks", async () => {
+    const badStatusReport = {
+      text: "reporting",
+      toolCalls: [
+        {
+          id: "call_1",
+          name: "report_result",
+          arguments: {
+            status: "success", // not a valid VetStatus — core verdict unusable
+            summary: "x",
+            reasoning: "y",
+          },
+        },
+      ],
+      stopReason: "tool_use" as const,
+      rawAssistantMessage: { role: "assistant", content: [] },
+      usage: { inputTokens: 10, outputTokens: 5 },
+    };
+    const client = makeMockClient([badStatusReport, badStatusReport, badStatusReport]);
 
     const result = await runAgent(card, makeMockAdapter(), client, makeMockLogger(), undefined, { runId: makeRunId(card.id), budgetMs: 600_000 });
 
     expect(result.status).toBe("investigate");
     expect(result.summary).toContain("malformed report_result");
     expect(result.reasoning).toContain("success");
+    expect((client as any)._chatCalls).toHaveLength(3);
+  });
+
+  test("sibling tool calls beside a malformed report_result get not-executed results on the re-ask", async () => {
+    const badReportWithSibling = {
+      text: "reporting",
+      toolCalls: [
+        { id: "call_shot", name: "screenshot", arguments: {} },
+        {
+          id: "call_rep",
+          name: "report_result",
+          arguments: {
+            status: "pass",
+            summary: "ok",
+            reasoning: "ok",
+            observations: [{ kind: "ug", description: "bad" }],
+          },
+        },
+      ],
+      stopReason: "tool_use" as const,
+      rawAssistantMessage: { role: "assistant", content: "with_sibling" },
+      usage: { inputTokens: 10, outputTokens: 5 },
+    };
+    const corrected = {
+      text: "corrected",
+      toolCalls: [
+        {
+          id: "call_rep2",
+          name: "report_result",
+          arguments: { status: "pass", summary: "ok", reasoning: "ok", observations: [] },
+        },
+      ],
+      stopReason: "tool_use" as const,
+      rawAssistantMessage: { role: "assistant", content: "corrected" },
+      usage: { inputTokens: 10, outputTokens: 5 },
+    };
+    const client = makeMockClient([badReportWithSibling, corrected]);
+
+    const result = await runAgent(card, makeMockAdapter(), client, makeMockLogger(), undefined, { runId: makeRunId(card.id), budgetMs: 600_000 });
+
+    expect(result.status).toBe("pass");
+    const retryMessages = (client as any)._chatCalls[1];
+    const siblingResult = retryMessages.find(
+      (m: any) => m.role === "tool_result" && m.tool_call_id === "call_shot",
+    );
+    expect(siblingResult).toBeDefined();
+    expect(String(siblingResult.content)).toContain("not executed");
   });
 
   test("accumulates cache token usage across turns", async () => {
@@ -751,6 +903,47 @@ describe("runAgent", () => {
     const reminder = eventLog.find((e) => e.name === "deadline_reminder");
     expect(reminder).toBeDefined();
     expect(reminder?.params.budgetMs).toBe(0);
+  });
+
+  test("grace-turn report with a malformed observation is salvaged, not discarded (PRI-2140)", async () => {
+    // budgetMs: 0 — loop never runs, so there is no re-ask budget; the
+    // grace turn is the final response. A valid core verdict with a
+    // corrupt observation must still be honored.
+    const client = makeMockClient([
+      {
+        text: "out of time",
+        toolCalls: [
+          {
+            id: "c1",
+            name: "report_result",
+            arguments: {
+              status: "investigate",
+              summary: "Ran out of budget mid-scenario",
+              reasoning: "Still had two criteria unverified",
+              observations: [
+                { kind: "ug", description: "truncated kind" },
+                { kind: "suggestion", description: "raise the budget" },
+              ],
+            },
+          },
+        ],
+        stopReason: "tool_use",
+        rawAssistantMessage: { role: "assistant", content: "grace" },
+        usage: { inputTokens: 10, outputTokens: 5 },
+      },
+    ]);
+
+    const result = await runAgent(card, makeMockAdapter(), client, makeMockLogger(), undefined, {
+      runId: makeRunId(card.id),
+      budgetMs: 0,
+    });
+
+    expect(result.status).toBe("investigate");
+    expect(result.summary).toBe("Ran out of budget mid-scenario");
+    expect(result.observations).toEqual([
+      { kind: "suggestion", description: "raise the budget" },
+    ]);
+    expect((client as any)._chatCalls).toHaveLength(1);
   });
 
   test("falls through to generic exhausted result when grace turn also fails to report", async () => {
