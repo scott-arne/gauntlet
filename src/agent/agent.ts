@@ -601,6 +601,21 @@ export async function runAgent(
                   "Error: not executed — report_result was called in the same turn.",
                 ),
           );
+          // Log the synthetic rejection as ordinary tool_call/tool_result
+          // rows: session revival rebuilds each turn from these, and an
+          // assistant tool call with no result row replays as a dangling
+          // tool_use.
+          response.toolCalls.forEach((tc, i) => {
+            logger.logToolCall({ turn: turns, toolUseId: tc.id, name: tc.name, arguments: tc.arguments });
+            logger.logToolResult({
+              turn: turns,
+              toolUseId: tc.id,
+              name: tc.name,
+              durationMs: 0,
+              text: retryResults[i].text,
+              error: true,
+            });
+          });
           messages.push(...client.toolResultMessages(response.toolCalls, retryResults));
           resetStallTracker();
           continue;

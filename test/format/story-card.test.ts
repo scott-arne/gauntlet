@@ -109,6 +109,24 @@ describe("parseStoryCard", () => {
     ]);
   });
 
+  test("a heading directly after the bullets ends the criteria section", () => {
+    const card = parseStoryCard(
+      [
+        "---",
+        "id: story-x",
+        "title: Heading after bullets",
+        "---",
+        "Body.",
+        "",
+        "## Acceptance Criteria",
+        "- Only criterion",
+        "## Notes",
+        "This prose belongs to Notes, not to the criterion.",
+      ].join("\n"),
+    );
+    expect(card.acceptanceCriteria).toEqual(["Only criterion"]);
+  });
+
   test("unindented (lazy) continuation lines still belong to the bullet", () => {
     const card = parseStoryCard(
       [

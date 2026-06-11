@@ -522,6 +522,57 @@ describe("runAgent", () => {
     expect(String(rejectionResult.content)).toContain("report_result");
   });
 
+  test("re-ask rejections are logged as tool_call/tool_result rows so revival can replay them (PRI-2140)", async () => {
+    const toolCalls: Array<Record<string, unknown>> = [];
+    const toolResults: Array<Record<string, unknown>> = [];
+    const logger = makeMockLogger();
+    (logger as any).logToolCall = (row: Record<string, unknown>) => toolCalls.push(row);
+    (logger as any).logToolResult = (row: Record<string, unknown>) => toolResults.push(row);
+
+    const badReport = {
+      text: "reporting",
+      toolCalls: [
+        {
+          id: "call_bad",
+          name: "report_result",
+          arguments: {
+            status: "pass",
+            summary: "ok",
+            reasoning: "ok",
+            observations: [{ kind: "ug", description: "bad" }],
+          },
+        },
+      ],
+      stopReason: "tool_use" as const,
+      rawAssistantMessage: { role: "assistant", content: "bad" },
+      usage: { inputTokens: 10, outputTokens: 5 },
+    };
+    const corrected = {
+      text: "corrected",
+      toolCalls: [
+        {
+          id: "call_good",
+          name: "report_result",
+          arguments: { status: "pass", summary: "ok", reasoning: "ok", observations: [] },
+        },
+      ],
+      stopReason: "tool_use" as const,
+      rawAssistantMessage: { role: "assistant", content: "good" },
+      usage: { inputTokens: 10, outputTokens: 5 },
+    };
+    const client = makeMockClient([badReport, corrected]);
+
+    await runAgent(card, makeMockAdapter(), client, logger, undefined, { runId: makeRunId(card.id), budgetMs: 600_000 });
+
+    // The rejected call and its synthetic rejection result both have rows,
+    // otherwise session revival replays a dangling tool_use.
+    const rejectedCall = toolCalls.find((r) => r.toolUseId === "call_bad");
+    expect(rejectedCall).toBeDefined();
+    const rejectionRow = toolResults.find((r) => r.toolUseId === "call_bad");
+    expect(rejectionRow).toBeDefined();
+    expect(String(rejectionRow?.text)).toContain("rejected");
+  });
+
   test("exhausted re-asks salvage a valid core verdict, dropping only the malformed observation (PRI-2140)", async () => {
     const eventLog: Array<{ name: string; params: Record<string, unknown> }> = [];
     const logger = makeMockLogger();

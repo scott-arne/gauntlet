@@ -6,6 +6,28 @@ import {
 } from "../../src/models/anthropic";
 import type Anthropic from "@anthropic-ai/sdk";
 
+import { maxOutputTokensForModel } from "../../src/models/anthropic";
+
+describe("maxOutputTokensForModel", () => {
+  test("legacy Claude 3.0 family is capped at 4096", () => {
+    expect(maxOutputTokensForModel("claude-3-opus-20240229")).toBe(4096);
+    expect(maxOutputTokensForModel("claude-3-haiku-20240307")).toBe(4096);
+    expect(maxOutputTokensForModel("claude-3-sonnet-20240229")).toBe(4096);
+  });
+
+  test("Claude 3.5/3.7 family is capped at 8192", () => {
+    expect(maxOutputTokensForModel("claude-3-5-sonnet-20241022")).toBe(8192);
+    expect(maxOutputTokensForModel("claude-3-5-haiku-20241022")).toBe(8192);
+    expect(maxOutputTokensForModel("claude-3-7-sonnet-20250219")).toBe(8192);
+  });
+
+  test("current models get the full 16384 budget", () => {
+    expect(maxOutputTokensForModel("claude-sonnet-4-6")).toBe(16384);
+    expect(maxOutputTokensForModel("claude-opus-4-7")).toBe(16384);
+    expect(maxOutputTokensForModel("claude-haiku-4-5-20251001")).toBe(16384);
+  });
+});
+
 describe("anthropicToolResultMessages", () => {
   test("creates tool_result content blocks", () => {
     const calls = [

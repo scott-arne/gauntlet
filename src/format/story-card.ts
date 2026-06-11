@@ -91,6 +91,11 @@ function parseBody(body: string): {
   let current: string[] | null = null;
   for (const rawLine of criteriaSection.split("\n")) {
     const line = rawLine.trim();
+    if (line.startsWith("#")) {
+      // A new heading ends the criteria section entirely — its prose
+      // must not be glommed onto the last bullet.
+      break;
+    }
     if (line.startsWith("- ")) {
       if (current) acceptanceCriteria.push(current.join(" "));
       current = [line.slice(2).trim()];
