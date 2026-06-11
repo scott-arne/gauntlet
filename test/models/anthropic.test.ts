@@ -21,10 +21,19 @@ describe("maxOutputTokensForModel", () => {
     expect(maxOutputTokensForModel("claude-3-7-sonnet-20250219")).toBe(8192);
   });
 
-  test("current models get the full 16384 budget", () => {
+  test("known current model families get the full 16384 budget", () => {
     expect(maxOutputTokensForModel("claude-sonnet-4-6")).toBe(16384);
     expect(maxOutputTokensForModel("claude-opus-4-7")).toBe(16384);
+    expect(maxOutputTokensForModel("claude-opus-4-20250514")).toBe(16384);
     expect(maxOutputTokensForModel("claude-haiku-4-5-20251001")).toBe(16384);
+    expect(maxOutputTokensForModel("claude-fable-5")).toBe(16384);
+    expect(maxOutputTokensForModel("claude-mythos-5")).toBe(16384);
+  });
+
+  test("unrecognized or ancient model ids fall back to the conservative 4096", () => {
+    expect(maxOutputTokensForModel("claude-2.1")).toBe(4096);
+    expect(maxOutputTokensForModel("claude-instant-1.2")).toBe(4096);
+    expect(maxOutputTokensForModel("claude-experimental-thing")).toBe(4096);
   });
 });
 

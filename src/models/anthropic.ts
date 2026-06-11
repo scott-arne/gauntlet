@@ -11,11 +11,16 @@ import { withLlmErrorSanitization } from "../util/sanitize-error";
  * cap.
  */
 export function maxOutputTokensForModel(model: string): number {
-  // Claude 3.0 family (opus/sonnet/haiku, 2024 vintage): 4096 hard cap.
-  if (/^claude-3-(opus|sonnet|haiku)\b/.test(model)) return 4096;
+  // Known current families (Claude 4.x, Fable/Mythos): plenty of output
+  // headroom — the high cap is opt-in by family, not the default.
+  if (/^claude-(opus|sonnet|haiku)-4/.test(model) || /^claude-(fable|mythos)-/.test(model)) {
+    return 16384;
+  }
   // Claude 3.5 / 3.7 family: 8192 without beta headers.
-  if (/^claude-3-/.test(model)) return 8192;
-  return 16384;
+  if (/^claude-3-[57]-/.test(model)) return 8192;
+  // Everything else — Claude 3.0, Claude 2.x, and any unrecognized id —
+  // keeps the conservative 4096 this code always sent before the raise.
+  return 4096;
 }
 
 export function createAnthropicClient(model: string): LLMClient {
