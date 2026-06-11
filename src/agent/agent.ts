@@ -65,12 +65,10 @@ export function synthesizeFilledAssistantMessage(raw: unknown): unknown {
     };
   }
   if (Array.isArray(raw) && raw.length === 0) {
-    return [
-      {
-        role: "assistant",
-        content: [{ type: "output_text", text: "(empty turn)" }],
-      },
-    ];
+    // Valid Responses *input* item: a `message` item with string content
+    // (same shape openai.ts's userMessage emits). A bare assistant item
+    // with `output_text` content is not a valid input shape.
+    return [{ type: "message", role: "assistant", content: "(empty turn)" }];
   }
   return raw;
 }
@@ -87,12 +85,8 @@ export function synthesizeFilledAssistantMessage(raw: unknown): unknown {
 export function synthesizeTruncatedAssistantStub(raw: unknown): unknown {
   const stubText = "(response truncated by the output token limit; discarded)";
   if (Array.isArray(raw)) {
-    return [
-      {
-        role: "assistant",
-        content: [{ type: "output_text", text: stubText }],
-      },
-    ];
+    // Valid Responses *input* item — see synthesizeFilledAssistantMessage.
+    return [{ type: "message", role: "assistant", content: stubText }];
   }
   return { role: "assistant", content: [{ type: "text", text: stubText }] };
 }

@@ -863,6 +863,31 @@ describe("runAgent", () => {
     expect(JSON.stringify(stub)).not.toContain("cut o\"");
   });
 
+  test("truncation stub is a valid input item for both provider shapes", async () => {
+    const { synthesizeTruncatedAssistantStub } = await import("../../src/agent/agent");
+
+    // Anthropic raw is {role, content[]} — stub keeps that shape.
+    const anthropicStub = synthesizeTruncatedAssistantStub({
+      role: "assistant",
+      content: [{ type: "text", text: "partial" }],
+    }) as { role: string; content: Array<{ type: string; text: string }> };
+    expect(anthropicStub.role).toBe("assistant");
+    expect(anthropicStub.content[0].type).toBe("text");
+    expect(anthropicStub.content[0].text).toContain("truncated");
+
+    // OpenAI Responses raw is an array of output items — the stub must be
+    // a valid *input* item: a `message` item with string content (the
+    // same shape openai.ts's userMessage emits), not an output_text
+    // block missing the full ResponseOutputMessage shape.
+    const openaiStub = synthesizeTruncatedAssistantStub([
+      { type: "message", role: "assistant", content: [] },
+    ]) as Array<{ type: string; role: string; content: string }>;
+    expect(openaiStub).toHaveLength(1);
+    expect(openaiStub[0].type).toBe("message");
+    expect(openaiStub[0].role).toBe("assistant");
+    expect(openaiStub[0].content).toContain("truncated");
+  });
+
   test("a second max_tokens truncation returns investigate", async () => {
     const truncated = {
       text: "still rambling",

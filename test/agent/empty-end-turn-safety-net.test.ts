@@ -171,14 +171,20 @@ describe("synthesizeFilledAssistantMessage", () => {
     expect(filled.content[0].text).toBe("(empty turn)");
   });
 
-  test("OpenAI Responses shape: replaces empty array with a single assistant item", () => {
+  test("OpenAI Responses shape: replaces empty array with a single assistant message item", () => {
+    // Must be a valid Responses *input* item. `output_text` content under
+    // a bare assistant message is not — the input shape is a `message`
+    // item with string content, the same shape openai.ts's userMessage
+    // emits for the user role.
     const filled = synthesizeFilledAssistantMessage([]) as Array<{
+      type: string;
       role: string;
-      content: Array<{ type: string; text: string }>;
+      content: string;
     }>;
     expect(filled).toHaveLength(1);
+    expect(filled[0].type).toBe("message");
     expect(filled[0].role).toBe("assistant");
-    expect(filled[0].content[0].type).toBe("output_text");
+    expect(filled[0].content).toBe("(empty turn)");
   });
 
   test("non-empty content passes through unchanged", () => {
