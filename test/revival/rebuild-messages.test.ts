@@ -79,6 +79,7 @@ describe("rebuildMessages — recovery-turn fidelity", () => {
           { type: "text", text: "I was reasoning at len" },
         ]},
       },
+      { type: "event", name: "stopped_max_tokens", turn: 1, hasText: true, toolCallCount: 0, recovery: true },
       { type: "user_message", turn: 1, content: "<SYSTEM-REMINDER>cut off; be concise</SYSTEM-REMINDER>" },
       // Turn 2: recovered with a normal tool call.
       { type: "llm_response", turn: 2, stopReason: "tool_use", text: "", thinking: [],
@@ -117,6 +118,7 @@ describe("rebuildMessages — recovery-turn fidelity", () => {
         usage: { inputTokens: 10, outputTokens: 0 },
         rawAssistantMessage: { role: "assistant", content: [] },
       },
+      { type: "event", name: "empty_response_nudge", turn: 1, stopReason: "end_turn" },
       { type: "user_message", turn: 1, content: "<SYSTEM-REMINDER>empty turn nudge</SYSTEM-REMINDER>" },
       { type: "llm_response", turn: 2, stopReason: "tool_use", text: "", thinking: [],
         toolCalls: [{ id: "t2", name: "click", arguments: {} }],
@@ -133,6 +135,35 @@ describe("rebuildMessages — recovery-turn fidelity", () => {
     const nudgeIdx = result.messages.findIndex((m) => JSON.stringify(m).includes("empty turn nudge"));
     expect(stubIdx).toBeGreaterThanOrEqual(0);
     expect(nudgeIdx).toBe(stubIdx + 1);
+  });
+
+  test("a grace turn whose response happens to be empty keeps the user-before-assistant order", () => {
+    // Same log shape as an empty-response nudge (user_message, empty
+    // llm_response, no tool rows) but WITHOUT the empty_response_nudge
+    // event — this is the deadline reminder followed by a (useless)
+    // empty final response. Live order: reminder THEN assistant.
+    const dir = makeRunDir([
+      minimalRunStart,
+      { type: "system_prompt", content: "sys" },
+      { type: "tool_definitions", tools: [
+        { name: "click", description: "Click", parameters: { type: "object" } },
+      ]},
+      { type: "user_message", turn: 0, content: "go" },
+      { type: "user_message", turn: 1, content: "<SYSTEM-REMINDER>time budget reminder</SYSTEM-REMINDER>" },
+      { type: "llm_response", turn: 1, stopReason: "end_turn", text: "", thinking: [],
+        toolCalls: [],
+        usage: { inputTokens: 10, outputTokens: 0 },
+        rawAssistantMessage: { role: "assistant", content: [] },
+      },
+    ]);
+    cleanups.push(dir);
+
+    const result = rebuildMessages(dir, makeFakeAnthropicClient());
+    const flat = JSON.stringify(result.messages);
+    // No synthesized stub: this is the grace shape, reminder first.
+    expect(flat).not.toContain("(empty turn)");
+    const reminderIdx = result.messages.findIndex((m) => JSON.stringify(m).includes("time budget reminder"));
+    expect(reminderIdx).toBe(1); // right after the initial user message
   });
 });
 

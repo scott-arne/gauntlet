@@ -133,14 +133,18 @@ export function rebuildMessages(
     //  - grace/forced final report: the reminder is a standalone user
     //    turn that comes BEFORE the assistant response.
     if (userMsg && toolResultEvts.length === 0) {
-      const respToolCalls = (llmResp?.toolCalls as unknown[] | undefined) ?? [];
-      const respText = llmResp ? String(llmResp.text ?? "") : "";
-      if (llmResp && llmResp.stopReason === "max_tokens") {
+      // The recovery shapes are identified by the event rows the live
+      // loop wrote alongside them — a grace turn whose response happens
+      // to be empty has the same llm_response shape but no such event,
+      // and must keep its user-before-assistant order.
+      const hasEvent = (name: string) =>
+        turnEvents.some((e) => e.type === "event" && e.name === name);
+      if (llmResp && llmResp.stopReason === "max_tokens" && hasEvent("stopped_max_tokens")) {
         pushAssistantTurn(messages, synthesizeTruncatedAssistantStub(llmResp.rawAssistantMessage));
         messages.push(client.userMessage(String(userMsg.content ?? "")));
         continue;
       }
-      if (llmResp && respToolCalls.length === 0 && respText === "") {
+      if (llmResp && hasEvent("empty_response_nudge")) {
         pushAssistantTurn(messages, synthesizeFilledAssistantMessage(llmResp.rawAssistantMessage));
         messages.push(client.userMessage(String(userMsg.content ?? "")));
         continue;
