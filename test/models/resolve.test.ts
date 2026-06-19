@@ -13,6 +13,7 @@ describe("resolveProvider", () => {
     expect(resolveProvider("eu.anthropic.claude-haiku-4-5-20251001-v1:0")).toBe("anthropic");
     expect(resolveProvider("us.anthropic.claude-opus-4-8")).toBe("anthropic");
     expect(resolveProvider("anthropic.claude-3-5-sonnet-20241022-v2:0")).toBe("anthropic");
+    expect(resolveProvider("apac.anthropic.claude-sonnet-4-5-20250929-v1:0")).toBe("anthropic");
   });
 
   test("unknown-model error message lists the Bedrock inference-profile form", () => {

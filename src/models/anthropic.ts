@@ -31,7 +31,7 @@ export function maxOutputTokensForModel(model: string): number {
   // routing prefix and an `anthropic.` vendor segment, e.g.
   // `us.anthropic.claude-sonnet-4-5-20250929-v1:0`. Strip everything up to and
   // including `anthropic.` so the family regexes see `claude-...`.
-  const family = model.replace(/^[a-z]{2,3}\.anthropic\./, "").replace(/^anthropic\./, "");
+  const family = model.replace(/^[a-z]{2,4}\.anthropic\./, "").replace(/^anthropic\./, "");
   // Known current families (Claude 4.x, Fable/Mythos): plenty of output
   // headroom — the high cap is opt-in by family, not the default.
   if (/^claude-(opus|sonnet|haiku)-4/.test(family) || /^claude-(fable|mythos)-/.test(family)) {

@@ -71,6 +71,7 @@ describe("maxOutputTokensForModel", () => {
     expect(maxOutputTokensForModel("us.anthropic.claude-sonnet-4-5-20250929-v1:0")).toBe(16384);
     expect(maxOutputTokensForModel("us.anthropic.claude-opus-4-8")).toBe(16384);
     expect(maxOutputTokensForModel("eu.anthropic.claude-haiku-4-5-20251001-v1:0")).toBe(16384);
+    expect(maxOutputTokensForModel("apac.anthropic.claude-sonnet-4-5-20250929-v1:0")).toBe(16384);
     expect(maxOutputTokensForModel("anthropic.claude-3-5-sonnet-20241022-v2:0")).toBe(8192);
   });
 });

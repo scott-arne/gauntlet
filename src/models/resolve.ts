@@ -33,7 +33,7 @@ export function createClient(model: string): LLMClient {
 // region-agnostic `anthropic.claude-...`. They are passed through to the Bedrock
 // SDK verbatim (see useBedrock / createAnthropicClient), so resolution must
 // recognize the prefixed form here or it would throw before the client is built.
-const BEDROCK_ANTHROPIC_RE = /^([a-z]{2,3}\.)?anthropic\.claude/;
+const BEDROCK_ANTHROPIC_RE = /^([a-z]{2,4}\.)?anthropic\.claude/;
 
 export function resolveProvider(model: string): Provider {
   if (model.startsWith("claude") || BEDROCK_ANTHROPIC_RE.test(model)) {
