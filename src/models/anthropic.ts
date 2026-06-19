@@ -2,6 +2,7 @@ import Anthropic from "@anthropic-ai/sdk";
 import {
   BedrockRuntimeClient,
   InvokeModelCommand,
+  type InvokeModelCommandOutput,
 } from "@aws-sdk/client-bedrock-runtime";
 import { fromNodeProviderChain } from "@aws-sdk/credential-providers";
 import type { LLMClient, ToolDefinition, AgentResponse, StopReason, ToolCall, ToolResult } from "./provider";
@@ -45,7 +46,7 @@ const BEDROCK_ANTHROPIC_VERSION = "bedrock-2023-05-31";
  */
 export function createBedrockMessagesClient(
   model: string,
-  opts: { region: string; send?: (command: InvokeModelCommand) => Promise<{ body: Uint8Array }> },
+  opts: { region: string; send?: (command: InvokeModelCommand) => Promise<InvokeModelCommandOutput> },
 ): MessagesClient {
   const send =
     opts.send ??
@@ -54,8 +55,7 @@ export function createBedrockMessagesClient(
         region: opts.region,
         credentials: fromNodeProviderChain({ profile: process.env.AWS_PROFILE }),
       });
-      return (command: InvokeModelCommand) =>
-        client.send(command) as Promise<{ body: Uint8Array }>;
+      return (command: InvokeModelCommand) => client.send(command);
     })();
 
   return {
@@ -64,7 +64,7 @@ export function createBedrockMessagesClient(
         // Copy without `model`; Bedrock takes the id as modelId in the command,
         // not in the JSON body. Inject the required anthropic_version. Do not
         // mutate the caller's object.
-        const { model: _model, ...rest } = body as unknown as Record<string, unknown>;
+        const { model: _model, ...rest } = body;
         const payload = { anthropic_version: BEDROCK_ANTHROPIC_VERSION, ...rest };
 
         const command = new InvokeModelCommand({
@@ -75,8 +75,20 @@ export function createBedrockMessagesClient(
         });
 
         const response = await send(command);
+        if (!response.body) {
+          throw new Error(
+            `Bedrock InvokeModel returned an empty body for modelId ${model}.`,
+          );
+        }
         const text = new TextDecoder().decode(response.body);
-        return JSON.parse(text) as Anthropic.Message;
+        try {
+          return JSON.parse(text) as Anthropic.Message;
+        } catch {
+          throw new Error(
+            `Bedrock InvokeModel returned a non-JSON body for modelId ${model} ` +
+            `(first 200 chars: ${text.slice(0, 200)}).`,
+          );
+        }
       },
     },
   };

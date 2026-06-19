@@ -172,6 +172,26 @@ describe("createBedrockMessagesClient (InvokeModel adapter)", () => {
     expect(body.model).toBe("us.anthropic.claude-opus-4-8");
     expect(body.anthropic_version).toBeUndefined();
   });
+
+  test("throws a descriptive error when the response body is empty", async () => {
+    const client = createBedrockMessagesClient("us.anthropic.claude-opus-4-8", {
+      region: "us-east-1",
+      send: async () => ({ body: undefined }) as any,
+    });
+    await expect(
+      client.messages.create({ model: "x", max_tokens: 8, messages: [] } as any),
+    ).rejects.toThrow(/empty body/i);
+  });
+
+  test("throws a descriptive error when the response body is not JSON", async () => {
+    const client = createBedrockMessagesClient("us.anthropic.claude-opus-4-8", {
+      region: "us-east-1",
+      send: async () => ({ body: new TextEncoder().encode("<html>nope</html>") }) as any,
+    });
+    await expect(
+      client.messages.create({ model: "x", max_tokens: 8, messages: [] } as any),
+    ).rejects.toThrow(/non-JSON body/i);
+  });
 });
 
 describe("createAnthropicClient auth-mode selection", () => {
