@@ -3,7 +3,8 @@ import type { ModelConfig } from "../types";
 import { createAnthropicClient } from "./anthropic";
 import { createOpenAIClient } from "./openai";
 
-export const SUPPORTED_MODEL_PREFIXES_MESSAGE = "Supported prefixes: claude*, gpt*, o1*, o3*";
+export const SUPPORTED_MODEL_PREFIXES_MESSAGE =
+  "Supported prefixes: claude*, anthropic.claude* / <region>.anthropic.claude* (Bedrock), gpt*, o1*, o3*";
 
 export class UnknownModelProviderError extends Error {
   readonly code = "unknown_model";
@@ -27,8 +28,17 @@ export function createClient(model: string): LLMClient {
   return createClientForProvider(model, resolveProvider(model));
 }
 
+// Bedrock inference-profile ids carry a regional routing prefix and an
+// `anthropic.` vendor segment, e.g. `us.anthropic.claude-sonnet-4-5-...` or the
+// region-agnostic `anthropic.claude-...`. They are passed through to the Bedrock
+// SDK verbatim (see useBedrock / createAnthropicClient), so resolution must
+// recognize the prefixed form here or it would throw before the client is built.
+const BEDROCK_ANTHROPIC_RE = /^([a-z]{2,3}\.)?anthropic\.claude/;
+
 export function resolveProvider(model: string): Provider {
-  if (model.startsWith("claude")) return "anthropic";
+  if (model.startsWith("claude") || BEDROCK_ANTHROPIC_RE.test(model)) {
+    return "anthropic";
+  }
   if (model.startsWith("gpt") || model.startsWith("o1") || model.startsWith("o3")) {
     return "openai";
   }

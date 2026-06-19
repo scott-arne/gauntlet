@@ -8,6 +8,23 @@ describe("resolveProvider", () => {
     expect(resolveProvider("claude-3-5-sonnet-20241022")).toBe("anthropic");
   });
 
+  test("returns anthropic for Bedrock inference-profile ids", () => {
+    expect(resolveProvider("us.anthropic.claude-sonnet-4-5-20250929-v1:0")).toBe("anthropic");
+    expect(resolveProvider("eu.anthropic.claude-haiku-4-5-20251001-v1:0")).toBe("anthropic");
+    expect(resolveProvider("us.anthropic.claude-opus-4-8")).toBe("anthropic");
+    expect(resolveProvider("anthropic.claude-3-5-sonnet-20241022-v2:0")).toBe("anthropic");
+  });
+
+  test("unknown-model error message lists the Bedrock inference-profile form", () => {
+    try {
+      resolveProvider("us.amazon.titan-text");
+      throw new Error("expected resolveProvider to throw");
+    } catch (err) {
+      expect(err).toBeInstanceOf(UnknownModelProviderError);
+      expect((err as UnknownModelProviderError).message).toContain("anthropic.claude");
+    }
+  });
+
   test("returns openai for gpt/o-series models", () => {
     expect(resolveProvider("gpt-4o")).toBe("openai");
     expect(resolveProvider("gpt-4o-mini")).toBe("openai");
