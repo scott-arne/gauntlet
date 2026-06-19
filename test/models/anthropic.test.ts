@@ -3,10 +3,39 @@ import {
   createAnthropicClient,
   anthropicToolResultMessages,
   convertResponse,
+  useBedrock,
 } from "../../src/models/anthropic";
 import type Anthropic from "@anthropic-ai/sdk";
 
 import { maxOutputTokensForModel } from "../../src/models/anthropic";
+
+// Set the given env vars (undefined deletes), run body, then restore. Mirrors
+// the direct-process.env style the rest of this suite uses.
+function withEnv(vars: Record<string, string | undefined>, body: () => void): void {
+  const keys = Object.keys(vars);
+  const prev: Record<string, string | undefined> = {};
+  for (const key of keys) {
+    prev[key] = process.env[key];
+    const value = vars[key];
+    if (value === undefined) {
+      delete process.env[key];
+    } else {
+      process.env[key] = value;
+    }
+  }
+  try {
+    body();
+  } finally {
+    for (const key of keys) {
+      const original = prev[key];
+      if (original === undefined) {
+        delete process.env[key];
+      } else {
+        process.env[key] = original;
+      }
+    }
+  }
+}
 
 describe("maxOutputTokensForModel", () => {
   test("legacy Claude 3.0 family is capped at 4096", () => {
@@ -34,6 +63,76 @@ describe("maxOutputTokensForModel", () => {
     expect(maxOutputTokensForModel("claude-2.1")).toBe(4096);
     expect(maxOutputTokensForModel("claude-instant-1.2")).toBe(4096);
     expect(maxOutputTokensForModel("claude-experimental-thing")).toBe(4096);
+  });
+
+  test("Bedrock inference-profile ids resolve to the same cap as their bare family", () => {
+    // Regional prefix + anthropic. vendor segment must be stripped before the
+    // family match, or a Bedrock id would silently fall back to 4096.
+    expect(maxOutputTokensForModel("us.anthropic.claude-sonnet-4-5-20250929-v1:0")).toBe(16384);
+    expect(maxOutputTokensForModel("us.anthropic.claude-opus-4-8")).toBe(16384);
+    expect(maxOutputTokensForModel("eu.anthropic.claude-haiku-4-5-20251001-v1:0")).toBe(16384);
+    expect(maxOutputTokensForModel("anthropic.claude-3-5-sonnet-20241022-v2:0")).toBe(8192);
+  });
+});
+
+describe("useBedrock", () => {
+  test("true for 1/true/yes (case-insensitive), false otherwise", () => {
+    for (const v of ["1", "true", "TRUE", "Yes", " yes "]) {
+      withEnv({ CLAUDE_CODE_USE_BEDROCK: v }, () => {
+        expect(useBedrock()).toBe(true);
+      });
+    }
+    for (const v of ["0", "false", "no", ""]) {
+      withEnv({ CLAUDE_CODE_USE_BEDROCK: v }, () => {
+        expect(useBedrock()).toBe(false);
+      });
+    }
+    withEnv({ CLAUDE_CODE_USE_BEDROCK: undefined }, () => {
+      expect(useBedrock()).toBe(false);
+    });
+  });
+});
+
+describe("createAnthropicClient auth-mode selection", () => {
+  test("Bedrock mode constructs a client without ANTHROPIC_API_KEY", () => {
+    withEnv(
+      {
+        CLAUDE_CODE_USE_BEDROCK: "1",
+        AWS_REGION: "us-east-1",
+        ANTHROPIC_API_KEY: undefined,
+      },
+      () => {
+        // Must not throw the API-key error; returns a usable client.
+        const client = createAnthropicClient("us.anthropic.claude-sonnet-4-5-20250929-v1:0");
+        expect(typeof client.chat).toBe("function");
+        expect(client.userMessage("hi")).toEqual({ role: "user", content: "hi" });
+      },
+    );
+  });
+
+  test("Bedrock mode throws when AWS_REGION is unset", () => {
+    withEnv(
+      {
+        CLAUDE_CODE_USE_BEDROCK: "1",
+        AWS_REGION: undefined,
+        ANTHROPIC_API_KEY: undefined,
+      },
+      () => {
+        expect(() => createAnthropicClient("us.anthropic.claude-opus-4-8")).toThrow(/AWS_REGION/);
+      },
+    );
+  });
+
+  test("direct-API mode still requires ANTHROPIC_API_KEY", () => {
+    withEnv(
+      {
+        CLAUDE_CODE_USE_BEDROCK: undefined,
+        ANTHROPIC_API_KEY: undefined,
+      },
+      () => {
+        expect(() => createAnthropicClient("claude-sonnet-4-6")).toThrow(/ANTHROPIC_API_KEY/);
+      },
+    );
   });
 });
 

@@ -1,6 +1,21 @@
 import Anthropic from "@anthropic-ai/sdk";
+import { AnthropicBedrock } from "@anthropic-ai/bedrock-sdk";
 import type { LLMClient, ToolDefinition, AgentResponse, StopReason, ToolCall, ToolResult } from "./provider";
 import { withLlmErrorSanitization } from "../util/sanitize-error";
+
+/**
+ * True when the Anthropic client should talk to AWS Bedrock instead of the
+ * direct Anthropic API. Gated on CLAUDE_CODE_USE_BEDROCK (the same switch Claude
+ * Code itself uses) being truthy ("1"/"true"/"yes", case-insensitive). In
+ * Bedrock mode auth is the AWS credential chain (AWS_PROFILE/~/.aws or static
+ * keys) + AWS_REGION — no ANTHROPIC_API_KEY — and the model id must be a Bedrock
+ * inference-profile id (e.g. us.anthropic.claude-sonnet-4-...), passed through
+ * verbatim rather than translated from an Anthropic API alias.
+ */
+export function useBedrock(): boolean {
+  const raw = (process.env.CLAUDE_CODE_USE_BEDROCK ?? "").trim().toLowerCase();
+  return raw === "1" || raw === "true" || raw === "yes";
+}
 
 /**
  * Per-model output-token ceiling. 4096 killed a run mid-verdict
@@ -11,26 +26,54 @@ import { withLlmErrorSanitization } from "../util/sanitize-error";
  * cap.
  */
 export function maxOutputTokensForModel(model: string): number {
+  // Normalize Bedrock inference-profile ids to the bare Anthropic family so the
+  // caps below match regardless of provider: a Bedrock id carries a regional
+  // routing prefix and an `anthropic.` vendor segment, e.g.
+  // `us.anthropic.claude-sonnet-4-5-20250929-v1:0`. Strip everything up to and
+  // including `anthropic.` so the family regexes see `claude-...`.
+  const family = model.replace(/^[a-z]{2,3}\.anthropic\./, "").replace(/^anthropic\./, "");
   // Known current families (Claude 4.x, Fable/Mythos): plenty of output
   // headroom — the high cap is opt-in by family, not the default.
-  if (/^claude-(opus|sonnet|haiku)-4/.test(model) || /^claude-(fable|mythos)-/.test(model)) {
+  if (/^claude-(opus|sonnet|haiku)-4/.test(family) || /^claude-(fable|mythos)-/.test(family)) {
     return 16384;
   }
   // Claude 3.5 / 3.7 family: 8192 without beta headers.
-  if (/^claude-3-[57]-/.test(model)) return 8192;
+  if (/^claude-3-[57]-/.test(family)) return 8192;
   // Everything else — Claude 3.0, Claude 2.x, and any unrecognized id —
   // keeps the conservative 4096 this code always sent before the raise.
   return 4096;
 }
 
 export function createAnthropicClient(model: string): LLMClient {
-  if (!process.env.ANTHROPIC_API_KEY) {
-    throw new Error(
-      "ANTHROPIC_API_KEY environment variable is not set. " +
-      "Set it to your Anthropic API key to use Claude models."
-    );
+  // Two auth modes, selected by CLAUDE_CODE_USE_BEDROCK:
+  //   - Bedrock: AnthropicBedrock resolves AWS credentials from the standard
+  //     chain (AWS_PROFILE/~/.aws or static keys) and needs AWS_REGION; no
+  //     ANTHROPIC_API_KEY. The `model` must already be a Bedrock inference
+  //     profile id (passed through verbatim — see useBedrock()).
+  //   - Direct API: the base Anthropic client, requiring ANTHROPIC_API_KEY.
+  // Both expose the same `.messages.create()` surface, so the LLMClient body
+  // below is identical for either.
+  let client: Anthropic | AnthropicBedrock;
+  if (useBedrock()) {
+    const awsRegion = (process.env.AWS_REGION ?? "").trim();
+    if (!awsRegion) {
+      throw new Error(
+        "CLAUDE_CODE_USE_BEDROCK is set but AWS_REGION is not. " +
+        "Set AWS_REGION to the Bedrock inference region."
+      );
+    }
+    // awsRegion is passed explicitly; AWS credentials resolve via the SDK's
+    // default provider chain (AWS_PROFILE / ~/.aws / static env keys).
+    client = new AnthropicBedrock({ awsRegion });
+  } else {
+    if (!process.env.ANTHROPIC_API_KEY) {
+      throw new Error(
+        "ANTHROPIC_API_KEY environment variable is not set. " +
+        "Set it to your Anthropic API key to use Claude models."
+      );
+    }
+    client = new Anthropic();
   }
-  const client = new Anthropic();
 
   return {
     async chat(messages, tools, systemPrompt) {
