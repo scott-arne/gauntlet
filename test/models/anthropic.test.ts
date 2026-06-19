@@ -276,6 +276,40 @@ describe("convertResponse stop_reason pass-through", () => {
   });
 });
 
+describe("convertResponse non-message body guard", () => {
+  // Bedrock (and a misconfigured proxy in front of it) can return a 200 whose
+  // body is NOT an Anthropic Message — e.g. an AWS Coral error envelope
+  // `{ Output: { __type: "...UnknownOperationException" }, Version: "1.0" }`.
+  // The SDK does not throw on these, so convertResponse used to crash with the
+  // opaque "undefined is not an object (evaluating 'response.content.filter')",
+  // which destroyed the real error in the run log. Guard: throw a clear,
+  // payload-free error naming the situation so the actual cause is diagnosable.
+  test("throws a clear error when response.content is missing (AWS error envelope)", () => {
+    const awsEnvelope = {
+      Output: { __type: "com.amazon.coral.service#UnknownOperationException" },
+      Version: "1.0",
+    } as unknown as Anthropic.Message;
+    expect(() => convertResponse(awsEnvelope)).toThrow(/response has no message content/i);
+  });
+
+  test("the error does not leak the raw response body", () => {
+    const awsEnvelope = {
+      Output: { __type: "com.amazon.coral.service#UnknownOperationException" },
+      Version: "1.0",
+    } as unknown as Anthropic.Message;
+    try {
+      convertResponse(awsEnvelope);
+      throw new Error("expected convertResponse to throw");
+    } catch (err) {
+      const msg = (err as Error).message;
+      // Names the offending shape (top-level keys) for diagnosis, but does not
+      // dump the full body (which could carry sensitive values from a proxy).
+      expect(msg).toContain("Output");
+      expect(msg).not.toContain("UnknownOperationException");
+    }
+  });
+});
+
 describe("convertResponse cache token capture", () => {
   function makeMessageWithUsage(usage: {
     input_tokens: number;

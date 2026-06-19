@@ -218,6 +218,26 @@ function withCacheBreakpointOnLastMessage(
  * `chat()` method above.
  */
 export function convertResponse(response: Anthropic.Message): AgentResponse {
+  // Guard against a 200 whose body is not an Anthropic Message. AWS Bedrock —
+  // or a proxy in front of it that doesn't recognize the Bedrock operation —
+  // can return a Coral error envelope like
+  // `{ Output: { __type: "...UnknownOperationException" }, Version: "1.0" }`,
+  // which the SDK does not throw on. Without this guard, `.content.filter()`
+  // below dies with an opaque "undefined is not an object" that hides the real
+  // cause. Surface the offending top-level shape (keys only — the body may carry
+  // proxy-injected values we should not log) so the failure is diagnosable.
+  if (!Array.isArray(response?.content)) {
+    const keys =
+      response && typeof response === "object"
+        ? Object.keys(response).join(", ")
+        : typeof response;
+    throw new Error(
+      `Anthropic response has no message content (content is ${typeof response?.content}). ` +
+      `This usually means the provider returned a non-message body — e.g. an AWS ` +
+      `Bedrock/proxy error envelope rather than a completion. Response top-level keys: [${keys}].`,
+    );
+  }
+
   const text = response.content
     .filter((b): b is Anthropic.TextBlock => b.type === "text")
     .map((b) => b.text)
