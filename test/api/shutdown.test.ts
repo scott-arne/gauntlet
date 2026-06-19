@@ -207,7 +207,7 @@ describe("createApp drain middleware", () => {
       shutdownGraceMs: 10000,
       models: { agent: "claude-sonnet-4-6", fanout: undefined, available: [] },
       sources: { defaultChrome: "default" },
-      apiKeys: { anthropic: false, openai: false },
+      apiKeys: { anthropic: false, openai: false, bedrock: false },
     } as any;
 
     const app = createApp(config, undefined, undefined, undefined, undefined, undefined, state);
@@ -241,7 +241,7 @@ describe("createApp drain middleware", () => {
       shutdownGraceMs: 10000,
       models: { agent: "claude-sonnet-4-6", fanout: undefined, available: [] },
       sources: { defaultChrome: "default" },
-      apiKeys: { anthropic: false, openai: false },
+      apiKeys: { anthropic: false, openai: false, bedrock: false },
     } as any;
 
     const registry = new ActiveRunRegistry();

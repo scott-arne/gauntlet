@@ -28,7 +28,7 @@ describe("loadConfig", () => {
     expect(c.models.agent).toBe("claude-sonnet-4-6");
     expect(c.models.fanout).toBeUndefined();
     expect(c.models.available).toEqual([]);
-    expect(c.apiKeys).toEqual({ anthropic: false, openai: false });
+    expect(c.apiKeys).toEqual({ anthropic: false, openai: false, bedrock: false });
     expect(c.sources.projectRoot).toBe("default");
     expect(c.sources.stateDirName).toBe("default");
   });
@@ -123,7 +123,18 @@ describe("loadConfig", () => {
 
   test("apiKeys reflects both providers when both keys set", () => {
     const c = loadConfig({}, { ANTHROPIC_API_KEY: "sk-ant-xxx", OPENAI_API_KEY: "sk-xxx" } as NodeJS.ProcessEnv);
-    expect(c.apiKeys).toEqual({ anthropic: true, openai: true });
+    expect(c.apiKeys).toEqual({ anthropic: true, openai: true, bedrock: false });
+  });
+
+  test("apiKeys.bedrock reflects CLAUDE_CODE_USE_BEDROCK (truthy values, no API key needed)", () => {
+    for (const v of ["1", "true", "TRUE", "Yes", " yes "]) {
+      const c = loadConfig({}, { CLAUDE_CODE_USE_BEDROCK: v } as NodeJS.ProcessEnv);
+      expect(c.apiKeys.bedrock).toBe(true);
+    }
+    for (const v of ["0", "false", "no", ""]) {
+      const c = loadConfig({}, { CLAUDE_CODE_USE_BEDROCK: v } as NodeJS.ProcessEnv);
+      expect(c.apiKeys.bedrock).toBe(false);
+    }
   });
 
   test("defaultSaveScreencast defaults to false", () => {
@@ -424,6 +435,11 @@ describe("requireLlmCapable", () => {
 
   test("passes when both keys are set", () => {
     const config = loadConfig({}, { ANTHROPIC_API_KEY: "sk-ant-xxx", OPENAI_API_KEY: "sk-xxx" } as NodeJS.ProcessEnv);
+    expect(() => requireLlmCapable(config)).not.toThrow();
+  });
+
+  test("passes in Bedrock mode with no API key (CLAUDE_CODE_USE_BEDROCK set)", () => {
+    const config = loadConfig({}, { CLAUDE_CODE_USE_BEDROCK: "1" } as NodeJS.ProcessEnv);
     expect(() => requireLlmCapable(config)).not.toThrow();
   });
 });

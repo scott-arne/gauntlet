@@ -31,7 +31,7 @@ export function makeConfig(
     wsIdleTimeoutSec: 60,
     wsOriginAllowlist: [],
     models: { agent: "claude-sonnet-4-6", fanout: undefined, available: [] },
-    apiKeys: { anthropic: false, openai: false },
+    apiKeys: { anthropic: false, openai: false, bedrock: false },
     sources: {
       projectRoot: "default",
       stateDirName: "default",

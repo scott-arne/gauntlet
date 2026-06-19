@@ -23,7 +23,7 @@ interface ConfigOutput {
       fanout: string | null;
       available: string[];
     };
-    apiKeys: { anthropic: "set" | "unset"; openai: "set" | "unset" };
+    apiKeys: { anthropic: "set" | "unset"; openai: "set" | "unset"; bedrock: "on" | "off" };
     sources: Record<string, string>;
   };
   sdkEnv: {
@@ -66,6 +66,7 @@ export function buildConfigOutput(config: AppConfig, env: NodeJS.ProcessEnv): Co
       apiKeys: {
         anthropic: config.apiKeys.anthropic ? "set" : "unset",
         openai: config.apiKeys.openai ? "set" : "unset",
+        bedrock: config.apiKeys.bedrock ? "on" : "off",
       },
       sources: config.sources,
     },
@@ -110,6 +111,7 @@ export function formatConfigText(output: ConfigOutput): string {
   lines.push("# API keys");
   lines.push(`  anthropic:      ${output.gauntlet.apiKeys.anthropic}`);
   lines.push(`  openai:         ${output.gauntlet.apiKeys.openai}`);
+  lines.push(`  bedrock:        ${output.gauntlet.apiKeys.bedrock}`);
   lines.push("");
   lines.push("# SDK-visible environment variables (pass through to SDKs, not read by Gauntlet)");
   for (const [k, v] of Object.entries(output.sdkEnv)) {

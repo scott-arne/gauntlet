@@ -111,6 +111,13 @@ export interface AppConfig {
   apiKeys: {
     anthropic: boolean;
     openai: boolean;
+    /**
+     * AWS Bedrock auth mode for Claude (CLAUDE_CODE_USE_BEDROCK). Not an API
+     * key — credentials resolve from the AWS chain — but it is a third way the
+     * Anthropic client can be provider-capable, so requireLlmCapable treats it
+     * as one. Mirrors useBedrock() in src/models/anthropic.ts.
+     */
+    bedrock: boolean;
   };
   /**
    * Caller-provided runtime credential resolver. When set, the
@@ -410,10 +417,11 @@ function resolveCredentialResolver(
  * clear message, instead of letting the first run fail mid-agent.
  */
 export function requireLlmCapable(config: AppConfig): void {
-  if (!config.apiKeys.anthropic && !config.apiKeys.openai) {
+  if (!config.apiKeys.anthropic && !config.apiKeys.openai && !config.apiKeys.bedrock) {
     throw new Error(
-      "No LLM provider configured. Set ANTHROPIC_API_KEY (for Claude models) " +
-      "or OPENAI_API_KEY (for GPT models). Run 'gauntlet config' to see current state.",
+      "No LLM provider configured. Set ANTHROPIC_API_KEY (for Claude models), " +
+      "OPENAI_API_KEY (for GPT models), or CLAUDE_CODE_USE_BEDROCK=1 with AWS " +
+      "credentials (for Claude via Bedrock). Run 'gauntlet config' to see current state.",
     );
   }
 }
@@ -619,10 +627,14 @@ export function loadConfig(args: CliArgsInput, env: NodeJS.ProcessEnv): AppConfi
   const availableModels = availableR.value;
   const availableSource: "default" | "env" | "flag" = availableR.source;
 
-  // apiKeys (presence only)
+  // apiKeys (presence only). `bedrock` is not a key but a truthy mode switch
+  // (CLAUDE_CODE_USE_BEDROCK), parsed the same way as useBedrock() in
+  // src/models/anthropic.ts: "1"/"true"/"yes", case-insensitive, trimmed.
+  const bedrockRaw = (env.CLAUDE_CODE_USE_BEDROCK ?? "").trim().toLowerCase();
   const apiKeys = {
     anthropic: Boolean(env.ANTHROPIC_API_KEY),
     openai: Boolean(env.OPENAI_API_KEY),
+    bedrock: bedrockRaw === "1" || bedrockRaw === "true" || bedrockRaw === "yes",
   };
 
   // credentialResolver — caller-provided fetch_credential backend (PRI-1605).
