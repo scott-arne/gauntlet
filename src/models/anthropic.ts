@@ -1,7 +1,86 @@
 import Anthropic from "@anthropic-ai/sdk";
-import { AnthropicBedrock } from "@anthropic-ai/bedrock-sdk";
+import {
+  BedrockRuntimeClient,
+  InvokeModelCommand,
+} from "@aws-sdk/client-bedrock-runtime";
+import { fromNodeProviderChain } from "@aws-sdk/credential-providers";
 import type { LLMClient, ToolDefinition, AgentResponse, StopReason, ToolCall, ToolResult } from "./provider";
 import { withLlmErrorSanitization } from "../util/sanitize-error";
+
+/**
+ * The single method gauntlet calls on its Anthropic-or-Bedrock client. Both the
+ * direct `Anthropic` client and our Bedrock adapter satisfy this, so `chat()`
+ * below is identical for either. (Anthropic's own client has a far wider
+ * surface; we only depend on this slice.)
+ */
+interface MessagesClient {
+  messages: {
+    create(
+      body: Anthropic.Messages.MessageCreateParamsNonStreaming,
+    ): Promise<Anthropic.Message>;
+  };
+}
+
+/**
+ * The Bedrock InvokeModel API version gauntlet targets. Required in the request
+ * body for the Anthropic-on-Bedrock model family.
+ */
+const BEDROCK_ANTHROPIC_VERSION = "bedrock-2023-05-31";
+
+/**
+ * Build a `MessagesClient` backed by AWS Bedrock's `InvokeModelCommand`.
+ *
+ * Why not `@anthropic-ai/bedrock-sdk`: that wrapper (0.30.2) is broken against
+ * `@anthropic-ai/sdk` 0.78.0 — its request middleware misfires and Bedrock
+ * answers every call with a Coral `UnknownOperationException` envelope. The
+ * official AWS SDK works with gauntlet's exact request body (verified), and
+ * InvokeModel's request/response bodies ARE the raw Anthropic Messages JSON, so
+ * `chat()` and `convertResponse` need no changes.
+ *
+ * @param model - Bedrock inference-profile id (e.g. us.anthropic.claude-opus-4-8).
+ * @param opts.region - AWS region (required).
+ * @param opts.send - Injectable AWS send fn (tests stub it; production uses the
+ *   real BedrockRuntimeClient). Defaults to a client built with the standard AWS
+ *   credential chain honoring AWS_PROFILE.
+ */
+export function createBedrockMessagesClient(
+  model: string,
+  opts: { region: string; send?: (command: InvokeModelCommand) => Promise<{ body: Uint8Array }> },
+): MessagesClient {
+  const send =
+    opts.send ??
+    (() => {
+      const client = new BedrockRuntimeClient({
+        region: opts.region,
+        credentials: fromNodeProviderChain({ profile: process.env.AWS_PROFILE }),
+      });
+      return (command: InvokeModelCommand) =>
+        client.send(command) as Promise<{ body: Uint8Array }>;
+    })();
+
+  return {
+    messages: {
+      async create(body) {
+        // Copy without `model`; Bedrock takes the id as modelId in the command,
+        // not in the JSON body. Inject the required anthropic_version. Do not
+        // mutate the caller's object.
+        const { model: _model, ...rest } = body as unknown as Record<string, unknown>;
+        const payload = { anthropic_version: BEDROCK_ANTHROPIC_VERSION, ...rest };
+
+        const command = new InvokeModelCommand({
+          modelId: model,
+          contentType: "application/json",
+          accept: "application/json",
+          body: JSON.stringify(payload),
+        });
+
+        const response = await send(command);
+        const text = new TextDecoder().decode(response.body);
+        return JSON.parse(text) as Anthropic.Message;
+      },
+    },
+  };
+}
 
 /**
  * True when the Anthropic client should talk to AWS Bedrock instead of the
@@ -53,7 +132,7 @@ export function createAnthropicClient(model: string): LLMClient {
   //   - Direct API: the base Anthropic client, requiring ANTHROPIC_API_KEY.
   // Both expose the same `.messages.create()` surface, so the LLMClient body
   // below is identical for either.
-  let client: Anthropic | AnthropicBedrock;
+  let client: MessagesClient;
   if (useBedrock()) {
     const awsRegion = (process.env.AWS_REGION ?? "").trim();
     if (!awsRegion) {
@@ -62,9 +141,10 @@ export function createAnthropicClient(model: string): LLMClient {
         "Set AWS_REGION to the Bedrock inference region."
       );
     }
-    // awsRegion is passed explicitly; AWS credentials resolve via the SDK's
-    // default provider chain (AWS_PROFILE / ~/.aws / static env keys).
-    client = new AnthropicBedrock({ awsRegion });
+    // The official AWS SDK resolves credentials via the standard chain
+    // (AWS_PROFILE / ~/.aws / static env keys). `model` is the Bedrock
+    // inference-profile id, passed through verbatim.
+    client = createBedrockMessagesClient(model, { region: awsRegion });
   } else {
     if (!process.env.ANTHROPIC_API_KEY) {
       throw new Error(

@@ -4,6 +4,7 @@ import {
   anthropicToolResultMessages,
   convertResponse,
   useBedrock,
+  createBedrockMessagesClient,
 } from "../../src/models/anthropic";
 import type Anthropic from "@anthropic-ai/sdk";
 
@@ -91,6 +92,85 @@ describe("useBedrock", () => {
     withEnv({ CLAUDE_CODE_USE_BEDROCK: undefined }, () => {
       expect(useBedrock()).toBe(false);
     });
+  });
+});
+
+describe("createBedrockMessagesClient (InvokeModel adapter)", () => {
+  function fakeAwsResponse(message: Record<string, unknown>) {
+    return { body: new TextEncoder().encode(JSON.stringify(message)) };
+  }
+
+  test("maps model→modelId, injects anthropic_version, JSON-encodes the body, and preserves params", async () => {
+    let capturedInput: any = null;
+    const fakeSend = async (command: any) => {
+      capturedInput = command.input;
+      return fakeAwsResponse({
+        id: "msg_x",
+        type: "message",
+        role: "assistant",
+        model: "us.anthropic.claude-opus-4-8",
+        content: [{ type: "text", text: "ok" }],
+        stop_reason: "end_turn",
+        stop_sequence: null,
+        usage: { input_tokens: 1, output_tokens: 1 },
+      });
+    };
+
+    const client = createBedrockMessagesClient("us.anthropic.claude-opus-4-8", {
+      region: "us-east-1",
+      send: fakeSend,
+    });
+
+    const resp = await client.messages.create({
+      model: "us.anthropic.claude-opus-4-8",
+      max_tokens: 64,
+      system: [{ type: "text", text: "sys" }],
+      messages: [{ role: "user", content: "hi" }],
+      tools: [],
+      output_config: { effort: "medium" },
+      thinking: { type: "adaptive" },
+    } as any);
+
+    expect(capturedInput.modelId).toBe("us.anthropic.claude-opus-4-8");
+    expect(capturedInput.contentType).toBe("application/json");
+    const sentBody = JSON.parse(
+      typeof capturedInput.body === "string"
+        ? capturedInput.body
+        : new TextDecoder().decode(capturedInput.body),
+    );
+    expect(sentBody.model).toBeUndefined();
+    expect(sentBody.anthropic_version).toBe("bedrock-2023-05-31");
+    expect(sentBody.max_tokens).toBe(64);
+    expect(sentBody.output_config).toEqual({ effort: "medium" });
+    expect(sentBody.thinking).toEqual({ type: "adaptive" });
+    expect(sentBody.system).toEqual([{ type: "text", text: "sys" }]);
+
+    expect(resp.content).toEqual([{ type: "text", text: "ok" }]);
+    expect(resp.stop_reason).toBe("end_turn");
+    const converted = convertResponse(resp);
+    expect(converted.text).toBe("ok");
+  });
+
+  test("does not mutate the caller's body object", async () => {
+    const fakeSend = async () =>
+      fakeAwsResponse({
+        id: "m",
+        type: "message",
+        role: "assistant",
+        model: "x",
+        content: [{ type: "text", text: "y" }],
+        stop_reason: "end_turn",
+        stop_sequence: null,
+        usage: { input_tokens: 1, output_tokens: 1 },
+      });
+    const client = createBedrockMessagesClient("us.anthropic.claude-opus-4-8", {
+      region: "us-east-1",
+      send: fakeSend,
+    });
+    const body = { model: "us.anthropic.claude-opus-4-8", max_tokens: 8, messages: [] } as any;
+    await client.messages.create(body);
+    expect(body.model).toBe("us.anthropic.claude-opus-4-8");
+    expect(body.anthropic_version).toBeUndefined();
   });
 });
 
