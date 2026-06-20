@@ -137,13 +137,14 @@ export function maxOutputTokensForModel(model: string): number {
 
 export function createAnthropicClient(model: string): LLMClient {
   // Two auth modes, selected by CLAUDE_CODE_USE_BEDROCK:
-  //   - Bedrock: AnthropicBedrock resolves AWS credentials from the standard
-  //     chain (AWS_PROFILE/~/.aws or static keys) and needs AWS_REGION; no
-  //     ANTHROPIC_API_KEY. The `model` must already be a Bedrock inference
-  //     profile id (passed through verbatim — see useBedrock()).
+  //   - Bedrock: the AWS-SDK-backed adapter (createBedrockMessagesClient)
+  //     resolves AWS credentials from the standard chain (AWS_PROFILE/~/.aws or
+  //     static keys) and needs AWS_REGION; no ANTHROPIC_API_KEY. The `model`
+  //     must already be a Bedrock inference profile id (passed through verbatim
+  //     — see useBedrock()).
   //   - Direct API: the base Anthropic client, requiring ANTHROPIC_API_KEY.
-  // Both expose the same `.messages.create()` surface, so the LLMClient body
-  // below is identical for either.
+  // Both expose the same `.messages.create()` surface (MessagesClient), so the
+  // LLMClient body below is identical for either.
   let client: MessagesClient;
   if (useBedrock()) {
     const awsRegion = (process.env.AWS_REGION ?? "").trim();
